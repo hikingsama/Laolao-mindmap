@@ -1,0 +1,12 @@
+# 本机环境，绝不入库（BRIEF 硬规则第 6 条）
+.env
+.env.*
+*.local
+
+# 系统 / 编辑器
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 依赖（本仓库第一版无构建工具链，留作兜底）
+node_modules/
