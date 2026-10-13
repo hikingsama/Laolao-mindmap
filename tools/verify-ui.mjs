@@ -314,6 +314,18 @@ const main = async () => {
     !!afterEdge.last && afterEdge.last.from.node === twoNodes.a && afterEdge.last.from.side === "e" &&
     afterEdge.last.to.node === twoNodes.b && afterEdge.last.to.side === "w", JSON.stringify(afterEdge.last));
   check("松手后预览线自己收掉（不留残影）", afterEdge.prev === 0, "path=" + afterEdge.prev);
+  /* 第 2 步：边要真的被画出来（默认单指向、箭头在目标端） */
+  const edgeDraw = JSON.parse(await ev(`(() => {
+    const line = document.querySelector('#mmStage .mm-links path.mm-edge[data-id="' + ((${JSON.stringify(afterEdge.last && afterEdge.last.id)}) || "") + '"]');
+    const arrows = [...document.querySelectorAll('#mmStage .mm-links path.mm-arrow')];
+    return JSON.stringify({ lines: document.querySelectorAll('#mmStage .mm-links path.mm-edge').length,
+      to: arrows.filter((x) => x.dataset.end === "to").length, from: arrows.filter((x) => x.dataset.end === "from").length,
+      d: line ? line.getAttribute("d") : null, arrowD: arrows[0] ? arrows[0].getAttribute("d") : null });
+  })()`));
+  check("边真的画在页面上了（.mm-edge=" + edgeDraw.lines + "，path d=" + edgeDraw.d + "）",
+    edgeDraw.lines === 1 && !!edgeDraw.d && /^M-?[\d.]+,-?[\d.]+ L-?[\d.]+,-?[\d.]+$/.test(edgeDraw.d), JSON.stringify(edgeDraw));
+  check("默认单指向：箭头只画在目标端（to=" + edgeDraw.to + " from=" + edgeDraw.from + "，箭头 d=" + edgeDraw.arrowD + "）",
+    edgeDraw.to === 1 && edgeDraw.from === 0 && !!edgeDraw.arrowD, JSON.stringify(edgeDraw));
   /* 屏幕恒定：放大之后圆点的**屏幕**直径必须还在 6–12.5px（不跟着舞台一起放大）。 */
   const boxBefore = JSON.parse(await ev(`(() => { const r = document.querySelector('#mmStage .mm-node[data-id="${twoNodes.a}"]').getBoundingClientRect(); return JSON.stringify({ w: +r.width.toFixed(1) }); })()`));
   await mouse("mouseMoved", mA.x, mA.y, 0, 0);

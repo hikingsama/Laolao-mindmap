@@ -93,6 +93,10 @@ class El {
          不解析的话"圆点直径是屏幕像素口径"这类断言只能拿到 undefined —— 又变成断不了的事。 */
       const sl = attrs.match(/\bstyle=["']([^"']*)["']/);
       if (sl) for (const decl of sl[1].split(";")) { const ci = decl.indexOf(":"); if (ci > 0) e.style[decl.slice(0, ci).trim()] = decl.slice(ci + 1).trim(); }
+      /* 其余属性原样收进 `_attr_`（getAttribute 读的就是它）：真实 DOM 里 d / href / aria-* 都在这儿，
+         不收的话"这条边的路径是什么"这类断言只能读到 undefined。 */
+      const ae = /([\w:-]+)=["']([^"']*)["']/g; let a2;
+      while ((a2 = ae.exec(attrs))) if (!/^(data-|class|id|title|style)$/.test(a2[1])) e["_attr_" + a2[1]] = a2[2];
       const dre = /\bdata-([\w-]+)=["']?([^"'\s>]+)["']?/g;
       let dm;
       while ((dm = dre.exec(attrs))) e.dataset[dm[1]] = dm[2];
@@ -1434,6 +1438,46 @@ new Promise((resolve) => {
     const disk17 = JSON.parse(B.localStorage.getItem("mm_map_legacy-map"));
     ok("边已落盘（磁盘上也是 " + (edges0 + 1) + " 条）", Array.isArray(disk17.edges) && disk17.edges.length === edges0 + 1);
     ok("建边没有动尺寸（连线不触发缩放）", JSON.stringify(cur17().size) === JSON.stringify(disk17.size));
+
+    /* 第 2 步：边要**画出来**（默认单指向、箭头在目标端），端点每帧现算。
+       断言读 DOM 元素与原属性（仿真台现在也收 `d` 这类属性，走 getAttribute）。 */
+    const edgeDom = () => {
+      const line = B.doc.querySelector('#mmStage .mm-links path.mm-edge[data-id="' + e0.id + '"]');
+      const arrows = B.doc.querySelectorAll("#mmStage .mm-links path.mm-arrow");
+      return {
+        lines: B.doc.querySelectorAll('#mmStage .mm-links path.mm-edge[data-id="' + e0.id + '"]').length,
+        to: arrows.filter((x) => x.dataset.end === "to").length,
+        from: arrows.filter((x) => x.dataset.end === "from").length,
+        d: line ? String(line.getAttribute("d") || "") : "",
+      };
+    };
+    let ed = edgeDom();
+    ok("边真的画在画布上了（.mm-edge[data-id] = " + ed.lines + "）", ed.lines === 1, JSON.stringify(ed));
+    ok("默认单指向：箭头只有**目标端**一个（to=" + ed.to + " from=" + ed.from + "）", ed.to === 1 && ed.from === 0, JSON.stringify(ed));
+    /* 端点必须等于两个磁吸点（每帧现算，不是落盘坐标） */
+    const mp1 = magPoint(oneId, "e"), mp2 = magPoint(a.id, "w");
+    const v17 = view2screen();
+    const want = { x1: (mp1.x - v17.ox) / v17.k, y1: (mp1.y - v17.oy) / v17.k, x2: (mp2.x - v17.ox) / v17.k, y2: (mp2.y - v17.oy) / v17.k };
+    const dm = ed.d.match(/^M(-?[\d.]+),(-?[\d.]+) L(-?[\d.]+),(-?[\d.]+)$/);
+    ok("边的两个端点就是那两个磁吸点的舞台坐标（现算，不是落盘值）",
+      !!dm && Math.abs(+dm[1] - want.x1) < 1 && Math.abs(+dm[2] - want.y1) < 1 && Math.abs(+dm[3] - want.x2) < 1 && Math.abs(+dm[4] - want.y2) < 1,
+      "path=" + ed.d + " 期望=" + JSON.stringify(want));
+    /* 四种指向的箭头位置（**菜单是第 3 步**）—— 这里走真实读取路径：写盘 → 重新打开 → 看渲染。 */
+    const setDirAndReopen = (d) => {
+      const raw = JSON.parse(B.localStorage.getItem("mm_map_legacy-map"));
+      raw.edges[raw.edges.length - 1].dir = d;
+      B.localStorage.setItem("mm_map_legacy-map", JSON.stringify(raw));
+      M.open("legacy-map");
+      return edgeDom();
+    };
+    ed = setDirAndReopen("rev");
+    ok("dir=rev：箭头只画在起点（to=" + ed.to + " from=" + ed.from + "）", ed.to === 0 && ed.from === 1, JSON.stringify(ed));
+    ed = setDirAndReopen("both");
+    ok("dir=both：两端都有箭头（to=" + ed.to + " from=" + ed.from + "）", ed.to === 1 && ed.from === 1, JSON.stringify(ed));
+    ed = setDirAndReopen("none");
+    ok("dir=none：线在、箭头一个都不画（to=" + ed.to + " from=" + ed.from + "）", ed.lines === 1 && ed.to === 0 && ed.from === 0, JSON.stringify(ed));
+    ed = setDirAndReopen("fwd");
+    ok("回到默认 dir=fwd：箭头回到目标端（to=" + ed.to + " from=" + ed.from + "）", ed.to === 1 && ed.from === 0, JSON.stringify(ed));
 
     /* 非法目标：同一个节点（自环）/ 已经连过的那对 → 不建边，并给一句确定的提示（不静默） */
     const nB = (cur17().edges || []).length;

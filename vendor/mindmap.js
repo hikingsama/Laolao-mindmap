@@ -613,7 +613,29 @@
     return e;
   }
 
-  // ---------------- 画 ----------------
+  /* ---------------- 画 ----------------
+     【独立版·平级】边怎么画：端点每帧从布局盒现算（magPos），线走直线，箭头画成小三角 `<path>`。
+     箭头位置由 dir 决定：fwd = 只在终点（to）、rev = 只在起点、both = 两端、none = 不画。
+     `data-end` 标明这一端是哪一头，方便断言与排查。 */
+  const EDGE_COLOR = "#5b6b7c", ARROW = 10;
+  function edgeArrow(p, q, end) {
+    const deg = Math.atan2(p.y - q.y, p.x - q.x) * 180 / Math.PI;
+    return `<path class="mm-arrow" data-end="${end}" d="M0,0 L${-ARROW},${ARROW * 0.45} L${-ARROW},${-ARROW * 0.45} Z" fill="${EDGE_COLOR}" transform="translate(${p.x},${p.y}) rotate(${deg})"/>`;
+  }
+  function edgeSvg() {
+    if (!cur || !Array.isArray(cur.edges)) return [];
+    const out = [];
+    for (const e of cur.edges) {
+      if (!e || !e.from || !e.to) continue;
+      const a = L.nodes.get(e.from.node), b = L.nodes.get(e.to.node);
+      if (!a || !b || a.x == null || b.x == null) continue;      // 端点不在画布上（折叠/已删）就这条不画
+      const p1 = magPos(a, e.from.side), p2 = magPos(b, e.to.side), dir = e.dir || "fwd";
+      out.push(`<path class="mm-edge" data-id="${e.id}" d="M${p1.x},${p1.y} L${p2.x},${p2.y}" stroke="${EDGE_COLOR}" stroke-width="2" fill="none" stroke-linecap="round" opacity=".9"/>`);
+      if (dir === "fwd" || dir === "both") out.push(edgeArrow(p2, p1, "to"));
+      if (dir === "rev" || dir === "both") out.push(edgeArrow(p1, p2, "from"));
+    }
+    return out;
+  }
   const E = (s) => esc(s);
   function draw() {
     if (!cur) return;
@@ -650,7 +672,7 @@
     const b = L.bounds, pad = 400;
     /* 预览线（拖磁吸点时那条虚线）与连线同坐标空间：每帧重建，拖动过程中只改它的 innerHTML。 */
     const prevBox = `left:${b.x0 - pad}px;top:${b.y0 - pad}px;width:${b.x1 - b.x0 + pad * 2}px;height:${b.y1 - b.y0 + pad * 2}px" viewBox="${b.x0 - pad} ${b.y0 - pad} ${b.x1 - b.x0 + pad * 2} ${b.y1 - b.y0 + pad * 2}`;
-    st.innerHTML = `<svg class="mm-links" style="${prevBox}">${svg.join("")}</svg><svg class="mm-linkprev" style="${prevBox}"></svg>${html.join("")}${magHtml.join("")}`;
+    st.innerHTML = `<svg class="mm-links" style="${prevBox}">${svg.join("")}${edgeSvg().join("")}</svg><svg class="mm-linkprev" style="${prevBox}"></svg>${html.join("")}${magHtml.join("")}`;
     const vw = $("mmView");
     vw.style.background = th.bg; vw.style.setProperty("--grid", th.grid); vw.dataset.theme = cur.theme;
     applyView();
