@@ -471,8 +471,10 @@ new Promise((resolve) => {
       zRs > zEdit, "rs=" + zRs + " edit=" + zEdit);
     // —— 八方向缩放的核心形状（Chief 派活 + 对话界面优化的交互规格）——
     const jsTxt = require("fs").readFileSync(require("path").join(__dirname, "..", "vendor", "mindmap.js"), "utf8");
-    ok("命中阈值是屏幕像素常量 edge=8 / corner=12 / slop=2",
-      /RZ = \{ edge: 8, corner: 12, slop: 2 \}/.test(jsTxt));
+    ok("命中阈值是屏幕像素常量 edge=16 / corner=22 / slop=7（用户反馈太窄后放宽）",
+      /RZ = \{ edge: 16, corner: 22, slop: 7 \}/.test(jsTxt));
+    ok("短边缩放的命中下限抬到 10px（典型子节点约 40px 高，下限太低就抓不住）",
+      jsTxt.includes("Math.max(10, Math.round(m * 0.25))") && jsTxt.includes("Math.max(10, Math.round(m * 0.15))"));
     const iCorner = jsTxt.indexOf("角优先，短路"), iEdge = jsTxt.indexOf("边：取更近的那条");
     ok("角优先于边：角分支在边分支之前且短路返回", iCorner > 0 && iEdge > iCorner);
     ok("判定全在屏幕空间（盒换算 + 指针减 rect，不除以 view.k）",
@@ -501,6 +503,33 @@ new Promise((resolve) => {
     ok("addChild 用真实盒子当锚点（不用 estSize 估算；与 addSibling/addParent 写法对齐）",
       addChildSrc.includes("const ps = L && L.nodes.get(r.n.id)") && addChildSrc.includes("w: ps ? ps.w :"),
       "含 estSize 直取宽度的旧写法=" + /giveBirth\(k, \{ x: \(L && L\.nodes\.get\(r\.n\.id\)\)/.test(addChildSrc));
+  }
+
+  console.log("\nC6. 折叠后后代不参与布局与渲染（真 bug 回归）");
+  {
+    // 这条能真驱动：夹具折叠状态走 localStorage，open() 会重新加载
+    const raw = JSON.parse(B.localStorage.getItem("mm_map_legacy-map"));
+    const tgt = raw.root.children.find((c) => (c.children || []).length);
+    tgt.fold = true;
+    B.localStorage.setItem("mm_map_legacy-map", JSON.stringify(raw));
+    M.open("legacy-map");
+    const st = M.state();
+    const ids = new Set([...st.L.nodes.values()].map((s) => s.n.id));
+    const desc = [];
+    // 只收**后代**，不含被折叠的那个节点自己（第一版把 tgt 自己也收进来，误报 a1 泄漏）
+    (function w(n) { (n.children || []).forEach((c) => { desc.push(c.id); w(c); }); })(tgt);
+    const leaked = desc.filter((k) => ids.has(k));
+    ok("折叠节点的后代不在布局表里（后代 " + desc.length + " 个，泄漏 " + leaked.length + " 个）",
+      leaked.length === 0, leaked.join(","));
+    const html = String(B.win.$("mmStage").innerHTML || "");
+    const drawn = desc.filter((k) => html.indexOf('data-id="' + k + '"') >= 0);
+    ok("折叠节点的后代没有被画进 DOM（原来照画，只是没有连线）", drawn.length === 0, drawn.join(","));
+    ok("折叠后代的坐标仍保留在 cur.pos 里（展开时直接用回去、不重算）", desc.every((k) => !!st.cur.pos[k]));
+    const js2 = require("fs").readFileSync(require("path").join(__dirname, "..", "vendor", "mindmap.js"), "utf8");
+    ok("prep 遇到 fold 就不再往下建 box（源码形状，防回退）", /if \(!n\.fold\) \(n\.children \|\| \[\]\)\.forEach/.test(js2));
+    delete tgt.fold;
+    B.localStorage.setItem("mm_map_legacy-map", JSON.stringify(raw));
+    M.open("legacy-map");
   }
 
   console.log("\nD. 新建子节点 → 不盖住父节点");

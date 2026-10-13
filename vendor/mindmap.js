@@ -201,7 +201,10 @@
       const cs = clampSize(pinned ? z.w : m.w, pinned ? z.h : m.h, m.w, m.h);
       if (!pinned || cs.w !== z.w || cs.h !== z.h) { curSize()[n.id] = cs; sizeDirty = true; }
       nodes.set(n.id, { n, depth, ...m, w: cs.w, h: cs.h, measW: m.w, measH: m.h, color: c, parent: parent ? parent.id : null, kids: n.fold ? [] : n.children || [] });
-      (n.children || []).forEach((k, i) => prep(k, depth + 1, depth === 0 ? (k.color || th.colors[i % th.colors.length]) : c, n));
+      /* 【独立版】折叠就**不再往下建 box**：折叠后代不进 L.nodes，于是 draw / span / nudgeFree / bounds
+         全都只看得见可见节点 —— 修掉"收起后连线没了、子节点还在"（原来只有连线消失，后代照样画）。
+         cur.pos / cur.size 里这些后代的条目**故意保留**：它们是"用户摆过的位置"，展开时直接用回去。 */
+      if (!n.fold) (n.children || []).forEach((k, i) => prep(k, depth + 1, depth === 0 ? (k.color || th.colors[i % th.colors.length]) : c, n));
     })(cur.root, 0, th.root, null);
     const S = (id) => nodes.get(id);
     // 2) 子树大小
@@ -529,6 +532,9 @@
   function toggleFold(id) {
     const r = findNode(id || sel); if (!r || !(r.n.children || []).length) return;
     change(() => { r.n.fold = !r.n.fold; });
+    /* 【独立版】折叠后若"选中的节点"正好被藏起来（已不在 L.nodes 里），把选中挪到折叠节点上：
+       否则 onL.nodes 拿不到布局项，键盘导航 / 面板 / 新建子节点的锚点都会落空。 */
+    if (!(L && L.nodes.get(sel))) { sel = r.n.id; draw(); }
   }
   function foldLevel(lv) { change(() => walk(cur.root, (n, p, d) => { if ((n.children || []).length) n.fold = lv > 0 && d >= lv; })); setTimeout(() => fit(true), 20); }
   function setProp(k, v) { const r = findNode(sel); if (!r) return; change(() => { if (v === undefined || v === "" || v === false || v === null) delete r.n[k]; else r.n[k] = v; }); }
@@ -904,7 +910,7 @@
        优先级：角（短路）→ 边（两边都满足取更近的一条）→ 否则视为内部拖动（返回 null）。
        小节点保护：m 取屏幕 w/h 的较小者；cornerEff=clamp(round(m*0.25),4,12)、edgeEff=clamp(round(m*0.15),3,8) 且 edgeEff ≤ cornerEff。
        判定挂在**节点盒**上，不把 .mm-rs 当命中目标（8px 的 CSS 目标不可靠，且它钉在 right:0;bottom:0 只覆盖一个方向）。 */
-    const RZ = { edge: 8, corner: 12, slop: 2 };
+    const RZ = { edge: 16, corner: 22, slop: 7 };
     const CURSOR = { n: "ns-resize", s: "ns-resize", e: "ew-resize", w: "ew-resize", nw: "nwse-resize", se: "nwse-resize", ne: "nesw-resize", sw: "nesw-resize" };
     function zoneAt(cx, cy) {
       if (!L || !cur) return null;
@@ -917,8 +923,10 @@
         const x0 = s.x * view.k + view.x, y0 = s.y * view.k + view.y, w = s.w * view.k, h = s.h * view.k;   // 屏幕坐标
         if (px < x0 - RZ.slop || px > x0 + w + RZ.slop || py < y0 - RZ.slop || py > y0 + h + RZ.slop) continue;
         const m = Math.min(w, h);
-        const cornerEff = Math.min(RZ.corner, Math.max(4, Math.round(m * 0.25)));
-        const edgeEff = Math.min(cornerEff, Math.min(RZ.edge, Math.max(3, Math.round(m * 0.15))));
+        /* 短边缩放的**下限抬到 10px**：典型子节点只有 ~40px 高，若下限压到 4–6px，
+           命中区会窄到必须精细挪鼠标（用户在浏览器实测反馈的正是这条）。 */
+        const cornerEff = Math.min(RZ.corner, Math.max(10, Math.round(m * 0.25)));
+        const edgeEff = Math.min(cornerEff, Math.min(RZ.edge, Math.max(10, Math.round(m * 0.15))));
         const dL = px - x0, dR = x0 + w - px, dT = py - y0, dB = y0 + h - py;
         if ((dL <= cornerEff || dR <= cornerEff) && (dT <= cornerEff || dB <= cornerEff)) {
           return { id: s.n.id, dir: (dT <= dB ? "n" : "s") + (dL <= dR ? "w" : "e") };   // 角优先，短路
