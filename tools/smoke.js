@@ -1539,13 +1539,29 @@ new Promise((resolve) => {
     ok("同一对磁吸点再来一次 → 不重复建边，并给提示",
       (cur17().edges || []).length === nB && B.banners.some((s) => /已经有一条线/.test(s)),
       "banners=" + JSON.stringify(B.banners.slice(-2)));
+    /* 反向也算同一对端点：A.e→B.w 已存在时，从 **B.w 拖回 A.e** 也要拦下来并给提示（不许静默丢）。
+       同一个磁吸点可以被多条边共用（扇出）—— 所以只有"两端都对上了"才算重复。 */
+    const nB2 = (cur17().edges || []).length;
+    bubble(vwOf(), "pointerdown", { clientX: toP.x, clientY: toP.y });      // 从 B.w 起步
+    bubble(vwOf(), "pointerup", { clientX: fromP.x, clientY: fromP.y });    // 拖回 A.e
+    ok("反向同一对端点（B.w → A.e）也被拦下，并给可见提示（不许静默丢弃）",
+      (cur17().edges || []).length === nB2 && B.banners.some((s) => /已经有一条线/.test(s)),
+      "边数=" + (cur17().edges || []).length + " banners=" + JSON.stringify(B.banners.slice(-2)));
+    /* 平行边靠不同端点对成立：A.s → B.w 是另一条合法边 */
+    const sA = magPoint(oneId, "s"), wB = magPoint(a.id, "w");
+    bubble(vwOf(), "pointerdown", { clientX: sA.x, clientY: sA.y });
+    bubble(vwOf(), "pointerup", { clientX: wB.x, clientY: wB.y });
+    ok("不同端点对（A.s → B.w）是另一条合法边（平行边允许）",
+      (cur17().edges || []).length === nB2 + 1,
+      "边数=" + (cur17().edges || []).length);
 
     /* 松在空白 = 静默取消（不建边、不留预览、不报错） */
+    const nBlank = (cur17().edges || []).length;                 // 以**当前**条数为基准（上面刚加过平行边）
     bubble(vwOf(), "pointerdown", { clientX: fromP.x, clientY: fromP.y });
     bubble(vwOf(), "pointermove", { clientX: fromP.x + 300, clientY: fromP.y + 220 });
     bubble(vwOf(), "pointerup", { clientX: fromP.x + 300, clientY: fromP.y + 220 });
     ok("松在空白 → 不建边、预览清空（静默取消）",
-      (cur17().edges || []).length === nB && String(B.doc.querySelector("#mmStage .mm-linkprev").innerHTML || "") === "");
+      (cur17().edges || []).length === nBlank && String(B.doc.querySelector("#mmStage .mm-linkprev").innerHTML || "") === "");
 
     /* 优先级：磁吸点半径**外**、仍在边缘带内 → 走缩放（不是连线）—— 两条路互斥。 */
     reset17();

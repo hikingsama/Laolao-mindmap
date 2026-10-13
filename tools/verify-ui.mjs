@@ -314,6 +314,14 @@ const main = async () => {
     !!afterEdge.last && afterEdge.last.from.node === twoNodes.a && afterEdge.last.from.side === "e" &&
     afterEdge.last.to.node === twoNodes.b && afterEdge.last.to.side === "w", JSON.stringify(afterEdge.last));
   check("松手后预览线自己收掉（不留残影）", afterEdge.prev === 0, "path=" + afterEdge.prev);
+  /* 端点对唯一**含反向**：从 B.w 拖回 A.e 不许再建一条（真鼠标 + 真提示） */
+  await mouse("mousePressed", mB.x, mB.y, 1, 1);
+  await mouse("mouseMoved", mA.x, mA.y, 0, 1);
+  await mouse("mouseReleased", mA.x, mA.y, 1, 0);
+  await sleep(250);
+  const revEdge = JSON.parse(await ev(`(() => JSON.stringify({ n: (window.Mindmap.state().cur.edges || []).length, banner: (document.getElementById('banner') || {}).textContent || "" }))()`));
+  check("反向同一对端点（B.w → A.e）也拦下来（边数仍是 " + revEdge.n + "，提示：" + JSON.stringify(revEdge.banner) + "）",
+    revEdge.n === edgesBefore + 1 && /已经有一条线/.test(revEdge.banner), JSON.stringify(revEdge));
   /* 第 2 步：边要真的被画出来（默认单指向、箭头在目标端） */
   const edgeDraw = JSON.parse(await ev(`(() => {
     const line = document.querySelector('#mmStage .mm-links path.mm-edge[data-id="' + ((${JSON.stringify(afterEdge.last && afterEdge.last.id)}) || "") + '"]');

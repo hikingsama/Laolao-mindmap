@@ -614,15 +614,19 @@
     }
     return null;
   }
-  /* 同一对磁吸点只允许一条边（允许平行边：不同 side 组合可以并存）；禁自环。 */
+  /* 【独立版·平级】同一对端点**唯一，且含反向**：已经 A.e↔B.w 之后，无论从 A.e 拖到 B.w、
+     还是从 B.w 拖回 A.e，都是同一条线（拦下并给可见提示，不许静默丢）。
+     注意**磁吸点本身不独占**：同一个点上可以挂多条边（扇出是正常需求）；
+     平行边靠"不同的端点对"成立（A.e→B.n 与 A.s→B.w 是两条合法边）。 */
   function edgeDup(from, to) {
-    return (cur.edges || []).some((e) => e && e.from && e.to && e.from.node === from.node && e.from.side === from.side &&
-      e.to.node === to.node && e.to.side === to.side);
+    return (cur.edges || []).some((e) => e && e.from && e.to && (
+      (e.from.node === from.node && e.from.side === from.side && e.to.node === to.node && e.to.side === to.side) ||
+      (e.from.node === to.node && e.from.side === to.side && e.to.node === from.node && e.to.side === from.side)));
   }
   function addEdge(from, to, dir) {
     if (!cur || !from || !to) return null;
     if (from.node === to.node) { tip("同一个主题的磁吸点之间不能连线"); return null; }
-    if (edgeDup(from, to)) { tip("这对磁吸点之间已经有一条线了"); return null; }
+    if (edgeDup(from, to)) { tip("这两个点之间已经有一条线了（换个点连，或先删掉那条）"); return null; }
     const e = { id: eid(), from: { node: from.node, side: from.side }, to: { node: to.node, side: to.side }, dir: dir || "fwd" };
     change(() => { (cur.edges ||= []).push(e); });     // 走 change：可撤销、能落盘
     return e;
