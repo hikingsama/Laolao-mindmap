@@ -809,6 +809,49 @@ new Promise((resolve) => {
     reset();
   }
 
+  console.log("\nC15. 迁移：老图 n.fold → 导图层 cur.fold（显式步骤 + 幂等 + 无 id 节点不许写成 key undefined）");
+  {
+    /* 老格式里折叠长在**节点字段**上（n.fold）。不迁 = "节点字段里的折叠"和"导图层里的折叠"
+       两份真相同时活着（契约危险项第 2 名）。所以迁移是**显式步骤**，并要有行为断言。 */
+    const old = JSON.parse(JSON.stringify(LEGACY));       // 只有 root、v:1 —— 真·老格式
+    old.root.children[0].fold = true;                     // a1 收起
+    old.root.children[1].children[0].fold = true;         // a2x 收起
+    B.localStorage.setItem("mm_map_legacy-map", JSON.stringify(old));
+    M.open("legacy-map");
+    const c1 = M.state().cur;
+    ok("容器迁移成数组：cur.nodes = [root]（不留 root 别名）",
+      Array.isArray(c1.nodes) && c1.nodes.length === 1 && c1.nodes[0].id === "r1" && !("root" in c1),
+      "nodes=" + (Array.isArray(c1.nodes) ? c1.nodes.map((r) => r.id).join(",") : typeof c1.nodes));
+    ok("节点字段上的折叠搬进导图层 cur.fold（a1 / a2x）",
+      c1.fold.a1 === true && c1.fold.a2x === true, JSON.stringify(c1.fold));
+    ok("节点字段里的 fold 已被 delete（不留两份折叠真相）",
+      !("fold" in c1.nodes[0].children[0]) && !("fold" in c1.nodes[0].children[1].children[0]),
+      "a1.fold=" + c1.nodes[0].children[0].fold + " a2x.fold=" + c1.nodes[0].children[1].children[0].fold);
+    ok("迁移标记 v:2 已落盘（幂等的依据）", JSON.parse(B.localStorage.getItem("mm_map_legacy-map")).v === 2);
+    const snap1 = JSON.stringify({ fold: c1.fold, v: c1.v, edges: c1.edges });
+    M.open("legacy-map");
+    ok("迁移幂等：再打开一次 cur.fold / v / edges 都不变",
+      JSON.stringify({ fold: M.state().cur.fold, v: M.state().cur.v, edges: M.state().cur.edges }) === snap1,
+      snap1 + " → " + JSON.stringify({ fold: M.state().cur.fold, v: M.state().cur.v, edges: M.state().cur.edges }));
+
+    /* 无 id 的老节点：migrateMap 在 fill 之前跑，会把折叠写成 key "undefined"（随后被当孤儿清掉，
+       折叠静默丢失）。顺序必须是"容器归一 → 补 id → 搬折叠"。 */
+    const noid = JSON.parse(JSON.stringify(LEGACY));
+    delete noid.root.children[0].id;
+    noid.root.children[0].fold = true;
+    B.localStorage.setItem("mm_map_legacy-map", JSON.stringify(noid));
+    M.open("legacy-map");
+    const c2 = M.state().cur;
+    const fixed = c2.nodes[0].children[0];
+    ok("无 id 的老节点被补上了 id", !!fixed.id && fixed.id !== "undefined", "id=" + fixed.id);
+    ok("它的折叠落在**它自己的新 id** 上，没有 key \"undefined\" 残留",
+      !("undefined" in c2.fold) && c2.fold[fixed.id] === true,
+      "fold=" + JSON.stringify(c2.fold) + " 新 id=" + fixed.id);
+
+    B.localStorage.setItem("mm_map_legacy-map", JSON.stringify(LEGACY));
+    M.open("legacy-map");
+  }
+
   console.log("\nC9. 删整棵子树后的孤儿清理：导图层表里不许留下不在树上的 id");
   /* 断言判据（Chief/提问bot 指定）：不是"被删的那个 id 不见了"，而是"表里不存在**任何**不在树上的 id"。
      这条同时把"折叠后代"排除在孤儿之外 —— 折叠只是不进布局，节点仍在树上，它们的坐标条目必须保留。 */

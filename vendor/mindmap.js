@@ -297,6 +297,13 @@
     if (!m.fold || typeof m.fold !== "object" || Array.isArray(m.fold)) { m.fold = {}; changed = true; }
     if (!Array.isArray(m.edges)) { m.edges = []; changed = true; }
     if (!Array.isArray(m.nodes)) { m.nodes = m.root ? [m.root] : []; delete m.root; changed = true; }
+    /* 顺序要紧：**补 id 必须在搬折叠之前**。`fill` 才给无 id 的老节点分配 id（见文件头），
+       先搬折叠会把它的折叠写成 key "undefined"，随后被 pruneLayer 当孤儿清掉 —— 折叠静默丢失。
+       （openMap 里那句 `for (const r of m.nodes) fill(r)` 在迁移之后，补不上这个洞。） */
+    let idFilled = false;
+    for (const r of m.nodes) walk(r, (n) => { if (!n.id) idFilled = true; });
+    for (const r of m.nodes) fill(r);
+    if (idFilled) changed = true;
     for (const r of m.nodes) walk(r, (n) => { if (n.fold) { m.fold[n.id] = true; delete n.fold; changed = true; } });
     if (m.v !== 2) { m.v = 2; changed = true; }
     return changed;
