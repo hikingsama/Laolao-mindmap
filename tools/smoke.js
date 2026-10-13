@@ -852,6 +852,32 @@ new Promise((resolve) => {
     M.open("legacy-map");
   }
 
+  console.log("\nC16. 搜索折叠分支：沿路展开必须走 change（可撤销 + 可落盘）");
+  {
+    B.localStorage.setItem("mm_map_legacy-map", JSON.stringify(LEGACY));
+    M.open("legacy-map");
+    const cur16 = () => M.state().cur;
+    const fb16 = B.win.$("mmStage").querySelector('.mm-node[data-id="a1"] .mm-fold');
+    ok("前提：画布上找得到 a1 的收起按钮", !!fb16);
+    if (fb16) bubble(fb16, "click", { target: fb16 });
+    ok("前提：a1 已折叠（cur.fold.a1）", cur16().fold.a1 === true, JSON.stringify(cur16().fold));
+    const findIn16 = B.win.$("mmFindIn");
+    ok("找得到搜索框 #mmFindIn", !!findIn16);
+    if (findIn16) {
+      findIn16.value = "重点";                       // 命中 a1x（在 a1 折叠的分支里）
+      bubble(B.doc, "input", { target: findIn16 });  // 输入事件 → doFind（仿真台的 setTimeout 是立即执行）
+      ok("搜到折叠分支里的节点后，沿路把 a1 展开（状态）", !cur16().fold.a1, JSON.stringify(cur16().fold));
+      const disk16 = JSON.parse(B.localStorage.getItem("mm_map_legacy-map"));
+      ok("这次展开**已落盘**（写在 change 外就落不了盘）", !disk16.fold.a1, JSON.stringify(disk16.fold));
+      const ub16 = B.doc.querySelector('[data-mm="undo"]');
+      ok("找得到撤销按钮", !!ub16);
+      if (ub16) bubble(ub16, "click", { target: ub16 });
+      ok("撤销能把折叠状态换回来（写在 change 外就进不了撤销栈）", cur16().fold.a1 === true, JSON.stringify(cur16().fold));
+    }
+    B.localStorage.setItem("mm_map_legacy-map", JSON.stringify(LEGACY));
+    M.open("legacy-map");
+  }
+
   console.log("\nC9. 删整棵子树后的孤儿清理：导图层表里不许留下不在树上的 id");
   /* 断言判据（Chief/提问bot 指定）：不是"被删的那个 id 不见了"，而是"表里不存在**任何**不在树上的 id"。
      这条同时把"折叠后代"排除在孤儿之外 —— 折叠只是不进布局，节点仍在树上，它们的坐标条目必须保留。 */

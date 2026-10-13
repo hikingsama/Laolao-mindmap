@@ -1048,8 +1048,12 @@
   function doFind() {
     q = $("mmFindIn").value.trim().toLowerCase(); found = [];
     if (q) walk(topNode(), (n) => { if ((n.text + " " + (n.note || "")).toLowerCase().includes(q)) found.push(n.id); });
-    // 搜到的在收起的分支里：展开它的上级
-    for (const id of found) { let r = findNode(id); while (r && r.p) { setFold(r.p, false); r = findNode(r.p.id); } }
+    /* 搜到的在收起的分支里：沿路展开它的上级。**必须走 change** —— 写在 change 外的话，
+       这次展开既不进撤销栈、也不落盘（doFind 末尾那两句 draw/storeLocal 拿不到它）。
+       先收集"确实要展开的"，避免一次什么都没改的空 change 白占一格撤销。 */
+    const toOpen = [];
+    for (const id of found) { let r = findNode(id); while (r && r.p) { if (isFold(r.p)) toOpen.push(r.p); r = findNode(r.p.id); } }
+    if (toOpen.length) change(() => { for (const n of toOpen) setFold(n, false); });
     fi = 0; $("mmFindN").textContent = q ? (found.length ? `1 / ${found.length}` : "没找到") : "";
     draw(); if (found.length) select(found[0], true);
   }
