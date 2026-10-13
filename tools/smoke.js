@@ -129,6 +129,11 @@ function allDesc(el) {
   })(el);
   return out;
 }
+/* 属性选择器 → dataset 键的映射：真实 DOM 里 [data-id="a1"] 读的是 el.dataset.id。
+   仿真台原来按 el.dataset["data-id"] 取值，于是**所有**属性选择器都匹配不上
+   （.mm-node[data-id=…] / [data-mm=fold] / [data-mm="del"] 全查不到）——
+   这是几条"未覆盖"断言的共同根因，不是产品缺陷。 */
+function dsGet(el, key) { const k = key.indexOf("data-") === 0 ? key.slice(5) : key; return (el.dataset || {})[k]; }
 function matches(el, sel) {
   return String(sel).split(",").map((s) => s.trim()).filter(Boolean).some((one) => {
     let m;
@@ -147,7 +152,7 @@ function matches(el, sel) {
     }
     if ((m = one.match(/^\.([\w-]+)$/))) return el.classList.contains(m[1]);
     if ((m = one.match(/^#([\w-]+)$/))) return el.id === m[1];
-    if ((m = one.match(/^\[([\w-]+)(?:=["']?([^"'\]]+)["']?)?\]$/))) return m[2] === undefined ? el.dataset[m[1]] != null : String(el.dataset[m[1]]) === m[2];
+    if ((m = one.match(/^\[([\w-]+)(?:=["']?([^"'\]]+)["']?)?\]$/))) { const v = dsGet(el, m[1]); return m[2] === undefined ? v != null : String(v) === m[2]; }
     // 复合选择器：.mm-node[data-id="a1"] 这种（先拆类名，再拆属性）
     const parts = one.split(/(?=[.#\[])/).filter(Boolean);
     if (parts.length > 1) {
@@ -155,7 +160,7 @@ function matches(el, sel) {
         let mm;
         if ((mm = p.match(/^\.([\w-]+)$/))) return el.classList.contains(mm[1]);
         if ((mm = p.match(/^#([\w-]+)$/))) return el.id === mm[1];
-        if ((mm = p.match(/^\[([\w-]+)(?:=["']?([^"'\]]+)["']?)?\]$/))) return mm[2] === undefined ? el.dataset[mm[1]] != null : String(el.dataset[mm[1]]) === mm[2];
+        if ((mm = p.match(/^\[([\w-]+)(?:=["']?([^"'\]]+)["']?)?\]$/))) { const v = dsGet(el, mm[1]); return mm[2] === undefined ? v != null : String(v) === mm[2]; }
         if (/^[a-zA-Z]+$/.test(p)) return el.tagName === p.toUpperCase();
         return false;
       });
@@ -331,6 +336,33 @@ new Promise((resolve) => {
 
   const B = bootAll();
   const M = B.Mindmap;
+  /* 给"按下/拖动落在某个节点上"算**与真实浏览器一致**的屏幕坐标：布局盒 + #mmStage 的 transform
+     （applyView 写的 translate/scale）现算。不写死 (100,100) 这类任意点 —— 那种点可能落在**别的**节点上，
+     会被八方向命中区当成"在别的节点边缘缩放"，断言就因夹具不真实而失败（D 组原来就踩这个）。 */
+  function view2screen() {
+    const tr = String(B.win.$("mmStage").style.transform || "");
+    const m = tr.match(/translate\((-?[\d.]+)px,\s*(-?[\d.]+)px\)\s*scale\(([\d.]+)\)/);
+    if (!m) return null;
+    const r = B.win.$("mmView").getBoundingClientRect();
+    return { k: Number(m[3]), ox: r.left + Number(m[1]), oy: r.top + Number(m[2]) };
+  }
+  /* 取一个"确实落在该节点上、又不被别的节点盒盖住、且离本节点边 ≥ 12px"的屏幕点。
+     两个必要性：① 真实浏览器里指针命中的是**最上层**那个节点，所以压在别人身上的点不能用来点它；
+     ② 贴着边会被八方向命中区当成缩放（命中区边=16px），断言就会跑到 resize 分支上去。 */
+  function pointOn(id) {
+    const st = M.state(), s = st.L && st.L.nodes.get(id), v = view2screen();
+    if (!s || s.x == null || !v) return null;
+    const others = [...st.L.nodes.values()].filter((t) => t.x != null && t.n.id !== id);
+    for (const [fx, fy] of [[.5, .5], [.4, .4], [.6, .6], [.35, .5], [.65, .5], [.5, .35], [.5, .65]]) {
+      const x = v.ox + (s.x + s.w * fx) * v.k, y = v.oy + (s.y + s.h * fy) * v.k;
+      const covered = others.some((t) => {
+        const bx = v.ox + t.x * v.k, by = v.oy + t.y * v.k, bw = t.w * v.k + 8, bh = t.h * v.k + 8;
+        return x >= bx - 8 && x <= bx + bw && y >= by - 8 && y <= by + bh;
+      });
+      if (!covered) return { x: Math.round(x), y: Math.round(y) };
+    }
+    return null;
+  }
   ok("\nvendor/mindmap.js 加载不抛错并导出 Mindmap", !!M && typeof M.state === "function" && typeof M.open === "function" && typeof M.create === "function");
   if (!M) { console.log("\n结果：提前中止"); process.exit(1); }
 
@@ -384,8 +416,9 @@ new Promise((resolve) => {
   const capW = (sBig.measW || 60) * 4, capH = (sBig.measH || 40) * 4;
   ok("过大的尺寸被夹到上限（≤ 文本测量值 ×4）", after[sizeIds[1]].w <= capW && after[sizeIds[1]].h <= capH,
     "w=" + after[sizeIds[1]].w + " cap=" + capW + " / h=" + after[sizeIds[1]].h + " cap=" + capH);
-  ok("[未覆盖] 缩放柄的鼠标交互（按下/拖动/松手）要靠真实浏览器验 —— 仿真台没有真实布局，元素命中不可信", false,
-    "数据层已验证：cur.size 生成、clamp 边界、落盘、二次打开不重算");
+  ok("[未覆盖] 缩放柄**可见元素**的命中（.mm-rs 本身是 CSS 目标）只能真实浏览器验", false,
+    "几何层/数据层已各自验证：八方向命中几何见 C4，cur.size 生成、clamp 边界、落盘、二次打开不重算见本组；" +
+    "把「按住边缘拖动改尺寸」做成端到端断言与 Chief 挂起的仿真台新活是同一件，本轮不做");
   M.open("legacy-map");   // 复位（把刚才被改的两条尺寸重新固化回合法值）
 
   console.log("\nB2. 拖动落点 → 进撤销栈 → 撤销回到拖动前的坐标");
@@ -406,16 +439,19 @@ new Promise((resolve) => {
     const found = sNode && !!B.doc.querySelector('#mmStage .mm-node[data-id="' + sNode.n.id + '"]');
     ok("仿真台里能找到 startNodeDrag 要查的那个元素（驱动手势的前提）", !!found,
       "stage=" + !!stageEl + " fixture=" + !!elB);
-    // 源码形状断言：这条能真正挡住"把撤销修复回退掉"。仿真台的元素模型（_flat/extraFlat 每次返回新副本）
-    // 让节点元素从 document 里查不到，所以手势的端到端行为在仿真台里驱动不了 —— 如实标"未覆盖"，不报假通过。
+    // 源码形状断言：这条能真正挡住"把撤销修复回退掉"。
+    // 选择性更正（本轮）：属性选择器修好之后，节点元素已经能从 document 查到，B 组的拖动端到端也真的跑起来了
+    // （落座标 / 落盘 / 重开不变都已是真断言）；仍然缺的是"**撤销**后坐标回到拖动前"这条端到端，
+    // 它和 Chief 挂起的仿真台新活是同一件 —— 如实标"未覆盖"，不报假通过。
     const src = require("fs").readFileSync(require("path").join(__dirname, "..", "vendor", "mindmap.js"), "utf8");
     const fn = src.slice(src.indexOf("function endNodeDrag("), src.indexOf("function endNodeDrag(") + 2000);
     ok("endNodeDrag 里拖到空白那条走 change()（进撤销栈），且坐标写入在 change 的 fn 内部",
       /if \(!tg\) \{ if \(px != null\) change\(putPos\); else draw\(\); return; \}/.test(fn) && /change\(\(\) => \{\s*putPos\(\);/.test(fn));
     ok("旧写法已消失：不再有 change() 之外直接写 curPos / 手动 storeLocal 的落点分支",
       !/if \(px != null && py != null && src0\) curPos\(\)\[d\.id\]/.test(fn) && !/\{ storeLocal\(cur\); scheduleCloud\(\); \} draw\(\); return; \}/.test(fn));
-    ok("[未覆盖] 拖拽手势的端到端行为（含撤销回到拖动前坐标）只能真实浏览器验", false,
-      "原因：仿真台元素模型让 #mmStage 下的节点元素无法从 document 查到，startNodeDrag 拿不到元素");
+    ok("[未覆盖] 「拖到空白 → 撤销 → 坐标回到拖动前」的端到端断言还没有", false,
+      "本轮更正：元素已查得到、拖动端到端已在 B 组跑通（落座标/落盘/重开不变），缺的只是撤销那一步；" +
+      "把它补成端到端属于 Chief 挂起的新活，当前靠上面两条源码形状断言盯着");
   }
 
   console.log("\nC3. 删除整棵子树 → pos/size 一起清（不残留）");
@@ -550,15 +586,19 @@ new Promise((resolve) => {
       Object.keys(M.state().cur.pos).length === posN);
     ok("源码里双击节点显式走 select(id) + startEdit(id)（不再依赖 350ms 判定当主路径）",
       /const nd = e\.target\.closest\("\.mm-node"\);\s*if \(nd\) \{ const id = nd\.dataset\.id; if \(id\) \{ select\(id\); startEdit\(id\); \} return; \}/.test(jsSrc));
-    ok("[未覆盖] “编辑框真的弹出来”只能真实浏览器验 —— 仿真台的 innerHTML 只是上次 set 的字符串，观测不到 startEdit 追加的 textarea", false,
-      "已用形状断言 + 选中行为 + 不新建 三条替代");
-    // 诊断：遗留的 350ms lastTap 判定在仿真台里到底会不会进编辑（只记录，不当通过/失败）
+    ok("[未覆盖] 「双击节点后 .mm-edit 输入框真的出现」这条断言本轮没做", false,
+      "本轮更正：属性选择器修好后它已经**可以**观测（实测连点后 stage 里 .mm-edit 数=1），" +
+      "把它补成断言属于 Chief 挂起的那批新活；当前用形状断言 + 选中行为 + 不新建 三条替代");
+    // 诊断（不是断言、不计入通过数）：遗留的 350ms lastTap 判定会不会进编辑
+    M.open("legacy-map");                                   // 重开换了一批 DOM 元素，先清掉旧舞台
+    B.win.$("mmStage").appendChild(fx);                     // 夹具重新挂到新舞台上
+    const editBefore = B.win.$("mmStage").querySelectorAll(".mm-edit").length;
     bubble(vwD, "pointerdown", { target: fx, clientX: 200, clientY: 200 });
     bubble(vwD, "pointerup", { target: fx, clientX: 200, clientY: 200 });
     bubble(vwD, "pointerdown", { target: fx, clientX: 200, clientY: 200 });
     bubble(vwD, "pointerup", { target: fx, clientX: 200, clientY: 200 });
-    ok("[诊断] 连点两次（<350ms）走 lastTap 判定：仅记录，不断言成败", true,
-      "仿真台观测不到 startEdit 追加的 textarea，故不在此判定（见上一条未覆盖说明）");
+    console.log("  · 诊断：连点两次后 stage 里 .mm-edit 数 " + editBefore + " → " +
+      B.win.$("mmStage").querySelectorAll(".mm-edit").length + "（遗留 350ms 判定确实会进编辑；未做成断言）");
 
     M.open("legacy-map");
     const posBefore = Object.keys(M.state().cur.pos).length, rootsBefore = M.state().cur.root.children.length;
@@ -585,16 +625,87 @@ new Promise((resolve) => {
     }
   }
 
+  console.log("\nC8. 收起按钮：一次点击就折叠（断言，防回退）");
+  {
+    /* 真实浏览器实测的缺陷（Chief，两次独立运行一致）：第一次点收起按钮什么都不发生，第二次才折叠。
+       代码里的两条链：
+         ① 文档级 click 委托（data-mm="fold"）—— 它的 target 是 mousedown/mouseup 的**共同祖先**，
+            按下在按钮、松手偏一点落到节点上时 target 变成 .mm-node，closest("[data-mm]") 是 null，这次折叠整条丢掉；
+         ② 按钮的"能不能被命中"原来由 :hover 放开 pointer-events 决定，按下那一刻不保证已吃到那个状态。
+       修法：① 折叠改走**指针**路径（pointerdown 记下、pointerup 原地松手才折），不再依赖 click 的 target；
+             ② CSS 让按钮常态就参与命中（视觉仍靠 opacity 隐藏），触屏维持不可见即不可点。
+       注意：仿真台不做真实命中测试，也不跑 CSS —— 所以 ② 只能做源码形状断言，行为那条靠 Chief 在浏览器复验。 */
+    const stageF = () => B.win.$("mmStage");
+    let tgt = null, nodeEl = null, btn = null;
+    const reset = () => {
+      const r = JSON.parse(B.localStorage.getItem("mm_map_legacy-map"));
+      (function w(n) { delete n.fold; (n.children || []).forEach(w); })(r.root);
+      B.localStorage.setItem("mm_map_legacy-map", JSON.stringify(r));
+      M.open("legacy-map");
+      tgt = M.state().cur.root.children.find((c) => (c.children || []).length);
+      nodeEl = stageF().querySelector('.mm-node[data-id="' + tgt.id + '"]');
+      btn = stageF().querySelector('.mm-node[data-id="' + tgt.id + '"] .mm-fold');
+      return { nodeEl, btn };
+    };
+    const vwF = B.doc.querySelector("#mmView");
+    const at = { clientX: 500, clientY: 300 };
+    reset();
+    ok("夹具：找得到带子节点的一级主题 " + tgt.id + " 的节点元素与收起按钮", !!nodeEl && !!btn,
+      "nodeEl=" + !!nodeEl + " btn=" + !!btn + " 按钮 data-id=" + (btn && btn.dataset.id));
+    // ① 委托路径仍在（键盘激活 / 别的调用点都靠它）
+    bubble(btn, "click", { target: btn });
+    ok("① click 落在按钮上（委托路径）→ 折叠一次", tgt.fold === true, "fold=" + tgt.fold);
+    // ② 真实浏览器那条序列：按下/松手在按钮上，随后 click 的 target 解析成节点 —— 原来这里整条丢掉
+    reset();
+    bubble(vwF, "pointerdown", Object.assign({ target: btn }, at));
+    bubble(vwF, "pointerup", Object.assign({ target: btn }, at));
+    bubble(vwF, "click", Object.assign({ target: nodeEl }, at));
+    ok("② 按下在按钮、click 目标解析成节点 → 仍然折一次、不是零次", tgt.fold === true, "fold=" + tgt.fold);
+    // ③ 浏览器真实的完整序列（click 也在按钮上）：指针路径折一次 + 委托路径被吞掉 → 净效果是"折一次"
+    reset();
+    bubble(vwF, "pointerdown", Object.assign({ target: btn }, at));
+    bubble(vwF, "pointerup", Object.assign({ target: btn }, at));
+    bubble(vwF, "click", Object.assign({ target: btn }, at));
+    ok("③ 指针路径 + 随后的 click 不双折（一按一展开会净效果为零）", tgt.fold === true, "fold=" + tgt.fold);
+    // ④ 按下后拖开 = 取消（与节点拖动同一套 6px 阈值），不许把"拖一下"当成折叠
+    reset();
+    bubble(vwF, "pointerdown", Object.assign({ target: btn }, at));
+    bubble(vwF, "pointermove", { target: btn, clientX: at.clientX + 40, clientY: at.clientY });
+    bubble(vwF, "pointerup", { target: btn, clientX: at.clientX + 40, clientY: at.clientY });
+    ok("④ 按下后拖开 → 不折叠（松手位置离按下 >6px）", tgt.fold !== true, "fold=" + tgt.fold);
+    // ⑤ 普通点选不被按钮抢走：按住/松手都在节点盒内部 → 只选中、不折叠
+    reset();
+    const plain = M.state().cur.root.children.find((c) => !(c.children || []).length) || tgt;   // 不带按钮的节点
+    const pEl = stageF().querySelector('.mm-node[data-id="' + plain.id + '"]');
+    bubble(vwF, "pointerdown", Object.assign({ target: pEl }, at));
+    bubble(vwF, "pointerup", Object.assign({ target: pEl }, at));
+    ok("⑤ 点在节点上（不是按钮）→ 只选中、不折叠，且 fold 仍是未设置",
+      M.state().sel === plain.id && plain.fold !== true, "sel=" + M.state().sel + " fold=" + plain.fold);
+    const jsF = require("fs").readFileSync(require("path").join(__dirname, "..", "vendor", "mindmap.js"), "utf8");
+    ok("源码形状：折叠在 pointerup 完成，不再只挂在 click 委托上",
+      /const fb = e\.target\.closest\("\[data-mm=fold\]"\)/.test(jsF) &&
+      /if \(e\.type === "pointercancel" \|\| f\.moved\) return;\s*foldSwallow = f\.id; toggleFold\(f\.id\);/.test(jsF));
+    const cssF = require("fs").readFileSync(require("path").join(__dirname, "..", "css", "mindmap-standalone.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+    const foldBase = (cssF.match(/\n\.mm-fold\s*\{([^}]*)\}/) || [])[1] || "";
+    ok("CSS 形状：.mm-fold 常态不再 pointer-events:none（命中不依赖 hover 是否已生效）",
+      foldBase.length > 0 && !/pointer-events\s*:\s*none/.test(foldBase), "base=" + foldBase.trim());
+    ok("CSS 形状：触屏（hover:none）仍是不可见即不可点",
+      /@media\s*\(hover:\s*none\)\s*\{[^}]*\.mm-fold\s*\{[^}]*pointer-events:\s*none/.test(cssF));
+    reset();
+  }
+
   console.log("\nD. 新建子节点 → 不盖住父节点");
   const st = M.state();
   const target = [...st.L.nodes.values()].find((s) => s.depth === 1);
   const nodeEl = B.doc.querySelector('.mm-node[data-id="' + target.n.id + '"]');
-  ok("[未覆盖] 仿真台还没接通深层元素查找，这条要靠真实浏览器验", false,
-    "已确认布局数据层没问题：见上面 C 组的不重叠断言");
+  ok("画布上找得到要点击的节点 " + target.n.id, !!nodeEl, "（属性选择器修好后这条才是真的）");
   if (nodeEl) {
-    bubble(nodeEl, "pointerdown", { clientX: 100, clientY: 100 });
-    bubble(nodeEl, "pointerup", { clientX: 100, clientY: 100 });
-    ok("点击后该节点被选中", M.state().sel === target.n.id);
+    const pt = pointOn(target.n.id) || { x: 100, y: 100 };
+    // 注意：仿真台的 fire() 会按"当前冒泡到哪个祖先"覆写 e.target，所以 target 必须显式传（真实浏览器里 target 就是按下的那个元素）
+    bubble(nodeEl, "pointerdown", { target: nodeEl, clientX: pt.x, clientY: pt.y });
+    bubble(nodeEl, "pointerup", { target: nodeEl, clientX: pt.x, clientY: pt.y });
+    ok("点击后该节点被选中", M.state().sel === target.n.id,
+      "sel=" + M.state().sel + " 点=" + JSON.stringify(pt) + " 编辑框=" + !!B.win.$("mmStage").querySelector(".mm-edit"));
     const childBtn = B.doc.querySelector('[data-mm="child"]');
     ok("编辑器里有「＋ 子主题」按钮", !!childBtn);
     const before = Object.keys(M.state().cur.pos).length;
