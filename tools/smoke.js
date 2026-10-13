@@ -454,7 +454,7 @@ new Promise((resolve) => {
     }
   }
 
-  console.log("\nC4. 缩放手柄压得住 .mm-edit（源码形状断言，防回退）");
+  console.log("\nC4. 八方向缩放：命中几何 / 光标 / 左上角跟随（源码形状断言，防回退）");
   {
     // Chief 在真实浏览器里实测到的缺陷：手柄中心点的 elementFromPoint 命中的是 .mm-edit，
     // 因为 .mm-rs 没有 z-index 而 .mm-edit 是 z-index:5 → 真实鼠标点不到手柄。
@@ -467,8 +467,25 @@ new Promise((resolve) => {
       return z ? Number(z[1]) : 0;
     };
     const zRs = zOf(".mm-rs"), zEdit = zOf(".mm-edit");
-    ok(".mm-rs 的 z-index 高于 .mm-edit（" + zRs + " > " + zEdit + "）—— 手柄点得到的前提",
+    ok("视觉握把仍压得住 .mm-edit（z-index " + zRs + " > " + zEdit + "）—— 但它不再承担命中",
       zRs > zEdit, "rs=" + zRs + " edit=" + zEdit);
+    // —— 八方向缩放的核心形状（Chief 派活 + 对话界面优化的交互规格）——
+    const jsTxt = require("fs").readFileSync(require("path").join(__dirname, "..", "vendor", "mindmap.js"), "utf8");
+    ok("命中阈值是屏幕像素常量 edge=8 / corner=12 / slop=2",
+      /RZ = \{ edge: 8, corner: 12, slop: 2 \}/.test(jsTxt));
+    const iCorner = jsTxt.indexOf("角优先，短路"), iEdge = jsTxt.indexOf("边：取更近的那条");
+    ok("角优先于边：角分支在边分支之前且短路返回", iCorner > 0 && iEdge > iCorner);
+    ok("判定全在屏幕空间（盒换算 + 指针减 rect，不除以 view.k）",
+      jsTxt.includes("s.x * view.k + view.x") && jsTxt.includes("px = cx - r.left"));
+    const cm = jsTxt.match(/const CURSOR = \{([^}]*)\}/);
+    const pairs = cm ? cm[1].split(",").map((s) => s.split(":").map((x) => x.trim().replace(/["']/g, ""))).filter((p) => p.length === 2) : [];
+    const uniq = new Set(pairs.map((p) => p[1]));
+    ok("光标映射：8 个方向只有 4 个不同 cursor（同一条对角线共用）",
+      pairs.length === 8 && uniq.size === 4, "方向=" + pairs.length + " 不同值=" + uniq.size);
+    ok("西/北方向拖动时左上角跟着走（写 cur.pos，否则是从中心缩）",
+      jsTxt.includes("W || N") && /curPos\(\)\[z\.id\] = \{ x: W \?/.test(jsTxt));
+    ok("拖动中锁定方向光标、松手解锁",
+      jsTxt.includes("vw.style.cursor = CURSOR[hz.dir]") && jsTxt.includes("vw.style.cursor = \"\""));
   }
 
   console.log("\nC5. 交互入口未被破坏（源码形状守卫）");

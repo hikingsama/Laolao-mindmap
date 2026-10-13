@@ -896,17 +896,46 @@
     const vw = $("mmView");
     const pts = new Map(); let drag = null, pinch = null, lastTap = { t: 0, id: null }, press = 0;
     const local = (e) => { const r = vw.getBoundingClientRect(); return { x: (e.clientX - r.left - view.x) / view.k, y: (e.clientY - r.top - view.y) / view.k, cx: e.clientX - r.left, cy: e.clientY - r.top }; };
+    /* 【独立版】八方向缩放的命中判定（全部按**屏幕像素**算，阈值不随 view.k 变形）：
+       优先级：角（短路）→ 边（两边都满足取更近的一条）→ 否则视为内部拖动（返回 null）。
+       小节点保护：m 取屏幕 w/h 的较小者；cornerEff=clamp(round(m*0.25),4,12)、edgeEff=clamp(round(m*0.15),3,8) 且 edgeEff ≤ cornerEff。
+       判定挂在**节点盒**上，不把 .mm-rs 当命中目标（8px 的 CSS 目标不可靠，且它钉在 right:0;bottom:0 只覆盖一个方向）。 */
+    const RZ = { edge: 8, corner: 12, slop: 2 };
+    const CURSOR = { n: "ns-resize", s: "ns-resize", e: "ew-resize", w: "ew-resize", nw: "nwse-resize", se: "nwse-resize", ne: "nesw-resize", sw: "nesw-resize" };
+    function zoneAt(cx, cy) {
+      if (!L || !cur) return null;
+      const r = vw.getBoundingClientRect(), px = cx - r.left, py = cy - r.top;
+      const list = [...L.nodes.values()];
+      const si = list.findIndex((s) => s.n.id === sel);
+      if (si > 0) { const s = list.splice(si, 1)[0]; list.unshift(s); }   // 选中节点优先
+      for (const s of list) {
+        if (s.x == null || s.y == null) continue;
+        const x0 = s.x * view.k + view.x, y0 = s.y * view.k + view.y, w = s.w * view.k, h = s.h * view.k;   // 屏幕坐标
+        if (px < x0 - RZ.slop || px > x0 + w + RZ.slop || py < y0 - RZ.slop || py > y0 + h + RZ.slop) continue;
+        const m = Math.min(w, h);
+        const cornerEff = Math.min(RZ.corner, Math.max(4, Math.round(m * 0.25)));
+        const edgeEff = Math.min(cornerEff, Math.min(RZ.edge, Math.max(3, Math.round(m * 0.15))));
+        const dL = px - x0, dR = x0 + w - px, dT = py - y0, dB = y0 + h - py;
+        if ((dL <= cornerEff || dR <= cornerEff) && (dT <= cornerEff || dB <= cornerEff)) {
+          return { id: s.n.id, dir: (dT <= dB ? "n" : "s") + (dL <= dR ? "w" : "e") };   // 角优先，短路
+        }
+        const cand = [[dL, "w"], [dR, "e"], [dT, "n"], [dB, "s"]].filter((c) => c[0] <= edgeEff).sort((a, b) => a[0] - b[0]);
+        if (cand.length) return { id: s.n.id, dir: cand[0][1] };                          // 边：取更近的那条
+      }
+      return null;
+    }
     vw.addEventListener("pointerdown", (e) => {
       if (e.target.closest(".mm-zoom, .mm-edit, [data-mm=fold], .mm-ic")) return;
-      /* 【独立版】缩放柄：按下即进入改尺寸模式。尺寸写进导图层 cur.size，不写节点字段；
-         松手才落盘（拖动过程中只重画，不进撤销历史）。 */
-      const rsEl = e.target.closest(".mm-rs");
-      if (rsEl && rsEl.dataset.id && cur) {
-        const s0 = L && L.nodes.get(rsEl.dataset.id);
-        if (s0) {
+      /* 【独立版】八方向缩放：命中按屏幕几何算（zoneAt），不再依赖 .mm-rs 元素 */
+      if (cur) {
+        const hz = zoneAt(e.clientX, e.clientY), s0 = hz && L && L.nodes.get(hz.id);
+        if (hz && s0) {
+          if (sel !== hz.id) select(hz.id);
           pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
-          drag = { moved: true, resize: { id: rsEl.dataset.id, w0: s0.w, h0: s0.h, mx: e.clientX, my: e.clientY,
-            snap: JSON.stringify(cur), ratio: s0.w / Math.max(1, s0.h), raf: 0 } };
+          drag = { moved: true, resize: { id: hz.id, dir: hz.dir, w0: s0.w, h0: s0.h, x0: s0.x, y0: s0.y,
+            mx: e.clientX, my: e.clientY, snap: JSON.stringify(cur),
+            ratio: s0.w / Math.max(1, s0.h), raf: 0 } };
+          vw.style.cursor = CURSOR[hz.dir];                 // 拖动过程中锁住方向光标，指针离开节点也不跳回
           try { vw.setPointerCapture(e.pointerId); } catch (err) {}
           return;
         }
@@ -925,14 +954,25 @@
       if (pinch && pts.size >= 2) { const [a, b] = [...pts.values()]; const r = vw.getBoundingClientRect(); zoomAt(pinch.k * Math.hypot(a.x - b.x, a.y - b.y) / pinch.d, pinch.cx - r.left, pinch.cy - r.top); return; }
       if (drag && drag.resize) {
         const z = drag.resize, k = view.k || 1;
-        let w = z.w0 + (e.clientX - z.mx) / k, h = z.h0 + (e.clientY - z.my) / k;
+        const dx = (e.clientX - z.mx) / k, dy = (e.clientY - z.my) / k;
+        const W = z.dir.indexOf("w") >= 0, E = z.dir.indexOf("e") >= 0, N = z.dir.indexOf("n") >= 0, S = z.dir.indexOf("s") >= 0;
+        let w = z.w0 + (E ? dx : W ? -dx : 0);        // 边只改一个维度
+        let h = z.h0 + (S ? dy : N ? -dy : 0);
         if (e.shiftKey) { if (Math.abs(w - z.w0) >= Math.abs(h - z.h0)) h = w / z.ratio; else w = h * z.ratio; }
         const s0 = L && L.nodes.get(z.id);
-        curSize()[z.id] = clampSize(w, h, s0 ? s0.measW : z.w0, s0 ? s0.measH : z.h0);
+        const cs = clampSize(w, h, s0 ? s0.measW : z.w0, s0 ? s0.measH : z.h0);
+        curSize()[z.id] = cs;
+        /* 西/北方向：左上角要跟着走，否则是从中心缩、不是从边缘缩 */
+        if (W || N) {
+          const p = curPos()[z.id] || { x: z.x0, y: z.y0 };
+          curPos()[z.id] = { x: W ? Math.round(z.x0 + (z.w0 - cs.w)) : p.x, y: N ? Math.round(z.y0 + (z.h0 - cs.h)) : p.y };
+        }
         if (z.raf) cancelAnimationFrame(z.raf);
         z.raf = requestAnimationFrame(() => { try { draw(); } catch (err) {} });   // 重画：连线端点跟着尺寸一起重锚
         return;
       }
+      /* 未在拖动：指针进入某方向命中区就换成对应光标（角 > 边；内部保持原光标） */
+      if (!drag) { const hz = zoneAt(e.clientX, e.clientY); vw.style.cursor = hz ? CURSOR[hz.dir] : ""; return; }
       if (!drag) return;
       const dx = e.clientX - drag.sx, dy = e.clientY - drag.sy;
       if (!drag.moved && Math.hypot(dx, dy) < 6) return;
@@ -948,6 +988,7 @@
       const d = drag; drag = null;
       if (d.resize) {
         /* 【独立版】松手才落盘：整段拖拽只进一条撤销历史（快照在按下时拍的） */
+        vw.style.cursor = "";                             // 解锁方向光标
         hist.push(d.resize.snap); if (hist.length > 120) hist.shift(); redo = [];
         try { storeLocal(cur); } catch (e) {}
         try { scheduleCloud(); } catch (e) {}
