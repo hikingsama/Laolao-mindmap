@@ -318,7 +318,7 @@ new Promise((resolve) => {
   });
   req.on("error", (e) => resolve({ error: e.message }));
   req.on("timeout", () => { req.destroy(); resolve({ error: "timeout" }); });
-}).then((r) => {
+}).then(async (r) => {
   console.log("A. 本地一条命令起服务 + 页面结构");
   ok("GET /index.html 返回 200", r.status === 200, r.error || ("status=" + r.status));
   ok("页面引用了 host-bridge / vendor / standalone 三个脚本",
@@ -847,6 +847,38 @@ new Promise((resolve) => {
     ok("撤销「新建子节点」后导图层里没有孤儿（坐标写在 change 的 fn 内的可观察后果）",
       afterUndo.length === 0 && Object.keys(M.state().cur.pos).length === n9,
       "孤儿=" + afterUndo.join(",") + " · pos 条数=" + Object.keys(M.state().cur.pos).length + "（期望回到 " + n9 + "）");
+    M.open("legacy-map");
+  }
+
+  console.log("\nC10. 备份文件导入：位置 / 尺寸一起搬回来（只搬树上存在的 id）");
+  {
+    B.localStorage.setItem("mm_map_legacy-map", JSON.stringify(LEGACY));
+    M.open("legacy-map");
+    const src = JSON.parse(B.localStorage.getItem("mm_map_legacy-map"));
+    const someId = Object.keys(src.pos)[0];
+    const backup = { app: "laolao-mindmap", v: 1, layout: "mind", theme: "fresh", line: "curve",
+      root: JSON.parse(JSON.stringify(src.root)), pos: Object.assign({}, src.pos), size: Object.assign({}, src.size) };
+    backup.pos[someId] = { x: 777, y: 888 };          // 改一处：让"搬回来了"可判别（播种碰巧一样也能过就不算证据）
+    backup.size[someId] = { w: 222, h: 111 };
+    backup.pos.GHOST = { x: 1, y: 2 };                // 不在树上 → 不许搬进来
+    backup.size.BADSHAPE = { w: -1, h: 0 };           // 形状不合法 → 不许搬进来
+    const input = B.doc.createElement("input");       // 列表页的 #mmFileOpen 只在列表态存在；
+    input.id = "mmFileOpen";                          // 这里直接造一个同 id 的输入元素，走的是同一条 readFile 链路
+    const jsImp = require("fs").readFileSync(require("path").join(__dirname, "..", "vendor", "mindmap.js"), "utf8");
+    ok("列表页里确实有「打开文件」入口（id=mmFileOpen）", /<input type="file" id="mmFileOpen"/.test(jsImp));
+    {
+      input.files = [{ size: 4096, name: "backup.json", text: async () => JSON.stringify(backup) }];
+      bubble(B.doc, "change", { target: input });
+      await new Promise((res) => setTimeout(res, 20));      // readFile 是 async，等微任务跑完
+      const c = M.state().cur;
+      ok("导入后坐标跟着搬回来了（" + someId + " = " + JSON.stringify(c.pos[someId]) + "）",
+        !!c.pos[someId] && c.pos[someId].x === 777 && c.pos[someId].y === 888);
+      ok("尺寸也跟着搬回来了（" + JSON.stringify(c.size[someId]) + "）",
+        !!c.size[someId] && c.size[someId].w === 222 && c.size[someId].h === 111);
+      ok("不在树上的 id 没有被搬进来（GHOST）", !c.pos.GHOST);
+      ok("形状不合法的尺寸没有被搬进来（BADSHAPE）", !c.size.BADSHAPE);
+      ok("导入完导图层里没有孤儿（搬进来的 id 都在树上）", layerOrphans(c).length === 0, layerOrphans(c).join(","));
+    }
     M.open("legacy-map");
   }
 

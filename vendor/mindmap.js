@@ -274,6 +274,29 @@
   function dropLayer(ids) {
     for (const t of LAYER_TABLES) { const d = cur[t]; if (!d) continue; for (const id of ids) delete d[id]; }
   }
+  /* 导入时把文件里的导图层条目搬到当前图上：**只搬树上存在的 id**（与 pruneLayer 同一判据），
+     并按表做形状校验（坏数据不进门）。表清单同样来自 LAYER_TABLES —— 森林加 origin 时在这里补一条校验即可。
+     为什么必须有它："位置就是数据"是这个项目的核心承诺；导出再导入把位置丢掉，用户会当成 bug。 */
+  const LAYER_OK = {
+    pos: (v) => !!validPos(v),
+    size: (v) => !!v && Number.isFinite(v.w) && Number.isFinite(v.h) && v.w > 0 && v.h > 0,
+  };
+  function applyLayer(src) {
+    if (!cur || !src) return 0;
+    const live = new Set(); walk(cur.root, (n) => live.add(n.id));
+    let n = 0;
+    for (const t of LAYER_TABLES) {
+      const from = src[t]; if (!from || typeof from !== "object") continue;
+      const ok = LAYER_OK[t], to = (cur[t] ||= {});
+      for (const id of Object.keys(from)) {
+        if (!live.has(id)) continue;
+        const v = from[id]; if (ok && !ok(v)) continue;
+        to[id] = clone(v); n++;
+      }
+    }
+    return n;
+  }
+
   /* 读取容错：把"表里有、树里没有"的孤儿条目清掉（返回清掉的条数）。
      治本在 del 的清理；这里救的是**本次修复之前**就已经被污染、存在盘上的旧图。 */
   function pruneLayer() {
@@ -912,7 +935,12 @@
         if (!m) throw new Error();
         create("blank", null, clone(m.root));
         if (m.layout) cur.layout = m.layout; if (m.theme) cur.theme = m.theme; if (m.line) cur.line = m.line;
-        storeLocal(cur); draw(); fit(); return;
+        /* 【独立版】位置/尺寸一起搬回来（只搬树上存在的 id）：备份文件里本来就有 pos/size，
+           不搬 = "导出再导入位置没了"，用户会当成 bug。 */
+        const moved = applyLayer(m);
+        storeLocal(cur); draw(); fit();
+        if (moved) tip("已导入，位置和尺寸也一起恢复了", 1600);
+        return;
       } catch (e) { tip("这个 JSON 不是思维导图备份"); return; }
     }
     const t = parseText(text); if (t.fromTitle) t.root.text = file.name.replace(/\.[^.]+$/, "");
