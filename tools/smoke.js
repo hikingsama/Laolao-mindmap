@@ -524,7 +524,7 @@ new Promise((resolve) => {
     ok("光标映射：8 个方向只有 4 个不同 cursor（同一条对角线共用）",
       pairs.length === 8 && uniq.size === 4, "方向=" + pairs.length + " 不同值=" + uniq.size);
     ok("西/北方向拖动时左上角跟着走（写 cur.pos，否则是从中心缩）",
-      jsTxt.includes("W || N") && /curPos\(\)\[z\.id\] = \{ x: W \?/.test(jsTxt));
+      jsTxt.includes("W || N") && /putLayerPos\(z\.id, \{ x: W \?/.test(jsTxt));
     ok("方向光标用**节点类** .mm-node.rz-x 压过 .mm-node{cursor:grab}（写在 #mmView 上赢不了）",
       jsTxt.includes("el.classList.add(\"rz-\" + dir)") && /\.mm-node\.rz-e, \.mm-node\.rz-w \{ cursor: ew-resize/.test(cssTxt));
     ok("不再把方向光标写在 #mmView 行内值上（那是“内部仍读到上一次 nwse-resize”的来源），松手清空",
@@ -545,7 +545,7 @@ new Promise((resolve) => {
     const addChildSrc = js.slice(js.indexOf("function addChild("), js.indexOf("function addSibling("));
     ok("addChild 用真实盒子当锚点（不用 estSize 估算；与 addSibling/addParent 写法对齐）",
       addChildSrc.includes("const ps = L && L.nodes.get(r.n.id)") && addChildSrc.includes("w: ps ? ps.w :"),
-      "含 estSize 直取宽度的旧写法=" + /giveBirth\(k, \{ x: \(L && L\.nodes\.get\(r\.n\.id\)\)/.test(addChildSrc));
+      "含 estSize 直取宽度的旧写法=" + /birthPos\(k, \{ x: \(L && L\.nodes\.get\(r\.n\.id\)\)/.test(addChildSrc));
   }
 
   console.log("\nC6. 折叠后后代不参与布局与渲染（真 bug 回归）");
@@ -735,6 +735,119 @@ new Promise((resolve) => {
     ok("CSS 形状：触屏（hover:none）仍是不可见即不可点",
       /@media\s*\(hover:\s*none\)\s*\{[^}]*\.mm-fold\s*\{[^}]*pointer-events:\s*none/.test(cssF));
     reset();
+  }
+
+  console.log("\nC9. 删整棵子树后的孤儿清理：导图层表里不许留下不在树上的 id");
+  /* 断言判据（Chief/提问bot 指定）：不是"被删的那个 id 不见了"，而是"表里不存在**任何**不在树上的 id"。
+     这条同时把"折叠后代"排除在孤儿之外 —— 折叠只是不进布局，节点仍在树上，它们的坐标条目必须保留。 */
+  const layerOrphans = (m) => {
+    if (!m || !m.root) return [];
+    const live = new Set();
+    (function w(n) { live.add(n.id); (n.children || []).forEach(w); })(m.root);
+    const bad = [];
+    for (const t of ["pos", "size"]) for (const id of Object.keys(m[t] || {})) if (!live.has(id)) bad.push(t + ":" + id);
+    return bad;
+  };
+  {
+    // 干净夹具：把盘上那份重置成不带 pos/size 的旧图，重开后 seedPos 会重新播种
+    B.localStorage.setItem("mm_map_legacy-map", JSON.stringify(LEGACY));
+    M.open("legacy-map");
+    const base = layerOrphans(M.state().cur);
+    ok("前提：删除前导图层里就没有孤儿（" + Object.keys(M.state().cur.pos).length + " 条坐标 / " +
+      Object.keys(M.state().cur.size).length + " 条尺寸）", base.length === 0, base.join(","));
+
+    const stage9 = () => B.win.$("mmStage");
+    const press = (el, pt) => { bubble(el, "pointerdown", { target: el, clientX: pt.x, clientY: pt.y }); bubble(el, "pointerup", { target: el, clientX: pt.x, clientY: pt.y }); };
+    const a1 = M.state().cur.root.children[0], leaf = (a1.children || [])[0];
+    const elLeaf = stage9().querySelector('.mm-node[data-id="' + leaf.id + '"]');
+    press(elLeaf, pointOn(leaf.id) || { x: 200, y: 200 });
+    ok("前提：选中一级主题 " + a1.id + " 的子节点 " + leaf.id, M.state().sel === leaf.id, "sel=" + M.state().sel);
+    bubble(B.doc.querySelector('[data-mm="child"]'), "click", { target: B.doc.querySelector('[data-mm="child"]') });   // 给它加一层 → 子树变三层
+    let lv = 0;
+    (function w(n, k) { lv = Math.max(lv, k); (n.children || []).forEach((c) => w(c, k + 1)); })(a1, 0);
+    ok("前提：这棵子树已经是**三层**（相对 " + a1.id + " 最大深度 " + lv + "）", lv >= 2, "lv=" + lv);
+
+    /* 重开一次再删：新建子节点时 startEdit 会开着编辑框，随后"按在 a1 上"会在 pointerdown 里触发
+       endEdit() → draw() → #mmStage 的 innerHTML 被重写，**按下时那个元素被从树上摘掉**。
+       真实浏览器里 pointerdown 已经 setPointerCapture 到 #mmView，指针事件照样送达；
+       而仿真台是按 parentNode 冒泡的，元素一离开树就断链（这类序列在仿真台里驱动不了）。
+       重开后 DOM 与编辑态都是干净的，按下-松手能被真实驱动。 */
+    M.open("legacy-map");
+    const a1b = M.state().cur.root.children[0];
+    const elA1 = stage9().querySelector('.mm-node[data-id="' + a1b.id + '"]');
+    press(elA1, pointOn(a1b.id) || { x: 200, y: 200 });
+    ok("前提：选中一级主题 " + a1b.id + "（准备删它整棵）", M.state().sel === a1b.id, "sel=" + M.state().sel);
+    const killIds = [];
+    (function w(n) { killIds.push(n.id); (n.children || []).forEach(w); })(a1b);
+    const delBtn = B.doc.querySelector('[data-mm="del"]');
+    bubble(delBtn, "click", { target: delBtn });
+    const st9 = M.state(), orphans = layerOrphans(st9.cur);
+    ok("删掉 " + a1b.id + " 的整棵子树（" + killIds.length + " 个节点、三层）后，pos/size 里**不存在任何不在树上的 id**",
+      orphans.length === 0, "孤儿=" + orphans.join(",") + " · 树大小=" + (() => { let n = 0; (function w(x) { n++; (x.children || []).forEach(w); })(st9.cur.root); return n; })());
+    ok("被删的那 " + killIds.length + " 个 id 的坐标/尺寸条目都清了",
+      killIds.every((id) => !st9.cur.pos[id] && !st9.cur.size[id]), killIds.filter((id) => st9.cur.pos[id] || st9.cur.size[id]).join(","));
+    ok("树里也确实没有这些节点了（删除本身生效）",
+      killIds.every((id) => !(function has(n) { return n.id === id || (n.children || []).some(has); })(st9.cur.root)));
+
+    /* 读取容错：手工往**盘上**塞孤儿条目（模拟本次修复之前就被污染、已经写进 localStorage 的旧图），
+       重开后必须被打开时的 pruneLayer 清掉并落回盘里。 */
+    const raw = JSON.parse(B.localStorage.getItem("mm_map_legacy-map"));
+    raw.pos = raw.pos || {}; raw.size = raw.size || {};
+    raw.pos.GHOST1 = { x: 123, y: 456 }; raw.size.GHOST1 = { w: 80, h: 50 }; raw.pos.GHOST2 = { x: 7, y: 8 };
+    B.localStorage.setItem("mm_map_legacy-map", JSON.stringify(raw));
+    M.open("legacy-map");
+    const stP = M.state(), afterOpen = layerOrphans(stP.cur);
+    ok("打开时清掉了盘上残留的孤儿条目（读取容错，治本仍在 del）", afterOpen.length === 0, afterOpen.join(","));
+    const a2 = stP.cur.root.children[0];
+    ok("没有误删在树上的节点坐标（" + a2.id + " 的坐标还在，共 " + Object.keys(stP.cur.pos).length + " 条）", !!stP.cur.pos[a2.id]);
+    const diskP = JSON.parse(B.localStorage.getItem("mm_map_legacy-map"));
+    ok("修好的结果落回盘上（GHOST1 / GHOST2 在盘上也没了）", !diskP.pos.GHOST1 && !diskP.pos.GHOST2 && !diskP.size.GHOST1);
+
+    /* 源码形状断言（**测的是写法，不是行为**）：坐标写入必须在 change() 的 fn 内，且全文只有 putLayerPos 一个写入口。
+       为什么必须有这条：change() 先快照再执行 fn —— 写在 fn 外，撤销就回不去，并会留下孤儿条目。 */
+    const src9raw = require("fs").readFileSync(require("path").join(__dirname, "..", "vendor", "mindmap.js"), "utf8");
+    const src9 = src9raw.replace(/\/\*[\s\S]*?\*\//g, "");           // 剥注释，免得注释里的示意写法污染判定
+    const fnSrc = (name) => { const i = src9.indexOf("function " + name + "("); if (i < 0) return ""; const j = src9.indexOf("\n  function ", i + 1); return src9.slice(i, j < 0 ? src9.length : j); };
+    ok("（源码形状）坐标写入只有一个入口：全文只有 putLayerPos 内出现 curPos()[…] =",
+      (src9.match(/curPos\(\)\[[^\]]*\]\s*=/g) || []).length === 1 &&
+      /function putLayerPos\(id, p\) \{ if \(p\) curPos\(\)\[id\] = p; \}/.test(src9));
+    const shape = {
+      endNodeDrag: [/change\(putPos\)/.test(fnSrc("endNodeDrag")), /const putPos = \(\) => \{ if \(px != null && py != null\) putLayerPos\(d\.id/.test(fnSrc("endNodeDrag"))],
+      addChild: [/change\(\(\) => \{\s*putLayerPos\(k\.id, at\);/.test(fnSrc("addChild"))],
+      addSibling: [/change\(\(\) => \{\s*putLayerPos\(k\.id, at\);/.test(fnSrc("addSibling"))],
+      addParent: [/change\(\(\) => \{\s*putLayerPos\(k\.id, at\);/.test(fnSrc("addParent"))],
+    };
+    for (const [nm, pats] of Object.entries(shape)) {
+      const body = fnSrc(nm);
+      ok("（源码形状）" + nm + "：写入在 change 的 fn 内", !!body && pats.every((p) => p) && body.length > 0,
+        "命中=" + pats.map((p, i) => (p ? i : "-" + i)).join("") + " 长度=" + body.length);
+      ok("（源码形状）" + nm + "：不存在 fn 外的直接 curPos()[…] = 写入",
+        !!body && !/curPos\(\)\[[^\]]*\]\s*=/.test(body));
+    }
+    ok("（源码形状）要清理的导图层表清单是常量 LAYER_TABLES = ['pos','size']，del 调 dropLayer（森林加 origin 只改这一处）",
+      /const LAYER_TABLES = \["pos", "size"\];/.test(src9) && /dropLayer\(kill\)/.test(fnSrc("del")) &&
+      /for \(const t of LAYER_TABLES\)/.test(fnSrc("dropLayer")));
+    ok("（源码形状）birthPos 是纯计算（不再自己写 curPos），spawnPos 仍在 change 之外算",
+      /function birthPos\(anchor, at\) \{\s*return at \|\| spawnPos\(anchor\);/.test(src9) && !/function birthPos[\s\S]{0,200}putLayerPos/.test(src9));
+
+    /* 行为断言（不是形状）：新建 → 撤销 → 不留孤儿。
+       这是"写入必须在 change 的 fn 内"的**可观察后果**：change 先快照再执行 fn，
+       若坐标在 fn 外先写，快照里就含了新节点的条目，撤销后它变成孤儿。 */
+    M.open("legacy-map");
+    const t9 = M.state().cur.root.children[0];
+    const n9 = Object.keys(M.state().cur.pos).length;
+    press(stage9().querySelector('.mm-node[data-id="' + t9.id + '"]'), pointOn(t9.id) || { x: 200, y: 200 });
+    const cb9 = B.doc.querySelector('[data-mm="child"]');
+    bubble(cb9, "click", { target: cb9 });
+    const n9b = Object.keys(M.state().cur.pos).length;
+    ok("新建子节点让 pos 多一条（" + n9 + " → " + n9b + "）", n9b === n9 + 1);
+    const ub9 = B.doc.querySelector('[data-mm="undo"]');
+    if (ub9) bubble(ub9, "click", { target: ub9 });
+    const afterUndo = layerOrphans(M.state().cur);
+    ok("撤销「新建子节点」后导图层里没有孤儿（坐标写在 change 的 fn 内的可观察后果）",
+      afterUndo.length === 0 && Object.keys(M.state().cur.pos).length === n9,
+      "孤儿=" + afterUndo.join(",") + " · pos 条数=" + Object.keys(M.state().cur.pos).length + "（期望回到 " + n9 + "）");
+    M.open("legacy-map");
   }
 
   console.log("\nD. 新建子节点 → 不盖住父节点");
