@@ -77,15 +77,12 @@
   function newMap(tpl, title) {
     const root = fill(clone((TEMPLATES.find((t) => t.id === tpl) || TEMPLATES[0]).make()));
     if (title) root.text = title;
-    /* 【独立版·森林】新图 = 一丛 roots:[root]，并立刻给这一丛写 origin（契约 §3 第 2 条）。 */
-    return { id: uid(), title: title || root.text, layout: pref.layout, line: pref.line, theme: pref.theme, roots: [root], origin: { [root.id]: { x: 0, y: 0 } }, v: 1 };
+    return { id: uid(), title: title || root.text, layout: pref.layout, line: pref.line, theme: pref.theme, root, v: 1 };
   }
-  /* 【独立版·森林】统计一张图的节点数：容忍还没迁移的旧图（只有 root）。 */
-  const countRoots = (m) => (Array.isArray(m && m.roots) ? m.roots : m && m.root ? [m.root] : []).reduce((a, r) => a + count(r), 0);
   function storeLocal(m) {
     const e = idxGet(m.id) || {};
     const ok = lsSet(mapKey(m.id), m);
-    idxPut({ id: m.id, title: m.title, updated: Date.now(), nodes: countRoots(m), version: e.version || 0, local: e.local ?? true, dirty: true, uid: me() ? me().id : e.uid || null });
+    idxPut({ id: m.id, title: m.title, updated: Date.now(), nodes: count(m.root), version: e.version || 0, local: e.local ?? true, dirty: true, uid: me() ? me().id : e.uid || null });
     if (!ok) tip("这台设备的存储空间满了：登录后导图会存到账号里", 4000);
   }
 
@@ -102,12 +99,12 @@
     try {
       for (const e of index.filter((x) => x.dirty && (!x.uid || x.uid === me().id))) {
         const m = lsGet(mapKey(e.id), null); if (!m) { e.dirty = false; continue; }
-        const r = await rpc("mm_save", { p_id: m.id, p_title: m.title, p_data: m, p_base: e.local ? null : e.version || null, p_nodes: countRoots(m) });
+        const r = await rpc("mm_save", { p_id: m.id, p_title: m.title, p_data: m, p_base: e.local ? null : e.version || null, p_nodes: count(m.root) });
         if (r && r.ok) { e.version = r.version; e.local = false; e.dirty = false; e.uid = me().id; }
         else if (r && r.conflict) {
           // 别的设备先改了：我这份另存为「冲突副本」，当前打开的换成账号里的最新版
           const copy = { ...clone(m), id: uid(), title: m.title + "（冲突副本）" };
-          lsSet(mapKey(copy.id), copy); index.unshift({ id: copy.id, title: copy.title, updated: Date.now(), nodes: countRoots(copy), version: 0, local: true, dirty: true, uid: me().id });
+          lsSet(mapKey(copy.id), copy); index.unshift({ id: copy.id, title: copy.title, updated: Date.now(), nodes: count(copy.root), version: 0, local: true, dirty: true, uid: me().id });
           e.dirty = false; e.version = 0;
           tip("这张图在别的设备上也改过：账号里的最新版已经打开，你刚才这份另存为「冲突副本」", 6000);
           if (cur && cur.id === m.id) { await openMap(m.id, true); }
@@ -157,25 +154,18 @@
   let foldDown = null, foldSwallow = null;
   let L = null;   // 最近一次布局：{nodes: Map(id → {n, x, y, w, h, depth, side, color, parent}), bounds}
   const node = (id) => (L && L.nodes.get(id) ? L.nodes.get(id).n : null);
-  /* 【独立版·森林】findNode：不给子树就**遍历所有丛**找（契约 §2.1）。跨树 id 唯一由 migrateMap 保证。 */
-  function findNode(id, n = null, p = null) {
-    if (n) { if (n.id === id) return { n, p }; for (const c of n.children || []) { const r = findNode(id, c, n); if (r) return r; } return null; }
-    for (const r of roots()) { const hit = findNode(id, r, null); if (hit) return hit; }
-    return null;
-  }
+  function findNode(id, n = cur && cur.root, p = null) { if (!n) return null; if (n.id === id) return { n, p }; for (const c of n.children || []) { const r = findNode(id, c, n); if (r) return r; } return null; }
   const isAncestor = (a, b) => { let r = findNode(b); while (r && r.p) { if (r.p.id === a) return true; r = findNode(r.p.id); } return false; };
 
   function change(fn, keepSel) {
     if (!cur) return;
     hist.push(JSON.stringify(cur)); if (hist.length > 120) hist.shift(); redo = [];
     fn();
-    /* 【独立版·森林】导图标题跟着**第一丛**的根文字走；没有丛时不改写用户设过的标题（空画布是合法状态）。 */
-    const r0 = firstRoot();
-    if (r0) cur.title = String(r0.text || "未命名导图").split("\n")[0].slice(0, 80) || "未命名导图";
+    cur.title = String(cur.root.text || "未命名导图").split("\n")[0].slice(0, 80) || "未命名导图";
     storeLocal(cur); scheduleCloud(); draw();
   }
-  function undo() { if (!hist.length) return; redo.push(JSON.stringify(cur)); cur = JSON.parse(hist.pop()); migrateMap(cur); if (!findNode(sel)) sel = firstRootId(); storeLocal(cur); scheduleCloud(); draw(); tip("已撤销", 1200); }
-  function redoIt() { if (!redo.length) return; hist.push(JSON.stringify(cur)); cur = JSON.parse(redo.pop()); migrateMap(cur); if (!findNode(sel)) sel = firstRootId(); storeLocal(cur); scheduleCloud(); draw(); }
+  function undo() { if (!hist.length) return; redo.push(JSON.stringify(cur)); cur = JSON.parse(hist.pop()); if (!findNode(sel)) sel = cur.root.id; storeLocal(cur); scheduleCloud(); draw(); tip("已撤销", 1200); }
+  function redoIt() { if (!redo.length) return; hist.push(JSON.stringify(cur)); cur = JSON.parse(redo.pop()); if (!findNode(sel)) sel = cur.root.id; storeLocal(cur); scheduleCloud(); draw(); }
 
   // ---------------- 量字 + 布局 ----------------
   const cvs = document.createElement("canvas").getContext("2d");
@@ -202,12 +192,8 @@
     // +6：边框和字体渲染的误差，免得最后一个字被挤到下一行
     return { w: Math.ceil(Math.max(depth === 0 ? 90 : 34, wr.w + extra) + padX * 2 + 6), h: wr.lines.length * lineH(depth) + padY * 2 + 2, lines: wr.lines, font, padX, padY };
   }
-  /* 【独立版·森林】单树布局：**纯函数**，只按传进来的那棵树从自己的原点 (0,0) 排。
-     丛与丛之间互不影响 —— 合并层（layoutWithPos）负责逐树调用 + 叠加 cur.origin。 */
-  function layoutAuto(tree) {
-    const root = tree;
+  function layoutAuto() {
     const th = THEMES[cur.theme] || THEMES.fresh, nodes = new Map(), lay = cur.layout || "mind";
-    if (!root) return { nodes, th, bounds: { x0: 0, y0: 0, x1: 0, y1: 0 } };
     const HG = lay === "down" ? 26 : 46, VG = lay === "down" ? 56 : 14;
     // 1) 量大小、记颜色
     (function prep(n, depth, color, parent) {
@@ -223,7 +209,7 @@
          全都只看得见可见节点 —— 修掉"收起后连线没了、子节点还在"（原来只有连线消失，后代照样画）。
          cur.pos / cur.size 里这些后代的条目**故意保留**：它们是"用户摆过的位置"，展开时直接用回去。 */
       if (!n.fold) (n.children || []).forEach((k, i) => prep(k, depth + 1, depth === 0 ? (k.color || th.colors[i % th.colors.length]) : c, n));
-    })(root, 0, th.root, null);
+    })(cur.root, 0, th.root, null);
     const S = (id) => nodes.get(id);
     // 2) 子树大小
     const span = (n) => { const s = S(n.id); if (s.span != null) return s.span;
@@ -246,7 +232,7 @@
       const rowH = Math.max(...s.kids.map((k) => S(k.id).h), 0);
       for (const k of s.kids) { placeV(k, x, y + s.h + VG + (rowH - S(k.id).h) * 0); x += span(k) + HG; }
     }
-    const rs = S(root.id);
+    const root = cur.root, rs = S(root.id);
     if (lay === "down") placeV(root, 0, 0);
     else if (lay === "right") placeH(root, 0, 0, 1);
     else {
@@ -279,18 +265,8 @@
     return cur.pos;
   }
   /* 【独立版】导图层里"按节点 id 存条目"的表清单 —— 删除一律按它清。
-     `origin`（每丛整体偏移，键 = 丛根节点 id）与其他表同层同生命周期，所以也在这里。
-     **森林下新增表只改这一处 + LAYER_OK 补一条校验。** */
-  const LAYER_TABLES = ["pos", "size", "origin"];
-  /* 【独立版·森林】"一张图 = 多棵树（丛）"的公共入口：避免到处散落 `roots[0]` 这种隐式假设。
-     · cur.roots 允许为空数组（契约 §1.2）——空画布是一个必须被正确处理的状态
-     · 根节点没有 parent；丛与丛之间没有任何关系 */
-  const roots = () => (cur && Array.isArray(cur.roots) ? cur.roots : []);
-  const firstRoot = () => roots()[0] || null;
-  const firstRootId = () => { const r = firstRoot(); return r ? r.id : null; };
-  const isRootNode = (v) => { const id = v && typeof v === "object" ? v.id : v; return !!id && roots().some((r) => r.id === id); };
-  const curOrigin = () => (cur.origin ||= {});
-  const originOf = (rootId) => { const o = cur && cur.origin && cur.origin[rootId]; return { x: o && Number.isFinite(o.x) ? o.x : 0, y: o && Number.isFinite(o.y) ? o.y : 0 }; };
+     森林要加的 cur.origin（每丛整体偏移）将来**只加在这里一处**，del 不用改。 */
+  const LAYER_TABLES = ["pos", "size"];
   /* 【独立版】**唯一的坐标写入口**：全文只有这里出现 `curPos()[…] = …`。
      调用方必须在 change() 的 fn 内调它（change 先快照再执行 fn，写在 fn 外就撤不回去）。 */
   function putLayerPos(id, p) { if (p) curPos()[id] = p; }
@@ -304,12 +280,10 @@
   const LAYER_OK = {
     pos: (v) => !!validPos(v),
     size: (v) => !!v && Number.isFinite(v.w) && Number.isFinite(v.h) && v.w > 0 && v.h > 0,
-    origin: (v) => !!v && Number.isFinite(v.x) && Number.isFinite(v.y),
   };
   function applyLayer(src) {
     if (!cur || !src) return 0;
-    const live = new Set();
-    for (const r of roots()) walk(r, (n) => live.add(n.id));
+    const live = new Set(); walk(cur.root, (n) => live.add(n.id));
     let n = 0;
     for (const t of LAYER_TABLES) {
       const from = src[t]; if (!from || typeof from !== "object") continue;
@@ -323,41 +297,11 @@
     return n;
   }
 
-  /* 【独立版·森林】旧图迁移 + 跨树 id 去重（契约 §1.2 / 验收 G·M·N）。
-     · root → roots:[root]，**不保留旧字段 root**（留着就是两份真相）；同时给该丛写 origin[根]={0,0}
-     · origin 的键集合必须 ⊆ 丛根 id 集合：缺的补 {0,0}，多的（孤儿）清掉
-     · 节点 id 全局唯一：跨树重复就重发一个 id，并把该 id 的导图层条目一起挪到新 id 上
-     返回"有没有改过"，调用方决定落不落盘。 */
-  function migrateMap(m) {
-    if (!m || typeof m !== "object") return false;
-    let changed = false;
-    if (!Array.isArray(m.roots)) { m.roots = m.root ? [m.root] : []; changed = true; }
-    if ("root" in m) { delete m.root; changed = true; }
-    if (!m.origin || typeof m.origin !== "object" || Array.isArray(m.origin)) { m.origin = {}; changed = true; }
-    const seen = new Set();
-    for (const r of m.roots) {
-      (function w(n) {
-        if (!n || typeof n !== "object") return;
-        if (!n.id || seen.has(n.id)) {
-          const old = n.id; n.id = nid();
-          for (const t of LAYER_TABLES) if (old && m[t] && m[t][old]) m[t][n.id] = m[t][old];
-          changed = true;
-        }
-        seen.add(n.id);
-        (n.children || []).forEach(w);
-      })(r);
-    }
-    for (const r of m.roots) if (!LAYER_OK.origin(m.origin[r.id])) { m.origin[r.id] = { x: 0, y: 0 }; changed = true; }
-    for (const id of Object.keys(m.origin)) if (!m.roots.some((r) => r.id === id)) { delete m.origin[id]; changed = true; }
-    return changed;
-  }
-
   /* 读取容错：把"表里有、树里没有"的孤儿条目清掉（返回清掉的条数）。
      治本在 del 的清理；这里救的是**本次修复之前**就已经被污染、存在盘上的旧图。 */
   function pruneLayer() {
-    if (!cur) return 0;
-    const live = new Set();
-    for (const r of roots()) walk(r, (n) => live.add(n.id));
+    if (!cur || !cur.root) return 0;
+    const live = new Set(); walk(cur.root, (n) => live.add(n.id));
     let n = 0;
     for (const t of LAYER_TABLES) {
       const d = cur[t]; if (!d) continue;
@@ -408,85 +352,59 @@
      sizeDirty = 本次有尺寸新写入或被 clamp 修正，需要落盘（一趟布局最多落一次） */
   let sizeDirty = false;
 
-  /* 【独立版·森林】合并层：**逐树布局 + 偏移叠加**（契约 §2.2）。
-     `layoutAuto` / `span` / `placeH` / `placeV` 一行不改（它们是单树纯函数），改动只发生在这里：
-       1) 每棵树各自 `layoutAuto(树)` → 该树内部坐标
-       2) 加上这棵树的 `cur.origin[根id]` → 画布坐标（没有 origin 就是 {0,0}）
-       3) 再用 `cur.pos` 覆写（pos 是**绝对**画布坐标，不是树内相对坐标）
-       4) 树内"父节点动过的子节点跟着动"、以及"没坐标的节点让开"都**按树各跑一次**
-          —— 丛间不干涉：别的树的节点根本不在这张子 Map 里，nudgeFree 看不见它们
-       5) 所有树的 nodes 合进同一张 Map（节点 id 全局唯一，天然不冲突），bounds 取并集
-     sizeDirty 仍是一趟布局最多落一次盘。 */
   function layoutWithPos() {
-    const pos = curPos(), merged = new Map();
-    let th = THEMES[cur.theme] || THEMES.fresh;
-    let b = { x0: 1e9, y0: 1e9, x1: -1e9, y1: -1e9 };
+    const lay = layoutAuto(), pos = curPos(), fixed = new Set();
     if (sizeDirty) { sizeDirty = false; try { storeLocal(cur); } catch (e) {} }
-    for (const tree of roots()) {
-      const lay = layoutAuto(tree);
-      if (lay.th) th = lay.th;
-      const o = originOf(tree.id);
-      for (const [id, s] of lay.nodes) { s.x += o.x; s.y += o.y; merged.set(id, s); }
-      const fixed = new Set();
-      for (const [id, s] of lay.nodes) if (validPos(pos[id])) fixed.add(id);
-      // 1) 有坐标的：直接用坐标，并记下相对"布局 + origin"的位移
-      const delta = {};
-      for (const [id, s] of lay.nodes) {
-        if (!fixed.has(id)) continue;
-        const p = pos[id], ds = deltaOf(delta, id);
-        ds.dx = p.x - s.x; ds.dy = p.y - s.y;
-        s.x = p.x; s.y = p.y;
-      }
-      // 2) 父节点有坐标的子节点：跟着父节点一起挪（父节点没动就一点不动）
-      const kidsOf = {};
-      for (const [id, s] of lay.nodes) {
-        const pid = s.parent;
-        if (!pid || !fixed.has(pid)) continue;
-        (kidsOf[pid] || (kidsOf[pid] = [])).push([id, s]);
-      }
-      (function move(depth) {
-        if (depth > 200) return;
-        let moved = false;
-        for (const pid of Object.keys(kidsOf)) {
-          const ps = lay.nodes.get(pid);
-          if (ps.done) continue;
-          ps.done = true; moved = true;
-          const pd = deltaOf(delta, pid);
-          for (const [id, s] of kidsOf[pid]) {
-            if (fixed.has(id)) continue;
-            const ds = deltaOf(delta, id);
-            ds.dx = pd.dx; ds.dy = pd.dy;
-            s.x += ds.dx; s.y += ds.dy;
-          }
-        }
-        if (moved) move(depth + 1);
-      })(0);
-      // 3) 没有坐标的节点：**只在本树内**让开已经摆好的
-      nudgeFree(lay.nodes, pos);
-      // 4) 并入全局外框
-      for (const s of lay.nodes.values()) {
-        if (s.x == null) continue;
-        b.x0 = Math.min(b.x0, s.x); b.y0 = Math.min(b.y0, s.y);
-        b.x1 = Math.max(b.x1, s.x + s.w); b.y1 = Math.max(b.y1, s.y + s.h);
-      }
+    for (const [id, s] of lay.nodes) if (validPos(pos[id])) fixed.add(id);
+    // 1) 有坐标的：直接用坐标，并记下相对旧布局的位移
+    const delta = {};
+    for (const [id, s] of lay.nodes) {
+      if (!fixed.has(id)) continue;
+      const p = pos[id], ds = deltaOf(delta, id);
+      ds.dx = p.x - s.x; ds.dy = p.y - s.y;
+      s.x = p.x; s.y = p.y;
     }
-    if (!merged.size) b = { x0: 0, y0: 0, x1: 0, y1: 0 };     // 空画布（cur.roots 允许是 []）
-    return { nodes: merged, th, bounds: b };
+    // 2) 父节点有坐标的子节点：跟着父节点一起挪（父节点没动就一点不动）
+    const kidsOf = {};
+    for (const [id, s] of lay.nodes) {
+      const pid = s.parent;
+      if (!pid || !fixed.has(pid)) continue;
+      (kidsOf[pid] || (kidsOf[pid] = [])).push([id, s]);
+    }
+    (function move(depth) {
+      if (depth > 200) return;
+      let moved = false;
+      for (const pid of Object.keys(kidsOf)) {
+        const ps = lay.nodes.get(pid);
+        if (ps.done) continue;
+        ps.done = true; moved = true;
+        const pd = deltaOf(delta, pid);
+        for (const [id, s] of kidsOf[pid]) {
+          if (fixed.has(id)) continue;
+          const ds = deltaOf(delta, id);
+          ds.dx = pd.dx; ds.dy = pd.dy;
+          s.x += ds.dx; s.y += ds.dy;
+        }
+      }
+      if (moved) move(depth + 1);
+    })(0);
+    // 3) 没有坐标的节点：让开已经摆好的
+    nudgeFree(lay.nodes, pos);
+    // 4) 重新算外框
+    let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+    for (const s of lay.nodes.values()) { if (s.x == null) continue; x0 = Math.min(x0, s.x); y0 = Math.min(y0, s.y); x1 = Math.max(x1, s.x + s.w); y1 = Math.max(y1, s.y + s.h); }
+    lay.bounds = { x0, y0, x1, y1 };
+    return lay;
   }
 
   // 迁移播种：旧导图第一次打开（没有 pos）→ 用旧布局算法算一遍写进 pos
   // 坐标原点对齐到中心主题：根节点落在 (0,0)，整张图往左上方长也一样能看清
-  /* 【独立版·森林】逐树播种：每棵树的根落到**该树自己的 origin**（旧图 origin={0,0}，与从前完全一致），
-     树内其余节点按该树布局排、整体平移到这个原点。pos 存的是绝对画布坐标（契约 §2.2 第 2 步）。 */
   function seedPos() {
     const p = curPos();
     if (Object.keys(p).length) return false;
-    for (const tree of roots()) {
-      const lay = layoutAuto(tree), rs = lay.nodes.get(tree.id);
-      const o = originOf(tree.id);
-      const ox = rs && rs.x != null ? rs.x - o.x : 0, oy = rs && rs.y != null ? rs.y - o.y : 0;
-      for (const [id, s] of lay.nodes) if (s.x != null && s.y != null) p[id] = { x: Math.round(s.x - ox), y: Math.round(s.y - oy) };
-    }
+    const lay = layoutAuto(), rs = lay.nodes.get(cur.root.id);
+    const ox = rs && rs.x != null ? rs.x : 0, oy = rs && rs.y != null ? rs.y : 0;
+    for (const [id, s] of lay.nodes) if (s.x != null && s.y != null) p[id] = { x: Math.round(s.x - ox), y: Math.round(s.y - oy) };
     try { storeLocal(cur); } catch (e) {}     // 立刻落盘：之后打开就是"已固化"的图
     return true;
   }
@@ -582,12 +500,10 @@
     const want = Math.min(r.width / w, r.height / h), minK = isMobile() ? 0.6 : 0.2;
     view.k = Math.max(minK, Math.min(1.4, want));
     if (want < minK) {
-      // 手机上整张图放不下：不缩得看不清，以**第一丛的根**为准，其余的左右拖着看
-      const r0 = firstRoot(), s = r0 ? L.nodes.get(r0.id) : null, lay = cur.layout;
-      if (s) {
-        const cx = lay === "right" ? s.x + Math.min(r.width / view.k / 2 - 20, (b.x1 - b.x0) / 2) : s.x + s.w / 2, cy = lay === "down" ? s.y + Math.min(r.height / view.k / 2 - 20, (b.y1 - b.y0) / 2) : s.y + s.h / 2;
-        view.x = r.width / 2 - cx * view.k; view.y = r.height / 2 - cy * view.k;
-      } else { view.x = r.width / 2 - ((b.x0 + b.x1) / 2) * view.k; view.y = r.height / 2 - ((b.y0 + b.y1) / 2) * view.k; }
+      // 手机上整张图放不下：不缩得看不清，以中心主题为准，其余的左右拖着看
+      const s = L.nodes.get(cur.root.id), lay = cur.layout;
+      const cx = lay === "right" ? s.x + Math.min(r.width / view.k / 2 - 20, (b.x1 - b.x0) / 2) : s.x + s.w / 2, cy = lay === "down" ? s.y + Math.min(r.height / view.k / 2 - 20, (b.y1 - b.y0) / 2) : s.y + s.h / 2;
+      view.x = r.width / 2 - cx * view.k; view.y = r.height / 2 - cy * view.k;
     } else { view.x = r.width / 2 - ((b.x0 + b.x1) / 2) * view.k; view.y = r.height / 2 - ((b.y0 + b.y1) / 2) * view.k; }
     if (anim) { const st = $("mmStage"); st.classList.add("anim"); setTimeout(() => st.classList.remove("anim"), 260); }
     applyView();
@@ -626,7 +542,7 @@
   }
   function addSibling(id, before) {
     const r = findNode(id || sel); if (!r || !r.p) return addChild(id);
-    const k = { id: nid(), text: isRootNode(r.p) ? "分支主题" : "子主题", children: [] };
+    const k = { id: nid(), text: r.p === cur.root ? "分支主题" : "子主题", children: [] };
     const ps = L && L.nodes.get(r.n.id);
     const at = birthPos({ x: ps ? ps.x : 0, y: ps ? ps.y : 0, w: ps ? ps.w : 150, h: ps ? ps.h : 32 });   // 【独立版】出生位置立刻固化
     change(() => {
@@ -647,20 +563,7 @@
     sel = k.id; draw(); startEdit(k.id, true);
   }
   function del(id) {
-    const r = findNode(id || sel); if (!r) return;
-    /* 【独立版·森林】删**丛根** = 删整丛（契约 §3 第 6 条 / 验收 J）：
-       把整棵的 id 从所有导图层表里清掉（含 origin[根]），再从 cur.roots 移除。
-       删到没有丛就是空画布（`roots: []` 是合法状态，允许；不自动补节点）。 */
-    if (!r.p) {
-      const killRoot = [];
-      walk(r.n, (n) => killRoot.push(n.id));
-      change(() => {
-        const i = cur.roots.indexOf(r.n); if (i >= 0) cur.roots.splice(i, 1);
-        dropLayer(killRoot);
-      });
-      const nx0 = firstRootId(); if (nx0) select(nx0, true);
-      return;
-    }
+    const r = findNode(id || sel); if (!r || !r.p) return;
     const i = r.p.children.indexOf(r.n), nx = r.p.children[i + 1] || r.p.children[i - 1] || r.p;
     /* 【独立版】删除是**整棵子树**：按被删子树收集 id，再由 dropLayer 清掉该 id 在**所有导图层表**里的条目
        （清单 = LAYER_TABLES；森林加 cur.origin 时只改那一处，这里不动）。
@@ -686,7 +589,7 @@
        否则 onL.nodes 拿不到布局项，键盘导航 / 面板 / 新建子节点的锚点都会落空。 */
     if (!(L && L.nodes.get(sel))) { sel = r.n.id; draw(); }
   }
-  function foldLevel(lv) { change(() => { for (const r of roots()) walk(r, (n, p, d) => { if ((n.children || []).length) n.fold = lv > 0 && d >= lv; }); }); setTimeout(() => fit(true), 20); }
+  function foldLevel(lv) { change(() => walk(cur.root, (n, p, d) => { if ((n.children || []).length) n.fold = lv > 0 && d >= lv; })); setTimeout(() => fit(true), 20); }
   function setProp(k, v) { const r = findNode(sel); if (!r) return; change(() => { if (v === undefined || v === "" || v === false || v === null) delete r.n[k]; else r.n[k] = v; }); }
   function toggleMark(m) {
     const r = findNode(sel); if (!r) return;
@@ -744,7 +647,7 @@
     const id = editing, v = ta.value.replace(/\s+$/g, ""), fresh = editingNew === id;
     editing = null; editingNew = null; ta.remove();
     // 刚新建的主题按 Esc：等于没建（撤销掉那一步）
-    if (cancel && fresh && hist.length) { const fr = findNode(id), back = fr && fr.p ? fr.p.id : firstRootId(); redo = []; cur = JSON.parse(hist.pop()); migrateMap(cur); sel = findNode(back) ? back : firstRootId(); storeLocal(cur); scheduleCloud(); draw(); $("mmView").focus({ preventScroll: true }); return; }
+    if (cancel && fresh && hist.length) { const fr = findNode(id), back = fr && fr.p ? fr.p.id : cur.root.id; redo = []; cur = JSON.parse(hist.pop()); sel = findNode(back) ? back : cur.root.id; storeLocal(cur); scheduleCloud(); draw(); $("mmView").focus({ preventScroll: true }); return; }
     const r = findNode(id);
     if (!cancel && r && v !== r.n.text) change(() => { r.n.text = v || (r.p ? "主题" : "中心主题"); });
     else draw();
@@ -926,8 +829,7 @@
   function outline(focusId) {
     const box = $("mmOutline"); if (!box) return;
     const rows = [];
-    const w = (n, d) => { rows.push(`<div class="mo-row" style="--d:${d}" data-id="${n.id}">${(n.children || []).length ? `<button class="mo-tog" data-mm="ofold" data-id="${n.id}">${n.fold ? "▸" : "▾"}</button>` : `<span class="mo-dot">•</span>`}<input class="mo-in${d === 0 ? " root" : ""}" data-id="${n.id}" value="${E(n.text.replace(/\n/g, " "))}" maxlength="500"></div>`); if (!n.fold) for (const c of n.children || []) w(c, d + 1); };
-    for (const r of roots()) w(r, 0);      // 【独立版·森林】逐丛铺；按丛分组的视觉分界在后续步骤做
+    (function w(n, d) { rows.push(`<div class="mo-row" style="--d:${d}" data-id="${n.id}">${(n.children || []).length ? `<button class="mo-tog" data-mm="ofold" data-id="${n.id}">${n.fold ? "▸" : "▾"}</button>` : `<span class="mo-dot">•</span>`}<input class="mo-in${d === 0 ? " root" : ""}" data-id="${n.id}" value="${E(n.text.replace(/\n/g, " "))}" maxlength="500"></div>`); if (!n.fold) for (const c of n.children || []) w(c, d + 1); })(cur.root, 0);
     box.innerHTML = `<div class="mo-tip">Enter 新建一行 · Tab 缩进 · Shift+Tab 退回 · 空行按退格删除 · ↑↓ 换行</div>` + rows.join("");
     const f = focusId && box.querySelector(`.mo-in[data-id="${focusId}"]`); if (f) { f.focus(); f.setSelectionRange(f.value.length, f.value.length); }
   }
@@ -944,53 +846,28 @@
     const e = idxGet(id) || {};
     // [独立版] 云同步已停用：不再从账号取导图，只读本机（原 mm_get 分支及 fromServer 语义见 git 历史）
     if (!m) { tip("这张导图在这台设备上找不到了"); return; }
-    /* 【独立版·森林】先迁移（`root` → `roots:[root]` + `origin[根]={0,0}` + 跨树 id 去重），
-       再逐丛补 id。迁移"改过"就落盘一次（契约 §3 第 2 条：迁移后落盘一次，且不保留旧字段 root）。 */
-    const migrated = migrateMap(m);
-    for (const r of m.roots) fill(r);
+    fill(m.root);
     cur = m; cur.layout ||= "mind"; cur.line ||= "curve"; cur.theme ||= "fresh";
-    if (migrated) { try { storeLocal(cur); } catch (e) {} }
     /* 【独立版】读取容错：旧图上可能已经有"表里有、树里没有"的孤儿条目（本次修复之前删出来的）。
        打开时清一次并落盘（治本在 del 的 dropLayer）。清完再播种，免得"只剩孤儿"时被 seedPos 的
        `if (Object.keys(p).length) return false` 误判成"已固化"。 */
     const pruned = pruneLayer();
     if (pruned) { console.log("[独立版] 打开时清理了 " + pruned + " 条不在树上的导图层条目"); try { storeLocal(cur); } catch (e) {} }
     seedPos();          // 【独立版】旧导图第一次打开：算一遍坐标写进 pos（之后不再重算）
-    sel = firstRootId(); hist = []; redo = []; found = []; mode = "map"; panelOpen = !isMobile() && lsGet("mm_panel_v1", false);
+    sel = cur.root.id; hist = []; redo = []; found = []; mode = "map"; panelOpen = !isMobile() && lsGet("mm_panel_v1", false);
     document.body.classList.add("mm-editing");
     renderEditor();
     if (panelOpen) { $("mmPanel").classList.remove("hidden"); panel(); }
     try { save("mm_last_v1", id); } catch (err) {}
   }
   function closeMap() { endEdit(); cur = null; L = null; document.body.classList.remove("mm-editing"); renderList(); try { save("mm_last_v1", ""); } catch (e) {} }
-  /* 【独立版·森林】给整张图重发节点 id（复制导图用），**并存地搬导图层表的键**：
-     只改树里的 id 而不搬 pos/size/origin，新 id 在树里、老 id 在表里 → 表里全是孤儿（复制出来的图会丢位置）。 */
-  function reidAll(m, title) {
-    const live = Array.isArray(m.roots) ? m.roots : [];
-    const old = new Map();
-    for (const r of live) walk(r, (n) => { const nw = nid(); old.set(n.id, nw); n.id = nw; });
-    for (const t of LAYER_TABLES) {
-      const src = m[t]; if (!src || typeof src !== "object") continue;
-      const out = {};
-      for (const id of Object.keys(src)) { const nw = old.get(id); if (nw) out[nw] = src[id]; }
-      m[t] = out;
-    }
-    if (title) { const r0 = live[0]; if (r0) r0.text = title; }
-    return m;
-  }
   function create(tpl, title, rootObj) {
     const m = newMap(tpl, title);
-    if (rootObj) {
-      const root = fill(rootObj);
-      /* 【独立版·森林】导入/粘贴进来的是一棵树 → 建一丛，并给这一丛 origin。 */
-      m.roots = [root]; m.origin = { [root.id]: { x: 0, y: 0 } };
-      m.title = (root.text || "未命名导图").slice(0, 80);
-    }
+    if (rootObj) { m.root = fill(rootObj); m.title = (m.root.text || "未命名导图").slice(0, 80); }
     storeLocal(m); idxPut({ id: m.id, local: true });
     scheduleCloud();
     openMap(m.id);
-    const r0 = (m.roots || [])[0];
-    if (r0 && (tpl !== "blank" || title)) setTimeout(() => startEdit(r0.id, true), 120);
+    if (tpl !== "blank" || title) setTimeout(() => startEdit(m.root.id, true), 120);
   }
 
   // ---------------- 弹窗 ----------------
@@ -1037,9 +914,7 @@
     // [独立版] 云同步已停用：不再从账号取导图（原 mm_get 分支见 git 历史）
     if (!src) { tip("这张图还没下载到这台设备，先打开一次再复制"); return; }
     const c = { ...clone(src), id: uid(), title: (src.title || "导图") + " 副本" };
-    /* 【独立版·森林】先迁移（副本可能是旧格式），再重发 id（连 pos/size/origin 的键一起搬）。 */
-    migrateMap(c);
-    reidAll(c, c.title);
+    walk(c.root, (n) => { n.id = nid(); }); c.root.text = c.title;
     storeLocal(c); idxPut({ id: c.id, local: true }); scheduleCloud();
     closeDlg(); if (cur) openMap(c.id); else renderList(); tip("已复制");
   }
@@ -1076,7 +951,7 @@
   let fi = 0;
   function doFind() {
     q = $("mmFindIn").value.trim().toLowerCase(); found = [];
-    if (q) for (const t of roots()) walk(t, (n) => { if ((n.text + " " + (n.note || "")).toLowerCase().includes(q)) found.push(n.id); });
+    if (q) walk(cur.root, (n) => { if ((n.text + " " + (n.note || "")).toLowerCase().includes(q)) found.push(n.id); });
     // 搜到的在收起的分支里：展开它的上级
     for (const id of found) { let r = findNode(id); while (r && r.p) { r.p.fold = false; r = findNode(r.p.id); } }
     fi = 0; $("mmFindN").textContent = q ? (found.length ? `1 / ${found.length}` : "没找到") : "";
@@ -1206,7 +1081,7 @@
       if (!drag) return;
       const dx = e.clientX - drag.sx, dy = e.clientY - drag.sy;
       if (!drag.moved && Math.hypot(dx, dy) < 6) return;
-      if (!drag.moved) { drag.moved = true; clearTimeout(press); if (drag.id && !drag.touch && !isRootNode(drag.id)) { drag.node = true; startNodeDrag(drag, e); } }
+      if (!drag.moved) { drag.moved = true; clearTimeout(press); if (drag.id && !drag.touch && drag.id !== cur.root.id) { drag.node = true; startNodeDrag(drag, e); } }
       if (drag.node) moveNodeDrag(drag, e, local(e));
       else { view.x = drag.vx + dx; view.y = drag.vy + dy; applyView(); vw.classList.add("panning"); }
     });
@@ -1249,9 +1124,8 @@
     }, { passive: false });
     /* 【独立版】双击：节点 → 选中并进编辑（不再靠上条 350ms 判定当主路径）；
        空白 → 在**鼠标位置**新建一个节点（中心落在鼠标点），出生即固化坐标。
-       新节点暂时挂到**第一丛的根**下：数据是纯树、渲染从 cur.roots 逐丛递归开始，没有父节点的节点不会被画出来；
-       挂根既满足"不挂到当前选中节点下面"（自由画布上到处双击不该都长在选中节点下），又保证它能被渲染。
-       （森林的"双击空白 = 新建**独立一丛**"在后续步骤改。） */
+       新节点挂到**根节点**下：数据是纯树、渲染从 cur.root 递归开始，没有父节点的节点不会被画出来；
+       挂根既满足"不挂到当前选中节点下面"（自由画布上到处双击不该都长在选中节点下），又保证它能被渲染。 */
     vw.addEventListener("dblclick", (e) => {
       if (e.target.closest(".mm-zoom")) return;
       const nd = e.target.closest(".mm-node");
@@ -1263,19 +1137,17 @@
          坐标换算的基准是 **#mmView 的 rect**（不是 #mmBox）：view.x/view.y 就是相对 #mmView 的，
          两者之间隔着工具条（实测 47px），基准取错就会整块偏移工具条的高度。 */
       const p = local(e), k = { id: nid(), text: "分支主题", children: [] }, m = measure(k, 1);
-      if (!roots().length) return;               // 空画布下"双击建第一丛"是后续步骤的入口，这里先不动
       const at = birthPos(null, { x: Math.round(p.x - m.w / 2), y: Math.round(p.y - m.h / 2) });   // 一次 dblclick 只建一个
-      const r0 = firstRoot();
       change(() => {
         putLayerPos(k.id, at);                     // 坐标写进 change 的 fn 内（与 endNodeDrag 的 putPos 同构）
-        (r0.children ||= []).push(k);              // 【独立版·森林】暂时挂到第一丛下；"双击空白 = 新建独立丛"在后续步骤改
+        (cur.root.children ||= []).push(k);
       });
       sel = k.id; draw(); startEdit(k.id, true); editingNew = k.id;
     });
   }
   // 拖节点：放到别的主题中间 = 成为它的子主题；放到上 / 下边缘 = 插到它前面 / 后面
   function startNodeDrag(d, e) {
-    if (isRootNode(d.id)) { d.node = false; return; }   // 【独立版·森林】丛根暂时不可拖；"拖根 = 移整丛"在后续步骤做
+    if (d.id === cur.root.id) { d.node = false; return; }
     const el = document.querySelector(`#mmStage .mm-node[data-id="${d.id}"]`); if (!el) return;
     d.ghost = el.cloneNode(true); d.ghost.classList.add("ghost"); d.ghost.classList.remove("sel"); $("mmStage").appendChild(d.ghost);
     el.classList.add("dragging"); select(d.id);
@@ -1327,7 +1199,7 @@
     const r = findNode(sel), lay = cur.layout, side = s.side;
     const toParent = () => r.p && select(r.p.id, true);
     const toChild = (dir) => { const ks = s.kids.filter((k) => dir == null || (L.nodes.get(k.id) || {}).side === dir); if (ks.length) select(ks[Math.floor((ks.length - 1) / 2)].id, true); };
-    const sib = (d) => { if (!r.p) return; const a = r.p.children.filter((x) => lay !== "mind" || !isRootNode(r.p) || (L.nodes.get(x.id) || {}).side === side); const i = a.indexOf(r.n); if (a[i + d]) select(a[i + d].id, true); };
+    const sib = (d) => { if (!r.p) return; const a = r.p.children.filter((x) => lay !== "mind" || r.p !== cur.root || (L.nodes.get(x.id) || {}).side === side); const i = a.indexOf(r.n); if (a[i + d]) select(a[i + d].id, true); };
     if (lay === "down") { if (key === "ArrowUp") toParent(); else if (key === "ArrowDown") toChild(); else sib(key === "ArrowLeft" ? -1 : 1); return; }
     if (key === "ArrowUp" || key === "ArrowDown") { sib(key === "ArrowUp" ? -1 : 1); return; }
     const right = key === "ArrowRight";
@@ -1413,7 +1285,7 @@
       case "open": if (!e.target.closest(".mm-more")) openMap(id); break;
       case "menu": mapMenu(id); break;
       case "ren": { const e2 = idxGet(id); closeDlg(); const v = prompt("导图名称", e2.title); if (!v || !v.trim()) break;
-        const m = lsGet(mapKey(id), null); if (m) { m.title = v.trim().slice(0, 80); migrateMap(m); const r0 = m.roots[0]; if (r0) r0.text = m.title; lsSet(mapKey(id), m); }
+        const m = lsGet(mapKey(id), null); if (m) { m.title = v.trim().slice(0, 80); m.root.text = m.title; lsSet(mapKey(id), m); }
         idxPut({ id, title: v.trim().slice(0, 80), updated: Date.now(), dirty: !!m });
         scheduleCloud();   // [独立版] 云同步已停用：只改本机（原 mm_rename 分支见 git 历史）
         renderList(); break; }
@@ -1438,16 +1310,14 @@
       case "paste-in": pasteDlg(true); break;
       case "export": exportDlg(); break;
       case "ex-png": closeDlg(); exportPng(); break;
-      /* 【独立版·森林】导出：逐丛各出一份（每丛是一棵树），用空行隔开。
-         JSON 备份的格式改造（写 roots、不写 root）在后续步骤。 */
-      case "ex-md": { closeDlg(); const md = roots().map((t) => toMarkdown(t)).join("\n\n"); download(safeName() + ".md", md, "text/markdown"); break; }
-      case "ex-txt": { closeDlg(); const tx = roots().map((t) => toText(t, 0)).join("\n\n"); try { await navigator.clipboard.writeText(tx); tip("大纲已复制，可以直接粘贴"); } catch (err) { download(safeName() + ".txt", tx, "text/plain"); } break; }
+      case "ex-md": closeDlg(); download(safeName() + ".md", toMarkdown(cur.root), "text/markdown"); break;
+      case "ex-txt": closeDlg(); try { await navigator.clipboard.writeText(toText(cur.root, 0)); tip("大纲已复制，可以直接粘贴"); } catch (err) { download(safeName() + ".txt", toText(cur.root, 0), "text/plain"); } break;
       case "ex-json": closeDlg(); download(safeName() + ".json", JSON.stringify({ app: "laolao-mindmap", v: 1, ...cur }, null, 1), "application/json"); break;
       case "dup": duplicate(cur.id); break;
       case "zin": zoomAt(view.k * 1.2); break;
       case "zout": zoomAt(view.k / 1.2); break;
       case "fit": fit(true); break;
-      case "lv": { let any = false; for (const t of roots()) walk(t, (n, p, d) => { if (d >= 2 && !n.fold && (n.children || []).length) any = true; }); foldLevel(any ? 2 : 0); break; }
+      case "lv": { let any = false; walk(cur.root, (n, p, d) => { if (d >= 2 && !n.fold && (n.children || []).length) any = true; }); foldLevel(any ? 2 : 0); break; }
       case "lv1": foldLevel(1); break;
       case "lv2": foldLevel(2); break;
       case "lv0": foldLevel(0); break;
@@ -1465,7 +1335,7 @@
     const t = e.target; if (!cur && t.id !== "mmFileOpen") return;
     if (t.id === "mmLayout" || t.id === "mmLine" || t.id === "mmTheme") {
       const k = { mmLayout: "layout", mmLine: "line", mmTheme: "theme" }[t.id];
-      change(() => { cur[k] = t.value; if (k === "layout") for (const tr of roots()) walk(tr, (n) => { delete n.side; }); });
+      change(() => { cur[k] = t.value; if (k === "layout") walk(cur.root, (n) => { delete n.side; }); });
       pref[k] = t.value; lsSet(LS_PREF, pref);
       if (k === "layout") setTimeout(() => fit(true), 20);
     }
@@ -1475,7 +1345,7 @@
   });
   document.addEventListener("input", (e) => {
     const t = e.target;
-    if (t.classList && t.classList.contains("mo-in")) { const r = findNode(t.dataset.id); if (r) { r.n.text = t.value; clearTimeout(outlineTimer); outlineTimer = setTimeout(() => { hist.push(JSON.stringify(cur)); const r0 = firstRoot(); if (r0) cur.title = (r0.text || "未命名导图").slice(0, 80); $("mmTitleIn").value = cur.title; storeLocal(cur); scheduleCloud(); }, 500); } }
+    if (t.classList && t.classList.contains("mo-in")) { const r = findNode(t.dataset.id); if (r) { r.n.text = t.value; clearTimeout(outlineTimer); outlineTimer = setTimeout(() => { hist.push(JSON.stringify(cur)); cur.title = (cur.root.text || "未命名导图").slice(0, 80); $("mmTitleIn").value = cur.title; storeLocal(cur); scheduleCloud(); }, 500); } }
     if (t.id === "mmFindIn") { clearTimeout(findTimer); findTimer = setTimeout(doFind, 200); }
     if (t.id === "mmListQ") { listQ = t.value; t.dataset.f = 1; renderList(); const s = $("mmListQ"); if (s) { s.focus(); s.setSelectionRange(s.value.length, s.value.length); } }
   });
@@ -1488,7 +1358,7 @@
   // 改标题 = 改中心主题
   document.addEventListener("focusout", (e) => {
     if (e.target.id !== "mmTitleIn" || !cur) return;
-    const v = e.target.value.trim(); const r0 = firstRoot(); if (v && r0 && v !== cur.title) change(() => { r0.text = v; });
+    const v = e.target.value.trim(); if (v && v !== cur.title) change(() => { cur.root.text = v; });
   });
   $("mmDlg").addEventListener("click", (e) => { if (e.target === $("mmDlg")) closeDlg(); });
   window.addEventListener("resize", () => { if (cur && currentView() === "mindmap") { fitBox(); applyView(); } });
@@ -1517,11 +1387,5 @@
   setInterval(() => { const u = me() ? me().id : null; if (u !== lastUid) { lastUid = u; if (u) { index.forEach((e) => { if (!e.uid) { e.uid = u; e.dirty = true; } }); idxSave(); pullList(); } if (currentView() === "mindmap" && !cur) renderList(); } }, 2000);
   window.addEventListener("beforeunload", () => { if (index.some((x) => x.dirty) && me()) pushDirty(); });
   ===== [独立版] 云同步停用结束 ===== */
-  window.Mindmap = {
-    parseText, toMarkdown,
-    /* 【独立版】**"扫哪些导图层表"的唯一真相来源**：del 清理 / 读取容错 / 导入 / 自测台的孤儿判据
-       全部读这一个数组（自测台不许再写一份字面量）。加新表只改上面 LAYER_TABLES 一处。 */
-    LAYER_TABLES,
-    state: () => ({ cur, sel, index, L }), open: openMap, create,
-  };
+  window.Mindmap = { parseText, toMarkdown, state: () => ({ cur, sel, index, L }), open: openMap, create };
 })();

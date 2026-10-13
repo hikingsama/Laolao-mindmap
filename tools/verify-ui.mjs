@@ -108,21 +108,13 @@ async function mouse(type, x, y, clickCount, buttons) {
 }
 const clickAt = async (x, y) => { await mouse("mousePressed", x, y, 1, 1); await mouse("mouseReleased", x, y, 1, 0); };
 async function clickSel(sel) { const p = await rectOf(sel); if (!p) throw new Error("页面上找不到元素：" + sel); await clickAt(p.x, p.y); return p; }
-/* 页内小工具（一次注入；森林下"一张图 = 多丛"，别再假设单根 m.root） */
-const HELPERS = `window.__mine = {
-  trees: (m) => (Array.isArray(m && m.roots) ? m.roots : m && m.root ? [m.root] : []),
-  find: (n, id) => { if (!n) return null; if (n.id === id) return n; for (const c of n.children || []) { const r = window.__mine.find(c, id); if (r) return r; } return null; },
-  get: (m, id) => { for (const t of window.__mine.trees(m)) { const r = window.__mine.find(t, id); if (r) return r; } return null; },
-  all: (m) => { const out = []; for (const t of window.__mine.trees(m)) (function w(n) { out.push(n.id); (n.children || []).forEach(w); })(t); return out; },
-  layers: () => (window.Mindmap && window.Mindmap.LAYER_TABLES) || [],   // 与 vendor 共用"扫哪些表"的唯一来源
-}; 1`;
 const SCAN = `(() => {
   const st = window.Mindmap.state(), m = st.cur;
-  const live = new Set(window.__mine.all(m));
+  const live = new Set(); (function w(n) { live.add(n.id); (n.children || []).forEach(w); })(m.root);
   const bad = [];
-  for (const t of window.__mine.layers()) for (const id of Object.keys(m[t] || {})) if (!live.has(id)) bad.push(t + ":" + id);
-  return JSON.stringify({ orphans: bad, tree: live.size, pos: Object.keys(m.pos || {}).length, size: Object.keys(m.size || {}).length,
-    origin: Object.keys(m.origin || {}).length, roots: window.__mine.trees(m).length, sel: st.sel });
+  for (const t of ["pos", "size"]) for (const id of Object.keys(m[t] || {})) if (!live.has(id)) bad.push(t + ":" + id);
+  let tree = 0; (function w(n) { tree++; (n.children || []).forEach(w); })(m.root);
+  return JSON.stringify({ orphans: bad, tree, pos: Object.keys(m.pos || {}).length, size: Object.keys(m.size || {}).length, sel: st.sel });
 })()`;
 
 async function openBrowser() {
@@ -169,7 +161,6 @@ const main = async () => {
 
   // 0) 页面能开
   for (let i = 0; i < 40; i++) { if (await ev("document.readyState === 'complete' && !!window.Mindmap")) break; await sleep(200); }
-  await ev(HELPERS);                                    // 页内小工具（森林：别再假设单根）
   const title = await ev("document.title");
   check("页面能打开并加载出导图模块（title=" + JSON.stringify(title) + "）", !!title && await ev("!!window.Mindmap"));
   check("列表页没有画布（#mmStage 不存在）", (await ev("!!document.getElementById('mmStage')")) === false);
@@ -200,12 +191,12 @@ const main = async () => {
       console.log("    收起按钮：悬停后 opacity=" + st1.opacity + " pointer-events=" + st1.pe + " · 点之前该节点被选中吗=" + st1.selThis);
       await clickAt(btn.x, btn.y);
       await sleep(400);
-      const folded = JSON.parse(await ev(`(() => { const st = window.Mindmap.state(); const f = window.__mine.get(st.cur, "${foldT.id}"); return JSON.stringify({ fold: !!(f && f.fold), dom: document.querySelectorAll('#mmStage .mm-node').length, selThis: st.sel === "${foldT.id}" }); })()`));
+      const folded = JSON.parse(await ev(`(() => { const st = window.Mindmap.state(); const f = (function w(n) { if (n.id === "${foldT.id}") return n; for (const c of n.children || []) { const r = w(c); if (r) return r; } return null; })(st.cur.root); return JSON.stringify({ fold: !!(f && f.fold), dom: document.querySelectorAll('#mmStage .mm-node').length, selThis: st.sel === "${foldT.id}" }); })()`));
       check("收起按钮：**第 1 次点**就折叠（点之前该节点未被选中：" + !st1.selThis + "）", folded.fold === true, JSON.stringify(folded));
       check("折叠后后代不再画进 DOM（" + domBefore + " → " + folded.dom + "）", folded.dom < domBefore);
       await clickAt(btn.x, btn.y);
       await sleep(400);
-      const unfolded = JSON.parse(await ev(`(() => { const st = window.Mindmap.state(); const f = window.__mine.get(st.cur, "${foldT.id}"); return JSON.stringify({ fold: !!(f && f.fold), dom: document.querySelectorAll('#mmStage .mm-node').length }); })()`));
+      const unfolded = JSON.parse(await ev(`(() => { const st = window.Mindmap.state(); const f = (function w(n) { if (n.id === "${foldT.id}") return n; for (const c of n.children || []) { const r = w(c); if (r) return r; } return null; })(st.cur.root); return JSON.stringify({ fold: !!(f && f.fold), dom: document.querySelectorAll('#mmStage .mm-node').length }); })()`));
       check("第 2 次点展开（一次点击一个动作，不是「按两下才动」）", unfolded.fold === false, JSON.stringify(unfolded));
     }
   }
@@ -267,34 +258,6 @@ const main = async () => {
   const a6 = JSON.parse(await ev(SCAN));
   check("撤销「新建」后导图层里没有孤儿（树回到 " + a6.tree + "、pos 回到 " + a6.pos + "）",
     a6.orphans.length === 0 && a6.tree === b5.tree && a6.pos === b5.pos, "孤儿=" + a6.orphans.join(","));
-
-  /* 6) 多丛（森林）：塞一张两丛图进去 → 两丛都画出来、各自落在自己的 cur.origin 上、丛间不画线。
-        这是"逐树布局 + 偏移叠加"合并层的端到端证据（数据层由自测台 C11 覆盖）。 */
-  const FID = "mm-forest-probe";
-  const seeded = await ev(`(() => {
-    const A = { id: "fa1", text: "丛A", children: [{ id: "fa1x", text: "A 的子" }] };
-    const B = { id: "fb1", text: "丛B", children: [{ id: "fb1x", text: "B 的子" }] };
-    const m = { id: "${FID}", title: "两丛", layout: "mind", line: "curve", theme: "fresh", v: 1,
-      roots: [A, B], origin: { fa1: { x: 0, y: 0 }, fb1: { x: 700, y: 0 } }, pos: {}, size: {} };
-    localStorage.setItem("mm_map_${FID}", JSON.stringify(m));
-    return true;
-  })()`);
-  check("能把一张两丛图写进本机存储（夹具）", seeded === true);
-  await ev(`window.Mindmap.open("${FID}")`);
-  await sleep(500);
-  const f = JSON.parse(await ev(`(() => {
-    const st = window.Mindmap.state(), L = st.L;
-    const a = L.nodes.get("fa1"), b = L.nodes.get("fb1");
-    return JSON.stringify({ roots: (st.cur.roots || []).length, nodes: L.nodes.size,
-      a: a ? { x: Math.round(a.x), y: Math.round(a.y) } : null, b: b ? { x: Math.round(b.x), y: Math.round(b.y) } : null,
-      paths: document.querySelectorAll("#mmStage .mm-links path").length,
-      orphan: Object.keys(st.cur.pos).filter((id) => !["fa1", "fa1x", "fb1", "fb1x"].includes(id)).length });
-  })()`));
-  check("两丛图打开后 4 个节点都在布局里（roots=" + f.roots + " / nodes=" + f.nodes + "）", f.roots === 2 && f.nodes === 4, JSON.stringify(f));
-  check("第一丛落在 origin(0,0) 附近（x≈0，实测 " + (f.a && f.a.x) + "）", !!f.a && Math.abs(f.a.x) <= 40, JSON.stringify(f.a));
-  check("第二丛落在自己的 origin 上（x≈700，实测 " + (f.b && f.b.x) + "）", !!f.b && Math.abs(f.b.x - 700) <= 40, JSON.stringify(f.b));
-  check("丛内连线照旧、丛间不画线（线段数 = 2，实测 " + f.paths + "）", f.paths === 2, "paths=" + f.paths);
-  check("播种只写这 4 个节点的坐标（没有多余 id 的孤儿）", f.orphan === 0, "多余 id=" + f.orphan);
 
   guard();
   const bad = RESULTS.filter((r) => !r.ok);

@@ -339,22 +339,6 @@ new Promise((resolve) => {
 
   const B = bootAll();
   const M = B.Mindmap;
-  /* 【独立版·森林】夹具与断言读图统一走这几个入口：图可能是新格式（roots）也可能是旧格式（root，未迁移）。
-     断言判据（Chief/提问bot 指定）：孤儿 = "表里存在不在树上的 id"。不是"被删的那个 id 不见了"。
-     这条同时把"折叠后代"排除在孤儿之外 —— 折叠只是不进布局，节点仍在树上，它们的坐标条目必须保留。 */
-  const treesOf = (m) => (Array.isArray(m && m.roots) ? m.roots : m && m.root ? [m.root] : []);
-  const root0 = (m) => treesOf(m)[0] || null;
-  const allIdsOf = (m) => { const s = new Set(); for (const t of treesOf(m)) (function w(n) { s.add(n.id); (n.children || []).forEach(w); })(t); return s; };
-  /* 【独立版】"扫哪些导图层表"**只有 vendor 那一个真相来源**：这里直接读导出，不写第二份字面量。
-     否则加一张新表（如 cur.origin）时，判据只扫旧表、测试仍然全绿 —— 断言自己只应用了一半纪律。 */
-  const LAYERS = M.LAYER_TABLES;
-  const layerOrphans = (m) => {
-    if (!m) return [];
-    const live = allIdsOf(m);
-    const bad = [];
-    for (const t of (LAYERS || [])) for (const id of Object.keys(m[t] || {})) if (!live.has(id)) bad.push(t + ":" + id);
-    return bad;
-  };
   /* 给"按下/拖动落在某个节点上"算**与真实浏览器一致**的屏幕坐标：布局盒 + #mmStage 的 transform
      （applyView 写的 translate/scale）现算。不写死 (100,100) 这类任意点 —— 那种点可能落在**别的**节点上，
      会被八方向命中区当成"在别的节点边缘缩放"，断言就因夹具不真实而失败（D 组原来就踩这个）。 */
@@ -384,15 +368,6 @@ new Promise((resolve) => {
   }
   ok("\nvendor/mindmap.js 加载不抛错并导出 Mindmap", !!M && typeof M.state === "function" && typeof M.open === "function" && typeof M.create === "function");
   if (!M) { console.log("\n结果：提前中止"); process.exit(1); }
-  /* 断言侧与代码侧必须共用"扫哪些表"这一个来源（Chief 追加的前置要求）。
-     `LAYERS` 直接取自 `window.Mindmap.LAYER_TABLES`；下面同时钉住"自测台里不许再出现第二份字面量"。 */
-  {
-    const smokeSrc = require("fs").readFileSync(__filename, "utf8");
-    ok("（源码形状）自测台没有第二份表字面量（不出现 for (const t of [\"pos\", \"size\"]…)）",
-      !/for \(const t of \["pos", "size"/.test(smokeSrc) && !/\["pos", "size", "origin"\]\.includes/.test(smokeSrc));
-    ok("扫哪些表来自 vendor 唯一真相来源：Mindmap.LAYER_TABLES = " + JSON.stringify(LAYERS),
-      Array.isArray(LAYERS) && LAYERS.join(",") === "pos,size,origin", JSON.stringify(LAYERS));
-  }
 
   console.log("\nC. 旧导图首次打开 → 播种（不重叠、落盘）");
   M.open("legacy-map").catch((e) => { console.log("  !! open 抛错：" + e.message + "\n" + e.stack.split("\n").slice(0, 6).join("\n")); });
@@ -401,7 +376,7 @@ new Promise((resolve) => {
   const pos = map.pos || {};
   ok("导图层 cur.pos 里有 8 条坐标（实际 " + Object.keys(pos).length + "）", Object.keys(pos).length === 8);
   let nodeFields = 0;
-  for (const t of treesOf(map)) (function w(n) { if (n.x !== undefined || n.y !== undefined || n.pos !== undefined) nodeFields++; (n.children || []).forEach(w); })(t);
+  (function w(n) { if (n.x !== undefined || n.y !== undefined || n.pos !== undefined) nodeFields++; (n.children || []).forEach(w); })(map.root);
   ok("坐标没有写进节点字段（node.x / node.pos 都是 undefined）", nodeFields === 0, "有 " + nodeFields + " 个节点带坐标字段");
   const arr = [...st0.L.nodes.values()].filter((s) => s.x != null);
   const dup = [];
@@ -423,7 +398,7 @@ new Promise((resolve) => {
   const badSize = Object.entries(size).filter(([id, z]) => !(z.w >= 60 && z.h >= 40));
   ok("所有尺寸都在下限之上（≥ 60×40）", badSize.length === 0, JSON.stringify(badSize));
   let sizeFields = 0;
-  for (const t of treesOf(map2)) (function w(n) { if (n.w !== undefined || n.h !== undefined || n.size !== undefined) sizeFields++; (n.children || []).forEach(w); })(t);
+  (function w(n) { if (n.w !== undefined || n.h !== undefined || n.size !== undefined) sizeFields++; (n.children || []).forEach(w); })(map2.root);
   ok("尺寸没有写进节点字段（node.w / node.h / node.size 都是 undefined）", sizeFields === 0, "有 " + sizeFields + " 个节点带尺寸字段");
   const onDisk2 = JSON.parse(B.localStorage.getItem("mm_map_legacy-map"));
   ok("尺寸已落盘（localStorage 的 size 有 8 条）", !!onDisk2.size && Object.keys(onDisk2.size).length === 8);
@@ -453,7 +428,7 @@ new Promise((resolve) => {
   {
     const stB = M.state();
     const vwB = B.win.$("mmView");
-    const sNode = [...stB.L.nodes.values()].find((s) => s.depth === 1 && s.n.id !== root0(stB.cur).id);
+    const sNode = [...stB.L.nodes.values()].find((s) => s.depth === 1 && s.n.id !== stB.cur.root.id);
     // 夹具挂到 **document 查得到**的那个 #mmStage 上：startNodeDrag 用的是 document.querySelector，
     // 挂到别的实例上它查不到，手势就驱动不起来（这是上一版假通过的根因）
     const stageEl = B.doc.querySelector("#mmStage");
@@ -577,7 +552,7 @@ new Promise((resolve) => {
   {
     // 这条能真驱动：夹具折叠状态走 localStorage，open() 会重新加载
     const raw = JSON.parse(B.localStorage.getItem("mm_map_legacy-map"));
-    const tgt = root0(raw).children.find((c) => (c.children || []).length);
+    const tgt = raw.root.children.find((c) => (c.children || []).length);
     tgt.fold = true;
     B.localStorage.setItem("mm_map_legacy-map", JSON.stringify(raw));
     M.open("legacy-map");
@@ -643,14 +618,14 @@ new Promise((resolve) => {
     /* 重开之后 #mmView 是**新元素**、监听器挂在新元素上：必须用它派发。
        往旧元素（重开前那份）派发虽然也能打到旧闭包，但它用的是旧元素的 rect —— 会把"基准取错元素"这类问题盖掉。 */
     const vwL = B.win.$("mmView");
-    const posBefore = Object.keys(M.state().cur.pos).length, rootsBefore = root0(M.state().cur).children.length;
+    const posBefore = Object.keys(M.state().cur.pos).length, rootsBefore = M.state().cur.root.children.length;
     const snap0 = Object.assign({}, M.state().cur.pos);
     bubble(vwL, "dblclick", { target: vwL, clientX: 400, clientY: 300 });
     const stA = M.state(), snapA = Object.assign({}, stA.cur.pos);
-    const rootsA = root0(stA.cur).children.length;          // 立刻取数：state().cur 是活引用，留到后面读会被下一次点击改掉
+    const rootsA = stA.cur.root.children.length;          // 立刻取数：state().cur 是活引用，留到后面读会被下一次点击改掉
     bubble(vwL, "dblclick", { target: vwL, clientX: 500, clientY: 380 });
     const stB = M.state(), snapB = Object.assign({}, stB.cur.pos);
-    const rootsB = root0(stB.cur).children.length;
+    const rootsB = stB.cur.root.children.length;
     const idA = Object.keys(snapA).find((k) => !snap0[k]), idB = Object.keys(snapB).find((k) => !snapA[k]);
     ok("空白双击一次只建一个节点（" + posBefore + " → " + Object.keys(snapA).length + " → " + Object.keys(snapB).length + "）",
       Object.keys(snapA).length === posBefore + 1 && Object.keys(snapB).length === posBefore + 2);
@@ -707,10 +682,10 @@ new Promise((resolve) => {
     let tgt = null, nodeEl = null, btn = null;
     const reset = () => {
       const r = JSON.parse(B.localStorage.getItem("mm_map_legacy-map"));
-      (function w(n) { delete n.fold; (n.children || []).forEach(w); })(root0(r));
+      (function w(n) { delete n.fold; (n.children || []).forEach(w); })(r.root);
       B.localStorage.setItem("mm_map_legacy-map", JSON.stringify(r));
       M.open("legacy-map");
-      tgt = root0(M.state().cur).children.find((c) => (c.children || []).length);
+      tgt = M.state().cur.root.children.find((c) => (c.children || []).length);
       nodeEl = stageF().querySelector('.mm-node[data-id="' + tgt.id + '"]');
       btn = stageF().querySelector('.mm-node[data-id="' + tgt.id + '"] .mm-fold');
       return { nodeEl, btn };
@@ -743,7 +718,7 @@ new Promise((resolve) => {
     ok("④ 按下后拖开 → 不折叠（松手位置离按下 >6px）", tgt.fold !== true, "fold=" + tgt.fold);
     // ⑤ 普通点选不被按钮抢走：按住/松手都在节点盒内部 → 只选中、不折叠
     reset();
-    const plain = root0(M.state().cur).children.find((c) => !(c.children || []).length) || tgt;   // 不带按钮的节点
+    const plain = M.state().cur.root.children.find((c) => !(c.children || []).length) || tgt;   // 不带按钮的节点
     const pEl = stageF().querySelector('.mm-node[data-id="' + plain.id + '"]');
     bubble(vwF, "pointerdown", Object.assign({ target: pEl }, at));
     bubble(vwF, "pointerup", Object.assign({ target: pEl }, at));
@@ -763,6 +738,16 @@ new Promise((resolve) => {
   }
 
   console.log("\nC9. 删整棵子树后的孤儿清理：导图层表里不许留下不在树上的 id");
+  /* 断言判据（Chief/提问bot 指定）：不是"被删的那个 id 不见了"，而是"表里不存在**任何**不在树上的 id"。
+     这条同时把"折叠后代"排除在孤儿之外 —— 折叠只是不进布局，节点仍在树上，它们的坐标条目必须保留。 */
+  const layerOrphans = (m) => {
+    if (!m || !m.root) return [];
+    const live = new Set();
+    (function w(n) { live.add(n.id); (n.children || []).forEach(w); })(m.root);
+    const bad = [];
+    for (const t of ["pos", "size"]) for (const id of Object.keys(m[t] || {})) if (!live.has(id)) bad.push(t + ":" + id);
+    return bad;
+  };
   {
     // 干净夹具：把盘上那份重置成不带 pos/size 的旧图，重开后 seedPos 会重新播种
     B.localStorage.setItem("mm_map_legacy-map", JSON.stringify(LEGACY));
@@ -773,7 +758,7 @@ new Promise((resolve) => {
 
     const stage9 = () => B.win.$("mmStage");
     const press = (el, pt) => { bubble(el, "pointerdown", { target: el, clientX: pt.x, clientY: pt.y }); bubble(el, "pointerup", { target: el, clientX: pt.x, clientY: pt.y }); };
-    const a1 = root0(M.state().cur).children[0], leaf = (a1.children || [])[0];
+    const a1 = M.state().cur.root.children[0], leaf = (a1.children || [])[0];
     const elLeaf = stage9().querySelector('.mm-node[data-id="' + leaf.id + '"]');
     press(elLeaf, pointOn(leaf.id) || { x: 200, y: 200 });
     ok("前提：选中一级主题 " + a1.id + " 的子节点 " + leaf.id, M.state().sel === leaf.id, "sel=" + M.state().sel);
@@ -788,7 +773,7 @@ new Promise((resolve) => {
        而仿真台是按 parentNode 冒泡的，元素一离开树就断链（这类序列在仿真台里驱动不了）。
        重开后 DOM 与编辑态都是干净的，按下-松手能被真实驱动。 */
     M.open("legacy-map");
-    const a1b = root0(M.state().cur).children[0];
+    const a1b = M.state().cur.root.children[0];
     const elA1 = stage9().querySelector('.mm-node[data-id="' + a1b.id + '"]');
     press(elA1, pointOn(a1b.id) || { x: 200, y: 200 });
     ok("前提：选中一级主题 " + a1b.id + "（准备删它整棵）", M.state().sel === a1b.id, "sel=" + M.state().sel);
@@ -798,11 +783,11 @@ new Promise((resolve) => {
     bubble(delBtn, "click", { target: delBtn });
     const st9 = M.state(), orphans = layerOrphans(st9.cur);
     ok("删掉 " + a1b.id + " 的整棵子树（" + killIds.length + " 个节点、三层）后，pos/size 里**不存在任何不在树上的 id**",
-      orphans.length === 0, "孤儿=" + orphans.join(",") + " · 树大小=" + allIdsOf(st9.cur).size);
+      orphans.length === 0, "孤儿=" + orphans.join(",") + " · 树大小=" + (() => { let n = 0; (function w(x) { n++; (x.children || []).forEach(w); })(st9.cur.root); return n; })());
     ok("被删的那 " + killIds.length + " 个 id 的坐标/尺寸条目都清了",
       killIds.every((id) => !st9.cur.pos[id] && !st9.cur.size[id]), killIds.filter((id) => st9.cur.pos[id] || st9.cur.size[id]).join(","));
     ok("树里也确实没有这些节点了（删除本身生效）",
-      killIds.every((id) => !allIdsOf(st9.cur).has(id)));
+      killIds.every((id) => !(function has(n) { return n.id === id || (n.children || []).some(has); })(st9.cur.root)));
 
     /* 读取容错：手工往**盘上**塞孤儿条目（模拟本次修复之前就被污染、已经写进 localStorage 的旧图），
        重开后必须被打开时的 pruneLayer 清掉并落回盘里。 */
@@ -813,7 +798,7 @@ new Promise((resolve) => {
     M.open("legacy-map");
     const stP = M.state(), afterOpen = layerOrphans(stP.cur);
     ok("打开时清掉了盘上残留的孤儿条目（读取容错，治本仍在 del）", afterOpen.length === 0, afterOpen.join(","));
-    const a2 = root0(stP.cur).children[0];
+    const a2 = stP.cur.root.children[0];
     ok("没有误删在树上的节点坐标（" + a2.id + " 的坐标还在，共 " + Object.keys(stP.cur.pos).length + " 条）", !!stP.cur.pos[a2.id]);
     const diskP = JSON.parse(B.localStorage.getItem("mm_map_legacy-map"));
     ok("修好的结果落回盘上（GHOST1 / GHOST2 在盘上也没了）", !diskP.pos.GHOST1 && !diskP.pos.GHOST2 && !diskP.size.GHOST1);
@@ -839,40 +824,9 @@ new Promise((resolve) => {
       ok("（源码形状）" + nm + "：不存在 fn 外的直接 curPos()[…] = 写入",
         !!body && !/curPos\(\)\[[^\]]*\]\s*=/.test(body));
     }
-    ok("（源码形状）要清理的导图层表清单来自同一个常量，del 调 dropLayer（森林加表只改 vendor 一处）",
-      /const LAYER_TABLES = \["pos", "size", "origin"\];/.test(src9) && /dropLayer\(kill/.test(fnSrc("del")) &&
-      /for \(const t of LAYER_TABLES\)/.test(fnSrc("dropLayer")) &&
-      /for \(const t of LAYER_TABLES\)/.test(fnSrc("pruneLayer")) && /for \(const t of LAYER_TABLES\)/.test(fnSrc("applyLayer")));
-
-    /* 反向对照（**常驻断言**，不是临时改文件）：往"唯一真相来源"里塞一张假表，两侧必须立刻跟上它 ——
-       ① 孤儿判据开始扫这张表；② del 的清理也会清这张表里被删节点的条目（走真实删除链路）。
-       这证明"连线"是真的接上了，而不是看起来接上了。 */
-    const probeOK = (() => {
-      B.localStorage.setItem("mm_map_legacy-map", JSON.stringify(LEGACY));
-      M.open("legacy-map");
-      const m = M.state().cur, victim = root0(m).children[0];
-      LAYERS.push("__probe");
-      try {
-        m.__probe = { GHOSTX: { x: 0, y: 0 }, KEEP: { x: 0, y: 0 } };
-        const scanFollows = layerOrphans(m).some((s) => s.indexOf("__probe:GHOSTX") === 0);
-        m.__probe[victim.id] = { x: 1, y: 1 };
-        const el = B.win.$("mmStage").querySelector('.mm-node[data-id="' + victim.id + '"]');
-        press(el, pointOn(victim.id) || { x: 200, y: 200 });
-        const db = B.doc.querySelector('[data-mm="del"]');
-        bubble(db, "click", { target: db });
-        const after = M.state().cur;
-        return { scanFollows, cleanFollows: !(after.__probe && after.__probe[victim.id]), keepsOthers: !!(after.__probe && after.__probe.KEEP) };
-      } finally {
-        LAYERS.pop();
-        if (M.state().cur) delete M.state().cur.__probe;
-        B.localStorage.setItem("mm_map_legacy-map", JSON.stringify(LEGACY));
-        M.open("legacy-map");
-      }
-    })();
-    ok("反向对照：把假表 __probe 塞进'唯一真相来源'后，孤儿判据立刻开始扫它（判据不是写死的）",
-      probeOK.scanFollows, JSON.stringify(probeOK));
-    ok("反向对照：同一来源驱动 del 的清理（假表里被删节点的条目也清了、别的条目还在）",
-      probeOK.cleanFollows && probeOK.keepsOthers, JSON.stringify(probeOK));
+    ok("（源码形状）要清理的导图层表清单是常量 LAYER_TABLES = ['pos','size']，del 调 dropLayer（森林加 origin 只改这一处）",
+      /const LAYER_TABLES = \["pos", "size"\];/.test(src9) && /dropLayer\(kill\)/.test(fnSrc("del")) &&
+      /for \(const t of LAYER_TABLES\)/.test(fnSrc("dropLayer")));
     ok("（源码形状）birthPos 是纯计算（不再自己写 curPos），spawnPos 仍在 change 之外算",
       /function birthPos\(anchor, at\) \{\s*return at \|\| spawnPos\(anchor\);/.test(src9) && !/function birthPos[\s\S]{0,200}putLayerPos/.test(src9));
 
@@ -880,7 +834,7 @@ new Promise((resolve) => {
        这是"写入必须在 change 的 fn 内"的**可观察后果**：change 先快照再执行 fn，
        若坐标在 fn 外先写，快照里就含了新节点的条目，撤销后它变成孤儿。 */
     M.open("legacy-map");
-    const t9 = root0(M.state().cur).children[0];
+    const t9 = M.state().cur.root.children[0];
     const n9 = Object.keys(M.state().cur.pos).length;
     press(stage9().querySelector('.mm-node[data-id="' + t9.id + '"]'), pointOn(t9.id) || { x: 200, y: 200 });
     const cb9 = B.doc.querySelector('[data-mm="child"]');
@@ -903,7 +857,7 @@ new Promise((resolve) => {
     const src = JSON.parse(B.localStorage.getItem("mm_map_legacy-map"));
     const someId = Object.keys(src.pos)[0];
     const backup = { app: "laolao-mindmap", v: 1, layout: "mind", theme: "fresh", line: "curve",
-      root: JSON.parse(JSON.stringify(root0(src))), pos: Object.assign({}, src.pos), size: Object.assign({}, src.size) };
+      root: JSON.parse(JSON.stringify(src.root)), pos: Object.assign({}, src.pos), size: Object.assign({}, src.size) };
     backup.pos[someId] = { x: 777, y: 888 };          // 改一处：让"搬回来了"可判别（播种碰巧一样也能过就不算证据）
     backup.size[someId] = { w: 222, h: 111 };
     backup.pos.GHOST = { x: 1, y: 2 };                // 不在树上 → 不许搬进来
@@ -925,77 +879,6 @@ new Promise((resolve) => {
       ok("形状不合法的尺寸没有被搬进来（BADSHAPE）", !c.size.BADSHAPE);
       ok("导入完导图层里没有孤儿（搬进来的 id 都在树上）", layerOrphans(c).length === 0, layerOrphans(c).join(","));
     }
-    M.open("legacy-map");
-  }
-
-  console.log("\nC11. 森林数据模型：旧图迁移 / 落盘 / 保真 / 跨树 id 去重 / 允许空画布");
-  {
-    // G：旧格式（只有 root）打开 → 迁移成 roots:[root]，行为位置一字不变，且已落盘
-    B.localStorage.setItem("mm_map_legacy-map", JSON.stringify(LEGACY));
-    M.open("legacy-map");
-    const c = M.state().cur;
-    ok("G：cur.roots 是长度 1 的数组（旧图迁移）", Array.isArray(c.roots) && c.roots.length === 1, "roots=" + (c.roots && c.roots.length));
-    ok("G：旧字段 root 已删除（不留两份真相）", !("root" in c), "有 root=" + ("root" in c));
-    /* 逐字段相等按"结构 + 每个节点的字段值"比：`fill()` 会给叶子补一个 children:[]，
-       所以不能直接比 JSON 字符串（那是既有行为，不是迁移引入的差异）。 */
-    const shape = (n) => JSON.stringify({ id: n.id, text: n.text, fold: n.fold, bold: n.bold, color: n.color, side: n.side, progress: n.progress, note: n.note, link: n.link, marks: n.marks, children: (n.children || []).map(shape).map((s) => JSON.parse(s)) });
-    ok("G：roots[0] 与迁移前的 root 逐字段相等（结构 + 每个节点的字段值）",
-      shape(c.roots[0]) === shape(LEGACY.root));
-    ok("G：给这一丛写了 origin[根] = {0,0}",
-      JSON.stringify(c.origin && c.origin[c.roots[0].id]) === '{"x":0,"y":0}', JSON.stringify(c.origin));
-    ok("G：坐标仍是 8 条、且都对得上树（迁移没动 pos）",
-      Object.keys(c.pos).length === 8 && layerOrphans(c).length === 0, layerOrphans(c).join(","));
-    const disk = JSON.parse(B.localStorage.getItem("mm_map_legacy-map"));
-    ok("G：迁移结果已落盘（盘上是 roots，且没有 root）", Array.isArray(disk.roots) && !("root" in disk));
-    // M：保真 —— 重开一次，丛数/结构/pos/size/origin 逐字段不变
-    const snapM = JSON.stringify({ roots: c.roots, pos: c.pos, size: c.size, origin: c.origin });
-    M.open("legacy-map");
-    const c2 = M.state().cur;
-    ok("M：重开后完全保真（roots / pos / size / origin 逐字段相同）",
-      JSON.stringify({ roots: c2.roots, pos: c2.pos, size: c2.size, origin: c2.origin }) === snapM);
-    // 跨树 id 去重：手工造"两丛、id 完全相同"的图
-    const dup = Object.assign({}, JSON.parse(JSON.stringify(LEGACY)));
-    dup.roots = [dup.root, JSON.parse(JSON.stringify(dup.root))]; delete dup.root; dup.origin = {};
-    B.localStorage.setItem("mm_map_legacy-map", JSON.stringify(dup));
-    M.open("legacy-map");
-    const c3 = M.state().cur;
-    const ids = allIdsOf(c3);
-    ok("跨树 id 去重：两丛的 id 集合大小 == 节点总数（" + ids.size + " / 16）", ids.size === 16);
-    ok("去重后导图层里没有孤儿（pos/size/origin 的键都在树上）", layerOrphans(c3).length === 0, layerOrphans(c3).join(","));
-    ok("去重后 origin 的键 ⊆ 丛根集合", Object.keys(c3.origin).every((id) => c3.roots.some((r) => r.id === id)));
-    /* J：删**丛根** = 删整丛（契约 §3 第 6 条）。这里是"origin 落地后必须有行为断言"的那条：
-       三份表（pos / size / origin）里都不许留下被删丛的 id，而且另一丛必须完好。 */
-    {
-      const first = c3.roots[0], second = c3.roots[1];
-      const firstIds = [];
-      (function w(n) { firstIds.push(n.id); (n.children || []).forEach(w); })(first);
-      const el = B.win.$("mmStage").querySelector('.mm-node[data-id="' + first.id + '"]');
-      const pt = pointOn(first.id) || { x: 200, y: 200 };
-      bubble(el, "pointerdown", { target: el, clientX: pt.x, clientY: pt.y });
-      bubble(el, "pointerup", { target: el, clientX: pt.x, clientY: pt.y });
-      ok("J 前提：选中了丛根 " + first.id, M.state().sel === first.id, "sel=" + M.state().sel);
-      const db = B.doc.querySelector('[data-mm="del"]');
-      bubble(db, "click", { target: db });
-      const c5 = M.state().cur;
-      ok("J：删掉一丛后 roots 只剩另一丛（" + c5.roots.length + " 丛，剩 " + (c5.roots[0] && c5.roots[0].id) + "）",
-        c5.roots.length === 1 && c5.roots[0].id === second.id);
-      ok("J：被删丛的 pos / size / origin 条目全清（" + firstIds.length + " 个 id）",
-        firstIds.every((id) => !c5.pos[id] && !c5.size[id] && !c5.origin[id]),
-        firstIds.filter((id) => c5.pos[id] || c5.size[id] || c5.origin[id]).join(","));
-      ok("J：三份表里不存在任何不在树上的 id（含 origin）", layerOrphans(c5).length === 0, layerOrphans(c5).join(","));
-      ok("J：另一丛的 origin 仍在（删的是这一丛、不是全清）", !!c5.origin[second.id], JSON.stringify(c5.origin));
-    }
-    // O：roots: [] 是合法状态
-    const empty = { id: "legacy-map", title: "空图", layout: "mind", line: "curve", theme: "fresh", v: 1, roots: [], origin: {}, pos: {}, size: {} };
-    B.localStorage.setItem("mm_map_legacy-map", JSON.stringify(empty));
-    M.open("legacy-map");
-    const c4 = M.state().cur;
-    ok("O：roots: [] 打开不崩、仍为空、不自动补节点", Array.isArray(c4.roots) && c4.roots.length === 0, "roots=" + (c4.roots && c4.roots.length));
-    ok("O：空画布下布局不炸（L.nodes 为空、bounds 有值）",
-      !!M.state().L && M.state().L.nodes.size === 0 && !!M.state().L.bounds);
-    ok("O：空画布存盘后重开仍为空", JSON.stringify(JSON.parse(B.localStorage.getItem("mm_map_legacy-map")).roots) === "[]");
-    // 复原夹具
-    B.localStorage.setItem("mm_map_legacy-map", JSON.stringify(LEGACY));
     M.open("legacy-map");
   }
 
