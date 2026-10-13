@@ -110,11 +110,12 @@ const clickAt = async (x, y) => { await mouse("mousePressed", x, y, 1, 1); await
 async function clickSel(sel) { const p = await rectOf(sel); if (!p) throw new Error("页面上找不到元素：" + sel); await clickAt(p.x, p.y); return p; }
 const SCAN = `(() => {
   const st = window.Mindmap.state(), m = st.cur;
-  const trees = Array.isArray(m.nodes) ? m.nodes : (m.root ? [m.root] : []);
-  const live = new Set(); for (const t of trees) (function w(n) { live.add(n.id); (n.children || []).forEach(w); })(t);
+  /* 形状/遍历一律走 **vendor 导出的助手**（数据形状只有那一处权威）：这里不许自己写
+     Array.isArray(m.nodes) ? m.nodes : [m.root] —— 页内片段抄一份，迟早和产品侧走偏。 */
+  const M2 = window.Mindmap, trees = M2.nodesOf(m), live = M2.liveIds(m);
   const bad = [];
   /* 拿不到清单就**判失败**：兜底成空数组会让"扫 0 张表 → 0 孤儿 → 绿灯"，把"没拿到数据"变成"验过了"。 */
-  const M2 = window.Mindmap, maps = M2 && M2.LAYER_MAPS, lists = M2 && M2.LAYER_LISTS;
+  const maps = M2 && M2.LAYER_MAPS, lists = M2 && M2.LAYER_LISTS;
   if (!Array.isArray(maps) || !maps.length || !Array.isArray(lists)) {
     return JSON.stringify({ orphans: ["清单没拿到或为空（maps=" + JSON.stringify(maps) + " lists=" + JSON.stringify(lists) + "）"], listsMissing: true, tree: live.size, pos: 0, size: 0, sel: st.sel });
   }
@@ -199,8 +200,7 @@ const main = async () => {
       await clickAt(btn.x, btn.y);
       await sleep(400);
       const folded = JSON.parse(await ev(`(() => { const st = window.Mindmap.state(), m = st.cur;
-  const trees = Array.isArray(m.nodes) ? m.nodes : (m.root ? [m.root] : []);
-  const find = (id) => { for (const t of trees) { const q = (function w(n) { if (n.id === id) return n; for (const c of n.children || []) { const r = w(c); if (r) return r; } return null; })(t); if (q) return q; } return null; };
+  const find = (id) => { for (const t of window.Mindmap.nodesOf(m)) { const q = (function w(n) { if (n.id === id) return n; for (const c of n.children || []) { const r = w(c); if (r) return r; } return null; })(t); if (q) return q; } return null; };
   /* 折叠状态在**导图层** cur.fold（节点字段里没有 fold），所以这里读 m.fold 而不是节点上的 f.fold。 */
   return JSON.stringify({ fold: !!(m.fold && m.fold["${foldT.id}"]), node: !!find("${foldT.id}"), dom: document.querySelectorAll('#mmStage .mm-node').length, selThis: st.sel === "${foldT.id}" }); })()`));
       check("收起按钮：**第 1 次点**就折叠（点之前该节点未被选中：" + !st1.selThis + "）", folded.fold === true, JSON.stringify(folded));

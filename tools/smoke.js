@@ -370,8 +370,9 @@ new Promise((resolve) => {
 
   const B = bootAll();
   const M = B.Mindmap;
-  /* 【独立版·平级】容器是数组：夹具与断言统一用 root0() 取第一个容器（旧格式 root 也认）。 */
-  const root0 = (m) => ((m && (Array.isArray(m.nodes) ? m.nodes[0] : m.root)) || null);
+  /* 【独立版·平级】容器是数组：夹具与断言统一用 root0() 取第一个容器。
+     **形状知识只有 vendor 一处权威**（M.nodesOf）—— 自测台不自己写 `Array.isArray(m.nodes) ? … : [m.root]`。 */
+  const root0 = (m) => M.nodesOf(m)[0] || null;
   /* 【独立版】"扫哪些表"只有 vendor 那一处真相来源：断言直接读导出，不写第二份字面量。 */
   const LAYER_MAPS = M.LAYER_MAPS, LAYER_LISTS = M.LAYER_LISTS;
   /* 给"按下/拖动落在某个节点上"算**与真实浏览器一致**的屏幕坐标：布局盒 + #mmStage 的 transform
@@ -827,8 +828,8 @@ new Promise((resolve) => {
     M.open("legacy-map");
     const c1 = M.state().cur;
     ok("容器迁移成数组：cur.nodes = [root]（不留 root 别名）",
-      Array.isArray(c1.nodes) && c1.nodes.length === 1 && c1.nodes[0].id === "r1" && !("root" in c1),
-      "nodes=" + (Array.isArray(c1.nodes) ? c1.nodes.map((r) => r.id).join(",") : typeof c1.nodes));
+      M.nodesOf(c1).length === 1 && root0(c1).id === "r1" && !("root" in c1) && Object.prototype.hasOwnProperty.call(c1, "nodes"),
+      "nodes=" + M.nodesOf(c1).map((r) => r.id).join(","));
     ok("节点字段上的折叠搬进导图层 cur.fold（a1 / a2x）",
       c1.fold.a1 === true && c1.fold.a2x === true, JSON.stringify(c1.fold));
     ok("节点字段里的 fold 已被 delete（不留两份折叠真相）",
@@ -890,8 +891,7 @@ new Promise((resolve) => {
      这条同时把"折叠后代"排除在孤儿之外 —— 折叠只是不进布局，节点仍在树上，它们的坐标条目必须保留。 */
   const layerOrphans = (m) => {
     if (!m || !root0(m)) return [];
-    const live = new Set();
-    for (const t of (Array.isArray(m.nodes) ? m.nodes : (root0(m) ? [root0(m)] : []))) (function w(n) { live.add(n.id); (n.children || []).forEach(w); })(t);
+    const live = M.liveIds(m);      // 全部容器：走 vendor 的同一处遍历，不在这里再写一份形状知识
     const bad = [];
     for (const t of LAYER_MAPS) for (const id of Object.keys(m[t] || {})) if (!live.has(id)) bad.push(t + ":" + id);
     for (const t of LAYER_LISTS) for (const e of (Array.isArray(m[t]) ? m[t] : [])) {
@@ -1040,6 +1040,26 @@ new Promise((resolve) => {
     }
     ok("每处 setFold 都落在 change(() => { … }) 块内（写在 change 外就撤不回、也落不了盘）",
       outside.length === 0, "块外的=" + outside.join(" | "));
+    /* ==== META-SHAPE-SCAN ==== */
+    /* 元断言：**数据形状只有一处权威**。tools/ 下的脚本（含 verify-ui.mjs 的页内片段）不许自带
+       第二份"是不是 nodes 数组"的知识 —— 遍历与判形状一律走 vendor 导出的 nodesOf / liveIds。
+       扫的是**去掉注释后**的源码，并把本段自身剪掉（免得模式串自命中）。 */
+    const SHAPE_SNIFF = [
+      { name: "Array.isArray(…nodes) 这类形状嗅探", re: /Array\.isArray\([^\n]*\.nodes\b/ },
+      { name: "三元里取 [ …root ]（旧格式嗅探）", re: /\?\s*\[[^\]\n]*\.root\b/ },
+      { name: "直接读 cur.root", re: /\bcur\.root\b/ },
+    ];
+    const sniffHits = [];
+    for (const f of ["tools/smoke.js", "tools/verify-ui.mjs"]) {
+      const raw = require("fs").readFileSync(require("path").join(__dirname, "..", f), "utf8");
+      const a = raw.indexOf("META-SHAPE-SCAN ===="), b = raw.indexOf("META-SHAPE-SCAN END ==== */");
+      const body0 = a >= 0 && b > a ? raw.slice(0, raw.lastIndexOf("/*", a)) + raw.slice(b + "META-SHAPE-SCAN END ==== */".length) : raw;
+      const body = body0.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+      for (const s of SHAPE_SNIFF) { const mm = body.match(s.re); if (mm) sniffHits.push(f + " → " + s.name + "：" + mm[0].trim()); }
+    }
+    ok("（元断言）tools/ 里没有第二份数据形状知识（形状/遍历一律走 Mindmap.nodesOf / liveIds）",
+      sniffHits.length === 0, sniffHits.join(" | "));
+    /* ==== META-SHAPE-SCAN END ==== */
     /* 常驻反向对照（每次跑自测台都重验，不是改文件再改回）：往两个清单各塞一张假表 ——
        ① 孤儿判据必须立刻开始扫它；② 走真实删除链路时清理也必须跟上；
        ③ **列表类绝不当映射删**：条目自己的 id 恰好在树上也要按端点过滤掉。 */
@@ -1146,8 +1166,7 @@ new Promise((resolve) => {
     }
     const banners = B.banners.slice(bannersBefore);
     ok("导入含 2 个容器的备份：两个容器都进来了（不许静默只取第一个）",
-      !!cImp && Array.isArray(cImp.nodes) && cImp.nodes.length === 2,
-      "nodes=" + (cImp && cImp.nodes ? cImp.nodes.length : "null"));
+      !!cImp && M.nodesOf(cImp).length === 2, "nodes=" + (cImp ? M.nodesOf(cImp).length : "null"));
     ok("第二个容器的节点与 pos/size 也一起搬进来（b1 / b1x）",
       !!(cImp && cImp.pos.b1 && cImp.size.b1 && cImp.pos.b1x), JSON.stringify(cImp && cImp.pos));
     ok("多容器导入给了可见提示（不是静默）", banners.some((s) => /独立容器/.test(s)), JSON.stringify(banners));
@@ -1263,7 +1282,7 @@ new Promise((resolve) => {
        会造出"8/8 重叠"的假红）。真判据：这张图的容器根 id 不在原图 id 集合里。 */
     const cand = idx.filter((e) => e && e.id !== "legacy-map")
       .map((e) => ({ id: e.id, m: JSON.parse(B.localStorage.getItem("mm_map_" + e.id) || "null") }))
-      .filter((x) => x.m && Array.isArray(x.m.nodes) && x.m.nodes[0] && ids0.indexOf(x.m.nodes[0].id) < 0);
+      .filter((x) => x.m && root0(x.m) && ids0.indexOf(root0(x.m).id) < 0);
     const copy = cand[0];
     if (!copy) ok("复制导图产生了副本条目", false, JSON.stringify(idx.map((e) => e && e.id)));
     else {
@@ -1297,7 +1316,7 @@ new Promise((resolve) => {
     B.localStorage.setItem("mm_map_legacy-map", JSON.stringify(two));
     M.open("legacy-map");
     const c = M.state().cur;
-    ok("多容器图：两个容器都还在（" + (c.nodes || []).length + "）", Array.isArray(c.nodes) && c.nodes.length === 2);
+    ok("多容器图：两个容器都还在（" + M.nodesOf(c).length + "）", M.nodesOf(c).length === 2);
     ok("第二个容器的 pos/size/fold 条目**没有被当孤儿删掉**（这正是修前的静默丢数据）",
       !!c.pos.b1 && !!c.size.b1 && !!c.size.b1x && c.fold.b1 === true,
       "pos.b1=" + JSON.stringify(c.pos.b1) + " size.b1=" + JSON.stringify(c.size.b1) + " fold=" + JSON.stringify(c.fold));

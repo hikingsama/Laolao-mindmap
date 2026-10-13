@@ -281,10 +281,16 @@
     return cur.pos;
   }
   /* 【独立版·平级】节点集合的入口是**数组** `cur.nodes = [root]`（按 Chief 裁定；不参与布局/样式/折叠语义，
-     `children` 留在节点上作迁移来源）。**不留 `root` 别名。** */
-  const nodesArr = () => (cur && Array.isArray(cur.nodes) ? cur.nodes : []);
+     `children` 留在节点上作迁移来源）。**不留 `root` 别名。**
+     ⚠️ **数据形状只有这一处权威**（新格式 `nodes` 数组 / 旧格式 `root`）：`nodesOf(m)` 是唯一读取入口，
+     渲染之外的调用方（自测台、`tools/verify-ui.mjs` 的页内片段）一律走它，**不许自己写**
+     `Array.isArray(m.nodes) ? m.nodes : [m.root]` —— 第二份形状知识迟早和这里走偏。 */
+  const nodesOf = (m) => (m && Array.isArray(m.nodes) ? m.nodes : (m && m.root ? [m.root] : []));
+  const nodesArr = () => nodesOf(cur);
   const topNode = () => nodesArr()[0] || null;
   const isTopNode = (v) => { const id = v && typeof v === "object" ? v.id : v; return !!id && nodesArr().some((r) => r.id === id); };
+  /* 全部容器里的节点 id 集合（pruneLayer / applyLayer / 断言共用同一处，别各写一份遍历）。 */
+  const liveIds = (m) => { const s = new Set(); for (const r of nodesOf(m)) walk(r, (n) => s.add(n.id)); return s; };
   /* 【独立版·平级】折叠状态在**导图层** `cur.fold = { 节点id: true }`（与 pos/size 同层，绝不写节点字段）。
      所有读写走这两个入口：节点字段里**不再有** fold（迁移时 delete n.fold）。 */
   const isFold = (n) => !!(n && cur && cur.fold && cur.fold[n.id]);
@@ -369,7 +375,7 @@
   };
   function applyLayer(src) {
     if (!cur || !src) return 0;
-    const live = new Set(); for (const r of nodesArr()) walk(r, (n) => live.add(n.id));   // 全部容器（多容器下漏掉 = 把别的容器当孤儿删）
+    const live = liveIds(cur);                         // 全部容器（唯一一处遍历；只算第一个容器 = 把别的容器当孤儿删）
     let n = 0;
     for (const t of LAYER_MAPS) {
       const from = src[t]; if (!from || typeof from !== "object") continue;
@@ -388,7 +394,7 @@
      映射类按键清；列表类按**端点**清（条目自己还有 id，绝不能拿节点 id 去 delete）。 */
   function pruneLayer() {
     if (!cur || !topNode()) return 0;
-    const live = new Set(); for (const r of nodesArr()) walk(r, (n) => live.add(n.id));   // 全部容器（多容器下漏掉 = 把别的容器当孤儿删）
+    const live = liveIds(cur);                         // 全部容器（唯一一处遍历；只算第一个容器 = 把别的容器当孤儿删）
     let n = 0;
     for (const t of LAYER_MAPS) {
       const d = cur[t]; if (!d) continue;
@@ -1528,5 +1534,8 @@
     /* 【独立版】导出给断言读**同一处**：多容器下 findNode 必须能找到非第一个容器里的节点，
        断言不能自己再写一份遍历（自写遍历只是证明"夹具里有那个节点"，证明不了产品路径）。 */
     findNode,
+    /* 【独立版】数据形状的唯一权威与"全部容器"的遍历入口：tools/ 下的脚本（含 verify-ui.mjs 的
+       页内片段）一律调它们，不许自己抄 `Array.isArray(...nodes) ? ... : [.root]`。 */
+    nodesOf, liveIds,
   };
 })();
