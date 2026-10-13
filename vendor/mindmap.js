@@ -482,7 +482,11 @@
   function addChild(id, text) {
     const r = findNode(id || sel); if (!r) return;
     const k = { id: nid(), text: text || (r.p ? "子主题" : "分支主题"), children: [] };
-    giveBirth(k, { x: (L && L.nodes.get(r.n.id)) ? L.nodes.get(r.n.id).x : 0, y: (L && L.nodes.get(r.n.id)) ? L.nodes.get(r.n.id).y : 0, w: estSize(r.n.text, 1).w, h: estSize(r.n.text, 1).h });   // 【独立版】出生位置立刻固化
+    const ps = L && L.nodes.get(r.n.id);
+    /* 【独立版】锚点必须用**真实盒子**（含 cur.size 固化后的尺寸），不能用 estSize 的文本估算：
+       父节点被放大过时，估算宽度偏小 → 出生点算在父节点内部 → "新节点压父节点"。
+       这里与 addSibling / addParent 的写法对齐（它们一开始就用 ps）。 */
+    giveBirth(k, { x: ps ? ps.x : 0, y: ps ? ps.y : 0, w: ps ? ps.w : estSize(r.n.text, 1).w, h: ps ? ps.h : estSize(r.n.text, 1).h });
     change(() => { r.n.fold = false; (r.n.children ||= []).push(k); });
     sel = k.id; draw(); reveal(k.id); startEdit(k.id, true); editingNew = k.id;
   }

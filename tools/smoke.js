@@ -496,6 +496,11 @@ new Promise((resolve) => {
     ok("拖节点改位置：endNodeDrag 仍把坐标写进 cur.pos", js.includes("function endNodeDrag(") && js.includes("change(putPos)"));
     ok("拖空白平移：panning 分支在", js.includes('vw.classList.add("panning")'));
     ok("滚轮平移/缩放：wheel 监听在", js.includes('addEventListener("wheel"'));
+    // addChild 的锚点必须是真实盒子：用 estSize 的文本估算，父节点被放大过时会算出"压住父节点"的位置
+    const addChildSrc = js.slice(js.indexOf("function addChild("), js.indexOf("function addSibling("));
+    ok("addChild 用真实盒子当锚点（不用 estSize 估算；与 addSibling/addParent 写法对齐）",
+      addChildSrc.includes("const ps = L && L.nodes.get(r.n.id)") && addChildSrc.includes("w: ps ? ps.w :"),
+      "含 estSize 直取宽度的旧写法=" + /giveBirth\(k, \{ x: \(L && L\.nodes\.get\(r\.n\.id\)\)/.test(addChildSrc));
   }
 
   console.log("\nD. 新建子节点 → 不盖住父节点");
