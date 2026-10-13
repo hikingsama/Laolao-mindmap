@@ -786,7 +786,6 @@
     fill(m.root);
     cur = m; cur.layout ||= "mind"; cur.line ||= "curve"; cur.theme ||= "fresh";
     seedPos();          // 【独立版】旧导图第一次打开：算一遍坐标写进 pos（之后不再重算）
-    view = { x: 0, y: 0, k: 1 };
     sel = cur.root.id; hist = []; redo = []; found = []; mode = "map"; panelOpen = !isMobile() && lsGet("mm_panel_v1", false);
     document.body.classList.add("mm-editing");
     renderEditor();
