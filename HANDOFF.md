@@ -48,27 +48,17 @@
 ## 给下一位的关键事实
 
 - 基线文件：`vendor/mindmap.js`，原始 sha256 `1d28e770ce4d779aa95c468349463e7cfb6b69f52f4a86378711b8699d6a62b2`（75699 字节）
-- **⚠️ 行号分两栏看，照抄会踩雷（本节于 2026-10-13 修正）**：`ANALYSIS.md` 给的是**基线**的行号，
-  而 `vendor/mindmap.js` 已在基线上改动了约 9KB，行号必然整体后移。实测对照：
-
-  | 锚点 | 基线 blob `75993d3` | `vendor/mindmap.js`（当前实测） |
-  |---|---|---|
-  | `nodes.set(` 注入位 | 171 | **198** |
-  | 横向坐标赋值 | 183 | **210** |
-  | 纵向坐标赋值 | 190 | **217** |
-  | 根节点居中 | 204 | **231** |
-  | `layout()` 定义 | 164 | **191**（已改名 `layoutAuto()`） |
-  | `endNodeDrag()` | 771 | **927** |
-  | `addChild` / `addSibling` / `addParent` | 299 / 305 / 311 | **451 / 458 / 466** |
-  | `fill()` | 51 | **66** |
-
-  **改代码一律用"实测行号 + 搜索锚点"，不许照抄基线行号
-  本表在 **`vendor/mindmap.js` blob `012888a4…`（1145 行）** 上实测（2026-10-13）。
-  **换过代码后行号一定会再移，重测办法**：`git rev-parse HEAD:vendor/mindmap.js` 记下 blob，
-  再按这几个锚点搜（锚点不会漂）：`nodes.set(`、`s.side = dir; s.x =`、`s.side = 0; s.x =`、
-  `rs.side = 0; rs.x =`、`function layoutAuto()`、`function endNodeDrag(`、`function addChild(`。
-  ⚠️ 提示bot 复核时给的 185/197/204/218/178/917/438… 量的是 `feat/pos-coordinates@92bac22`，
-  **不是本表这份 blob**，不要混用。。**
+- **行号一律当场实测；本文不维护静态行号表**（2026-10-13 改）。
+  为什么删表：表格会腐坏，而且**腐坏方式不统一** —— 尺寸功能插在文件中部时，插入点之前的锚点没动、
+  之后的全部后移（实测：`endNodeDrag` 927→993、`addChild` 451→486，而 `nodes.set(` 198 一直没动）。
+  **"对一半"比"全错"更容易骗人**：读者随机核几个都对上了，就会信整张表，然后照抄那个错的。
+  **改代码用锚点，不用行号**。锚点举例（不会过期）：
+  `layoutAuto()` · `layoutWithPos()` · `seedPos()` · `spawnPos` · `endNodeDrag()` · `addChild` ·
+  `del()` · `nodes.set(` · `if (s.span != null)`
+  需要行号时当场测一条，**行号以当场输出为准**：
+  `grep -n "function endNodeDrag" vendor/mindmap.js`
+  （`ANALYSIS.md` 里那份是**基线 blob `75993d3`** 的行号，对本文件不适用；要核基线用
+  `git show b9afaed:mindmap.js` 取回后再测，别把两套行号混用。）
   这份文档自己就违反过这条纪律：上一版直接把基线行号写成"完全适用"，而当时 `vendor/mindmap.js` 早已改过。
   另：提问bot 复核时给出的 185/197/204/218/191… 那组数字量的是 `feat/pos-coordinates@92bac22`（**早于**云同步停用那批改动），
   与当前 HEAD 有系统性差异 —— 这就是为什么行号只认"当场实测"。
