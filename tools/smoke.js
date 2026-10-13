@@ -1836,6 +1836,47 @@ new Promise((resolve) => {
     M.open("legacy-map");
   }
 
+  console.log("\nC22. 老图迁移：children → 默认单指向的边（父子关系整体搬到边上，逐对可对账）");
+  {
+    /* 老格式的层级只长在 children 上；迁移后**唯一的关系源**必须是边。
+       所以这里逐对账：children 里每一个父子对 ↔ 边集合里必须恰好有一条对应的 fwd 边（两个方向都查）。 */
+    B.localStorage.setItem("mm_map_legacy-map", JSON.stringify(LEGACY));    // v:1，只有 root
+    M.open("legacy-map");
+    const c22 = M.state().cur;
+    const pairs = [];
+    for (const r of M.nodesOf(c22)) walk22(r, (n) => { for (const k of n.children || []) pairs.push(n.id + "→" + k.id); });
+    function walk22(n, f) { f(n); for (const k of n.children || []) walk22(k, f); }
+    const edges = c22.edges || [];
+    const key = (e) => (e.from && e.from.node) + "→" + (e.to && e.to.node);
+    const keys = edges.map(key);
+    ok("老图 children 里的每一个父子对都有对应的边（缺一条就是静默丢层级）",
+      pairs.length > 0 && pairs.every((p) => keys.indexOf(p) >= 0),
+      "父子对 " + pairs.length + " 个 / 边 " + keys.length + " 条；缺=" + pairs.filter((p) => keys.indexOf(p) < 0).join(","));
+    ok("反向也对账：每条边都恰好对应一个真实的父子对（没有凭空造出来的边）",
+      keys.length === pairs.length && keys.every((k) => pairs.indexOf(k) >= 0), "边=" + keys.join(" | "));
+    ok("每一条都是**默认单指向**（dir=fwd）", edges.length > 0 && edges.every((e) => e.dir === "fwd"),
+      [...new Set(edges.map((e) => e.dir))].join(","));
+    ok("端点是默认侧面（mind：e→w）", edges.every((e) => e.from.side === "e" && e.to.side === "w"),
+      [...new Set(edges.map((e) => e.from.side + "→" + e.to.side))].join(","));
+    ok("没有自环、端点对不重复",
+      edges.every((e) => e.from.node !== e.to.node) && new Set(keys).size === keys.length);
+    /* 幂等：再打开一次不许翻倍（否则每开一次多一圈重复的边） */
+    const snap22 = JSON.stringify(c22.edges);
+    M.open("legacy-map");
+    ok("再打开一次边集合不变（v:3 幂等，不会翻倍）", JSON.stringify(M.state().cur.edges) === snap22);
+    /* down 布局：默认侧面换成 s→n（同一套规则，别只为 mind 写死） */
+    const down = JSON.parse(JSON.stringify(LEGACY));
+    down.layout = "down";
+    B.localStorage.setItem("mm_map_legacy-map", JSON.stringify(down));
+    M.open("legacy-map");
+    const ed22 = M.state().cur.edges || [];
+    ok("down 布局的老图：边默认 s→n（侧面跟布局走）",
+      ed22.length > 0 && ed22.every((e) => e.from.side === "s" && e.to.side === "n"),
+      [...new Set(ed22.map((e) => e.from.side + "→" + e.to.side))].join(","));
+    B.localStorage.setItem("mm_map_legacy-map", JSON.stringify(LEGACY));
+    M.open("legacy-map");
+  }
+
   console.log("\nC19. 位置属于每个节点自己：拖父节点，子节点**不动**（平级模型 INV-4）");
   {
     /* 只有"父节点有坐标、子节点没有"的图才能看见"父子跟随"：两边都有坐标时 follow 分支直接跳过。
