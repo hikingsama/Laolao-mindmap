@@ -345,11 +345,14 @@ new Promise((resolve) => {
   const treesOf = (m) => (Array.isArray(m && m.roots) ? m.roots : m && m.root ? [m.root] : []);
   const root0 = (m) => treesOf(m)[0] || null;
   const allIdsOf = (m) => { const s = new Set(); for (const t of treesOf(m)) (function w(n) { s.add(n.id); (n.children || []).forEach(w); })(t); return s; };
+  /* 【独立版】"扫哪些导图层表"**只有 vendor 那一个真相来源**：这里直接读导出，不写第二份字面量。
+     否则加一张新表（如 cur.origin）时，判据只扫旧表、测试仍然全绿 —— 断言自己只应用了一半纪律。 */
+  const LAYERS = M.LAYER_TABLES;
   const layerOrphans = (m) => {
     if (!m) return [];
     const live = allIdsOf(m);
     const bad = [];
-    for (const t of ["pos", "size", "origin"]) for (const id of Object.keys(m[t] || {})) if (!live.has(id)) bad.push(t + ":" + id);
+    for (const t of (LAYERS || [])) for (const id of Object.keys(m[t] || {})) if (!live.has(id)) bad.push(t + ":" + id);
     return bad;
   };
   /* 给"按下/拖动落在某个节点上"算**与真实浏览器一致**的屏幕坐标：布局盒 + #mmStage 的 transform
@@ -381,6 +384,15 @@ new Promise((resolve) => {
   }
   ok("\nvendor/mindmap.js 加载不抛错并导出 Mindmap", !!M && typeof M.state === "function" && typeof M.open === "function" && typeof M.create === "function");
   if (!M) { console.log("\n结果：提前中止"); process.exit(1); }
+  /* 断言侧与代码侧必须共用"扫哪些表"这一个来源（Chief 追加的前置要求）。
+     `LAYERS` 直接取自 `window.Mindmap.LAYER_TABLES`；下面同时钉住"自测台里不许再出现第二份字面量"。 */
+  {
+    const smokeSrc = require("fs").readFileSync(__filename, "utf8");
+    ok("（源码形状）自测台没有第二份表字面量（不出现 for (const t of [\"pos\", \"size\"]…)）",
+      !/for \(const t of \["pos", "size"/.test(smokeSrc) && !/\["pos", "size", "origin"\]\.includes/.test(smokeSrc));
+    ok("扫哪些表来自 vendor 唯一真相来源：Mindmap.LAYER_TABLES = " + JSON.stringify(LAYERS),
+      Array.isArray(LAYERS) && LAYERS.join(",") === "pos,size,origin", JSON.stringify(LAYERS));
+  }
 
   console.log("\nC. 旧导图首次打开 → 播种（不重叠、落盘）");
   M.open("legacy-map").catch((e) => { console.log("  !! open 抛错：" + e.message + "\n" + e.stack.split("\n").slice(0, 6).join("\n")); });
@@ -827,9 +839,40 @@ new Promise((resolve) => {
       ok("（源码形状）" + nm + "：不存在 fn 外的直接 curPos()[…] = 写入",
         !!body && !/curPos\(\)\[[^\]]*\]\s*=/.test(body));
     }
-    ok("（源码形状）要清理的导图层表清单是常量 LAYER_TABLES = ['pos','size','origin']，del 调 dropLayer（森林加表只改这一处）",
-      /const LAYER_TABLES = \["pos", "size", "origin"\];/.test(src9) && /dropLayer\(kill\)/.test(fnSrc("del")) &&
-      /for \(const t of LAYER_TABLES\)/.test(fnSrc("dropLayer")));
+    ok("（源码形状）要清理的导图层表清单来自同一个常量，del 调 dropLayer（森林加表只改 vendor 一处）",
+      /const LAYER_TABLES = \["pos", "size", "origin"\];/.test(src9) && /dropLayer\(kill/.test(fnSrc("del")) &&
+      /for \(const t of LAYER_TABLES\)/.test(fnSrc("dropLayer")) &&
+      /for \(const t of LAYER_TABLES\)/.test(fnSrc("pruneLayer")) && /for \(const t of LAYER_TABLES\)/.test(fnSrc("applyLayer")));
+
+    /* 反向对照（**常驻断言**，不是临时改文件）：往"唯一真相来源"里塞一张假表，两侧必须立刻跟上它 ——
+       ① 孤儿判据开始扫这张表；② del 的清理也会清这张表里被删节点的条目（走真实删除链路）。
+       这证明"连线"是真的接上了，而不是看起来接上了。 */
+    const probeOK = (() => {
+      B.localStorage.setItem("mm_map_legacy-map", JSON.stringify(LEGACY));
+      M.open("legacy-map");
+      const m = M.state().cur, victim = root0(m).children[0];
+      LAYERS.push("__probe");
+      try {
+        m.__probe = { GHOSTX: { x: 0, y: 0 }, KEEP: { x: 0, y: 0 } };
+        const scanFollows = layerOrphans(m).some((s) => s.indexOf("__probe:GHOSTX") === 0);
+        m.__probe[victim.id] = { x: 1, y: 1 };
+        const el = B.win.$("mmStage").querySelector('.mm-node[data-id="' + victim.id + '"]');
+        press(el, pointOn(victim.id) || { x: 200, y: 200 });
+        const db = B.doc.querySelector('[data-mm="del"]');
+        bubble(db, "click", { target: db });
+        const after = M.state().cur;
+        return { scanFollows, cleanFollows: !(after.__probe && after.__probe[victim.id]), keepsOthers: !!(after.__probe && after.__probe.KEEP) };
+      } finally {
+        LAYERS.pop();
+        if (M.state().cur) delete M.state().cur.__probe;
+        B.localStorage.setItem("mm_map_legacy-map", JSON.stringify(LEGACY));
+        M.open("legacy-map");
+      }
+    })();
+    ok("反向对照：把假表 __probe 塞进'唯一真相来源'后，孤儿判据立刻开始扫它（判据不是写死的）",
+      probeOK.scanFollows, JSON.stringify(probeOK));
+    ok("反向对照：同一来源驱动 del 的清理（假表里被删节点的条目也清了、别的条目还在）",
+      probeOK.cleanFollows && probeOK.keepsOthers, JSON.stringify(probeOK));
     ok("（源码形状）birthPos 是纯计算（不再自己写 curPos），spawnPos 仍在 change 之外算",
       /function birthPos\(anchor, at\) \{\s*return at \|\| spawnPos\(anchor\);/.test(src9) && !/function birthPos[\s\S]{0,200}putLayerPos/.test(src9));
 
@@ -920,6 +963,28 @@ new Promise((resolve) => {
     ok("跨树 id 去重：两丛的 id 集合大小 == 节点总数（" + ids.size + " / 16）", ids.size === 16);
     ok("去重后导图层里没有孤儿（pos/size/origin 的键都在树上）", layerOrphans(c3).length === 0, layerOrphans(c3).join(","));
     ok("去重后 origin 的键 ⊆ 丛根集合", Object.keys(c3.origin).every((id) => c3.roots.some((r) => r.id === id)));
+    /* J：删**丛根** = 删整丛（契约 §3 第 6 条）。这里是"origin 落地后必须有行为断言"的那条：
+       三份表（pos / size / origin）里都不许留下被删丛的 id，而且另一丛必须完好。 */
+    {
+      const first = c3.roots[0], second = c3.roots[1];
+      const firstIds = [];
+      (function w(n) { firstIds.push(n.id); (n.children || []).forEach(w); })(first);
+      const el = B.win.$("mmStage").querySelector('.mm-node[data-id="' + first.id + '"]');
+      const pt = pointOn(first.id) || { x: 200, y: 200 };
+      bubble(el, "pointerdown", { target: el, clientX: pt.x, clientY: pt.y });
+      bubble(el, "pointerup", { target: el, clientX: pt.x, clientY: pt.y });
+      ok("J 前提：选中了丛根 " + first.id, M.state().sel === first.id, "sel=" + M.state().sel);
+      const db = B.doc.querySelector('[data-mm="del"]');
+      bubble(db, "click", { target: db });
+      const c5 = M.state().cur;
+      ok("J：删掉一丛后 roots 只剩另一丛（" + c5.roots.length + " 丛，剩 " + (c5.roots[0] && c5.roots[0].id) + "）",
+        c5.roots.length === 1 && c5.roots[0].id === second.id);
+      ok("J：被删丛的 pos / size / origin 条目全清（" + firstIds.length + " 个 id）",
+        firstIds.every((id) => !c5.pos[id] && !c5.size[id] && !c5.origin[id]),
+        firstIds.filter((id) => c5.pos[id] || c5.size[id] || c5.origin[id]).join(","));
+      ok("J：三份表里不存在任何不在树上的 id（含 origin）", layerOrphans(c5).length === 0, layerOrphans(c5).join(","));
+      ok("J：另一丛的 origin 仍在（删的是这一丛、不是全清）", !!c5.origin[second.id], JSON.stringify(c5.origin));
+    }
     // O：roots: [] 是合法状态
     const empty = { id: "legacy-map", title: "空图", layout: "mind", line: "curve", theme: "fresh", v: 1, roots: [], origin: {}, pos: {}, size: {} };
     B.localStorage.setItem("mm_map_legacy-map", JSON.stringify(empty));

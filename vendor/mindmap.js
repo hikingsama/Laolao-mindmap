@@ -647,7 +647,20 @@
     sel = k.id; draw(); startEdit(k.id, true);
   }
   function del(id) {
-    const r = findNode(id || sel); if (!r || !r.p) return;
+    const r = findNode(id || sel); if (!r) return;
+    /* 【独立版·森林】删**丛根** = 删整丛（契约 §3 第 6 条 / 验收 J）：
+       把整棵的 id 从所有导图层表里清掉（含 origin[根]），再从 cur.roots 移除。
+       删到没有丛就是空画布（`roots: []` 是合法状态，允许；不自动补节点）。 */
+    if (!r.p) {
+      const killRoot = [];
+      walk(r.n, (n) => killRoot.push(n.id));
+      change(() => {
+        const i = cur.roots.indexOf(r.n); if (i >= 0) cur.roots.splice(i, 1);
+        dropLayer(killRoot);
+      });
+      const nx0 = firstRootId(); if (nx0) select(nx0, true);
+      return;
+    }
     const i = r.p.children.indexOf(r.n), nx = r.p.children[i + 1] || r.p.children[i - 1] || r.p;
     /* 【独立版】删除是**整棵子树**：按被删子树收集 id，再由 dropLayer 清掉该 id 在**所有导图层表**里的条目
        （清单 = LAYER_TABLES；森林加 cur.origin 时只改那一处，这里不动）。
@@ -1504,5 +1517,11 @@
   setInterval(() => { const u = me() ? me().id : null; if (u !== lastUid) { lastUid = u; if (u) { index.forEach((e) => { if (!e.uid) { e.uid = u; e.dirty = true; } }); idxSave(); pullList(); } if (currentView() === "mindmap" && !cur) renderList(); } }, 2000);
   window.addEventListener("beforeunload", () => { if (index.some((x) => x.dirty) && me()) pushDirty(); });
   ===== [独立版] 云同步停用结束 ===== */
-  window.Mindmap = { parseText, toMarkdown, state: () => ({ cur, sel, index, L }), open: openMap, create };
+  window.Mindmap = {
+    parseText, toMarkdown,
+    /* 【独立版】**"扫哪些导图层表"的唯一真相来源**：del 清理 / 读取容错 / 导入 / 自测台的孤儿判据
+       全部读这一个数组（自测台不许再写一份字面量）。加新表只改上面 LAYER_TABLES 一处。 */
+    LAYER_TABLES,
+    state: () => ({ cur, sel, index, L }), open: openMap, create,
+  };
 })();

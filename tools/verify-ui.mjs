@@ -114,13 +114,13 @@ const HELPERS = `window.__mine = {
   find: (n, id) => { if (!n) return null; if (n.id === id) return n; for (const c of n.children || []) { const r = window.__mine.find(c, id); if (r) return r; } return null; },
   get: (m, id) => { for (const t of window.__mine.trees(m)) { const r = window.__mine.find(t, id); if (r) return r; } return null; },
   all: (m) => { const out = []; for (const t of window.__mine.trees(m)) (function w(n) { out.push(n.id); (n.children || []).forEach(w); })(t); return out; },
-  layers: ["pos", "size", "origin"],
+  layers: () => (window.Mindmap && window.Mindmap.LAYER_TABLES) || [],   // 与 vendor 共用"扫哪些表"的唯一来源
 }; 1`;
 const SCAN = `(() => {
   const st = window.Mindmap.state(), m = st.cur;
   const live = new Set(window.__mine.all(m));
   const bad = [];
-  for (const t of window.__mine.layers) for (const id of Object.keys(m[t] || {})) if (!live.has(id)) bad.push(t + ":" + id);
+  for (const t of window.__mine.layers()) for (const id of Object.keys(m[t] || {})) if (!live.has(id)) bad.push(t + ":" + id);
   return JSON.stringify({ orphans: bad, tree: live.size, pos: Object.keys(m.pos || {}).length, size: Object.keys(m.size || {}).length,
     origin: Object.keys(m.origin || {}).length, roots: window.__mine.trees(m).length, sel: st.sel });
 })()`;
