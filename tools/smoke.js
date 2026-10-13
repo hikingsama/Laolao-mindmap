@@ -1003,6 +1003,43 @@ new Promise((resolve) => {
     ok("（源码形状）applyLayer：映射分支在 + 调 applyEdgesInto；applyEdgesInto 只碰 LAYER_LISTS 且函数体无 delete；**全函数体无 delete**（导入只搬不删，与 prune 相反）",
       shApply.mapsInBody && shApply.callsHelper && shApply.listsInHelper && shApply.noDeleteInHelper && !shApply.deleteInBody,
       JSON.stringify(shApply));
+    /* 「写入必须在 change 的 fn 内」这条纪律扩到 setFold：清单式点名 + **元断言**
+       （vendor 里 setFold( 出现总次数 == 清单长度）。新增调用点而不进清单 → 总数对不上 → 红。
+       为什么需要它：把一条写在 change 外的 setFold 移进来，只改那一处就"修好了"，下一个人再加一处
+       没有人管 —— 元断言把"以后新增的"也纳入判据。 */
+    const srcCode = src9.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+    const setFoldSites = [
+      { name: "addChild", pat: "setFold(r.n, false); (r.n.children ||= []).push(k)" },
+      { name: "paste-into-node", pat: "change(() => { setFold(r.n, false); (r.n.children ||= []).push(...fresh); })" },
+      { name: "toggleFold", pat: "change(() => { setFold(r.n, !isFold(r.n)); })" },
+      { name: "foldLevel", pat: "setFold(n, lv > 0 && d >= lv)" },
+      { name: "doFind", pat: "for (const n of toOpen) setFold(n, false)" },
+      { name: "drag-into-node", pat: 'if (tg.where === "in") { setFold(dst.n, false);' },
+      { name: "moveSibling", pat: "setFold(prev, false); (prev.children ||= []).push(r.n)" },
+      { name: "outlineFold", pat: "change(() => { setFold(r.n, !isFold(r.n)); }); outline(id)" },
+    ];
+    const totalSetFold = (srcCode.match(/setFold\(/g) || []).length;
+    ok("（元断言）vendor 里 setFold( 出现总次数 == 清单长度（新增调用点不进清单就红）",
+      totalSetFold === setFoldSites.length, "总数=" + totalSetFold + " 清单=" + setFoldSites.length);
+    const missSite = setFoldSites.filter((s) => srcCode.indexOf(s.pat) < 0);
+    ok("（清单）" + setFoldSites.length + " 处 setFold 调用点逐一点名都在", missSite.length === 0,
+      "没命中=" + missSite.map((s) => s.name).join(","));
+    const changeRanges = [];
+    /* 两种写法都算：`change(() => { … })`（块体）与 `change(() => expr)`（表达式体，foldLevel 就是它）。
+       所以范围按 change( 的圆括号配对算，而不是找 "=> {"。 */
+    for (let i = srcCode.indexOf("change(() =>"); i >= 0; i = srcCode.indexOf("change(() =>", i + 1)) {
+      const open = srcCode.indexOf("(", i); let depth = 0;
+      for (let k = open; k < srcCode.length; k++) {
+        if (srcCode[k] === "(") depth++;
+        else if (srcCode[k] === ")") { depth--; if (!depth) { changeRanges.push([open, k]); break; } }
+      }
+    }
+    const outside = [];
+    for (let i = srcCode.indexOf("setFold("); i >= 0; i = srcCode.indexOf("setFold(", i + 1)) {
+      if (!changeRanges.some(([a, b]) => i > a && i < b)) outside.push(srcCode.slice(Math.max(0, i - 40), i + 40).replace(/\s+/g, " "));
+    }
+    ok("每处 setFold 都落在 change(() => { … }) 块内（写在 change 外就撤不回、也落不了盘）",
+      outside.length === 0, "块外的=" + outside.join(" | "));
     /* 常驻反向对照（每次跑自测台都重验，不是改文件再改回）：往两个清单各塞一张假表 ——
        ① 孤儿判据必须立刻开始扫它；② 走真实删除链路时清理也必须跟上；
        ③ **列表类绝不当映射删**：条目自己的 id 恰好在树上也要按端点过滤掉。 */
