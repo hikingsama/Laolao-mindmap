@@ -322,6 +322,28 @@ const main = async () => {
   const revEdge = JSON.parse(await ev(`(() => JSON.stringify({ n: (window.Mindmap.state().cur.edges || []).length, banner: (document.getElementById('banner') || {}).textContent || "" }))()`));
   check("反向同一对端点（B.w → A.e）也拦下来（边数仍是 " + revEdge.n + "，提示：" + JSON.stringify(revEdge.banner) + "）",
     revEdge.n === edgesBefore + 1 && /已经有一条线/.test(revEdge.banner), JSON.stringify(revEdge));
+  /* 三档视觉 + 命中带（真浏览器算出的 stroke-width / class）：2px 灰 → hover 3px 蓝 → 选中 4px 蓝 */
+  const midEarly = { x: Math.round((mA.x + mB.x) / 2), y: Math.round((mA.y + mB.y) / 2) };
+  const edgeStyle = async () => JSON.parse(await ev(`(() => {
+    const p = document.querySelector('#mmStage .mm-links path.mm-edge');
+    return JSON.stringify({ w: p ? +p.getAttribute('stroke-width') : null, c: p ? p.getAttribute('stroke') : null,
+      hot: !!p && p.classList.contains('hot'), sel: !!p && p.classList.contains('sel') });
+  })()`));
+  await mouse("mouseMoved", midEarly.x, midEarly.y + 20, 0, 0);   // 离线 20px（>10px 命中带）
+  await sleep(150);
+  const stFar = await edgeStyle();
+  check("真鼠标离线 20px（>10px 命中带）→ 不亮 hover、仍是常态 2px 灰（" + JSON.stringify(stFar) + "）",
+    stFar.hot === false && stFar.w === 2 && stFar.c === "#5b6b7c", JSON.stringify(stFar));
+  await mouse("mouseMoved", midEarly.x, midEarly.y + 6, 0, 0);    // 离线 6px（命中带内）
+  await sleep(150);
+  const stHot = await edgeStyle();
+  check("真鼠标离线 6px（命中带内）→ hover 档 3px 蓝（" + JSON.stringify(stHot) + "）—— 命中带仍是 10px",
+    stHot.hot === true && stHot.sel === false && stHot.w === 3 && stHot.c === "#2f7cf6", JSON.stringify(stHot));
+  await clickAt(midEarly.x, midEarly.y + 6);
+  await sleep(200);
+  const stSel = await edgeStyle();
+  check("真鼠标点线 → 选中档 4px 蓝、且 sel 压过 hover（" + JSON.stringify(stSel) + "）—— 选中比 hover 更明显",
+    stSel.sel === true && stSel.hot === false && stSel.w === 4, JSON.stringify(stSel));
   /* 第 2 步：边要真的被画出来（默认单指向、箭头在目标端） */
   const edgeDraw = JSON.parse(await ev(`(() => {
     const line = document.querySelector('#mmStage .mm-links path.mm-edge[data-id="' + ((${JSON.stringify(afterEdge.last && afterEdge.last.id)}) || "") + '"]');

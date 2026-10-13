@@ -129,6 +129,11 @@ body {
 .mm-stage { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform; }
 .mm-stage.anim { transition: transform .24s ease; }
 .mm-links { position: absolute; overflow: visible; pointer-events: none; }
+/* 【独立版·平级】边的三档视觉（线本身仍是 2px；命中带由 JS 按屏幕 10px 算，与这些样式无关）：
+   常态 2px 灰 → hover 3px 蓝 → 选中 4px 蓝 + 光晕。色值/线宽由 draw() 与 markEdgeHot() 写成属性，
+   这里只补 PNG 预览与不依赖属性时的兜底，以及"选中要有光晕"这种样式层的东西。 */
+.mm-edge.sel { filter: drop-shadow(0 0 3px rgba(47, 124, 246, .65)); }
+.mm-edge.hot { filter: drop-shadow(0 0 2px rgba(47, 124, 246, .45)); }
 /* 【独立版·平级】拖动磁吸点时的虚线预览：与 .mm-links 同一坐标空间，压在连线之上、节点之下。 */
 .mm-linkprev { position: absolute; overflow: visible; pointer-events: none; }
 /* 【独立版·平级】四个磁吸点：常态隐藏、靠近淡入、屏幕恒定（直径由 JS 按 1/view.k 写）。

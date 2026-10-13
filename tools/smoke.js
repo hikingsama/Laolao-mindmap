@@ -1604,6 +1604,32 @@ new Promise((resolve) => {
     evOn(stage17(), "pointerup", midP.x, midP.y);
     ok("点在线（10px 命中带内）→ 这条边被选中（.mm-edge.sel = " + B.doc.querySelectorAll("#mmStage .mm-edge.sel").length + "）",
       B.doc.querySelectorAll("#mmStage .mm-edge.sel").length === 1);
+    /* 三档视觉：常态 2px 灰 → hover 3px 蓝 → 选中 4px 蓝（选中必须比 hover 更明显）；命中带仍是屏幕 10px */
+    const edgeProps = () => {
+      const p = B.doc.querySelector("#mmStage .mm-links path.mm-edge");
+      return p ? { w: p.getAttribute("stroke-width"), c: p.getAttribute("stroke"),
+        sel: p.classList.contains("sel"), hot: p.classList.contains("hot") } : null;
+    };
+    /* 先取消选中（选中档会压过 hover 档 —— 那本身就是"选中比 hover 明显"的表现），再验 hover 与命中带 */
+    evOn(stage17(), "pointerdown", midP.x, midP.y + 240);
+    evOn(stage17(), "pointerup", midP.x, midP.y + 240);
+    ok("点别处 → 取消选中（.mm-edge.sel = " + B.doc.querySelectorAll("#mmStage .mm-edge.sel").length + "）",
+      B.doc.querySelectorAll("#mmStage .mm-edge.sel").length === 0);
+    evOn(stage17(), "pointermove", midP.x, midP.y + 16);        // 离中线 16px（>10px 命中带）
+    const farPorps = edgeProps();
+    ok("指针离线 16px（>10px 命中带）→ 不亮 hover（命中带仍是 10px，没被改小/改大）",
+      !!farPorps && !farPorps.hot && farPorps.w === "2" && farPorps.c === "#5b6b7c", JSON.stringify(farPorps));
+    evOn(stage17(), "pointermove", midP.x, midP.y + 6);         // 离中线 6px（<10px）
+    const hotProps = edgeProps();
+    ok("指针离线 6px（命中带内）→ hover 档：3px 蓝（" + JSON.stringify(hotProps) + "）",
+      !!hotProps && hotProps.hot && !hotProps.sel && hotProps.w === "3" && hotProps.c === "#2f7cf6", JSON.stringify(hotProps));
+    evOn(stage17(), "pointerdown", midP.x, midP.y);             // 点它 = 选中
+    evOn(B.doc.querySelector('.mm-node[data-id="' + oneId + '"]') || stage17(), "pointerup", midP.x, midP.y);
+    const selProps = edgeProps();
+    ok("选中档比 hover 更明显：4px 蓝且 sel 优先（" + JSON.stringify(selProps) + "）",
+      !!selProps && selProps.sel && !selProps.hot && selProps.w === "4" && selProps.c === "#2f7cf6", JSON.stringify(selProps));
+    ok("（源码形状）命中带常量仍是 10（EDGE_HIT = 10），视觉档不参与命中",
+      /const EDGE_HIT = 10;/.test(require("fs").readFileSync(require("path").join(__dirname, "..", "vendor", "mindmap.js"), "utf8")));
     /* 节点优先于边：按在节点**中心**（离任何磁吸点都远）不该选中边。
        注意 pointerup 要用**现取**的节点元素：上一步"取消选边"的 draw() 已经把 DOM 重建过了，
        抓着的旧元素已经脱离文档（真实浏览器里松手命中的也是当前 DOM 的元素）。 */

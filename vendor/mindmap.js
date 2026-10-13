@@ -160,6 +160,8 @@
   let link = null;
   /* 选中的边（与"选中的节点" sel 是两套：点线选线、点节点选节点）。右键菜单与 Delete 都看它。 */
   let selEdge = null;
+  /* 指针悬停到的那条边（视觉档：hover 比常态明显、比选中弱）。 */
+  let hotEdge = null;
   let L = null;   // 最近一次布局：{nodes: Map(id → {n, x, y, w, h, depth, side, color, parent}), bounds}
   const node = (id) => (L && L.nodes.get(id) ? L.nodes.get(id).n : null);
   /* 【独立版·平级】按 id 查找必须覆盖**全部容器**（多容器下只搜 nodes[0] = 选中/编辑/删除/撤销里
@@ -636,10 +638,12 @@
      【独立版·平级】边怎么画：端点每帧从布局盒现算（magPos），线走直线，箭头画成小三角 `<path>`。
      箭头位置由 dir 决定：fwd = 只在终点（to）、rev = 只在起点、both = 两端、none = 不画。
      `data-end` 标明这一端是哪一头，方便断言与排查。 */
-  const EDGE_COLOR = "#5b6b7c", ARROW = 10;
-  function edgeArrow(p, q, end) {
+  const EDGE_COLOR = "#5b6b7c", EDGE_HOT = "#2f7cf6", ARROW = 10;
+  /* 边的三档视觉：常态 2px 灰 / hover 3px 蓝 / 选中 4px 蓝 + 外圈光晕（选中必须比 hover 更明显）。
+     命中带跟这个无关 —— 命中一律按屏幕 10px 几何算（EDGE_HIT），线本身多细都点得中。 */
+  function edgeArrow(p, q, end, hot) {
     const deg = Math.atan2(p.y - q.y, p.x - q.x) * 180 / Math.PI;
-    return `<path class="mm-arrow" data-end="${end}" d="M0,0 L${-ARROW},${ARROW * 0.45} L${-ARROW},${-ARROW * 0.45} Z" fill="${EDGE_COLOR}" transform="translate(${p.x},${p.y}) rotate(${deg})"/>`;
+    return `<path class="mm-arrow${hot ? " hot" : ""}" data-end="${end}" d="M0,0 L${-ARROW},${ARROW * 0.45} L${-ARROW},${-ARROW * 0.45} Z" fill="${hot ? EDGE_HOT : EDGE_COLOR}" transform="translate(${p.x},${p.y}) rotate(${deg})"/>`;
   }
   function edgeSvg() {
     if (!cur || !Array.isArray(cur.edges)) return [];
@@ -649,11 +653,31 @@
       const a = L.nodes.get(e.from.node), b = L.nodes.get(e.to.node);
       if (!a || !b || a.x == null || b.x == null) continue;      // 端点不在画布上（折叠/已删）就这条不画
       const p1 = magPos(a, e.from.side), p2 = magPos(b, e.to.side), dir = e.dir || "fwd";
-      out.push(`<path class="mm-edge${selEdge && e.id === selEdge ? " sel" : ""}" data-id="${e.id}" d="M${p1.x},${p1.y} L${p2.x},${p2.y}" stroke="${EDGE_COLOR}" stroke-width="2" fill="none" stroke-linecap="round" opacity=".9"/>`);
-      if (dir === "fwd" || dir === "both") out.push(edgeArrow(p2, p1, "to"));
-      if (dir === "rev" || dir === "both") out.push(edgeArrow(p1, p2, "from"));
+      const sel2 = e.id === selEdge, hot = !sel2 && e.id === hotEdge;
+      const cls = "mm-edge" + (sel2 ? " sel" : hot ? " hot" : "");
+      const col = sel2 || hot ? EDGE_HOT : EDGE_COLOR, wd = sel2 ? 4 : hot ? 3 : 2;
+      out.push(`<path class="${cls}" data-id="${e.id}" d="M${p1.x},${p1.y} L${p2.x},${p2.y}" stroke="${col}" stroke-width="${wd}" fill="none" stroke-linecap="round" opacity="${sel2 || hot ? 1 : .9}"/>`);
+      if (dir === "fwd" || dir === "both") out.push(edgeArrow(p2, p1, "to", sel2 || hot));
+      if (dir === "rev" || dir === "both") out.push(edgeArrow(p1, p2, "from", sel2 || hot));
     }
     return out;
+  }
+  /* 指针悬停到某条线上：只改类名/属性，不重画整张图（连线可能很多）。
+     与选中互斥：选中的那条永远用"选中档"。 */
+  function markEdgeHot(id) {
+    if (hotEdge === id) return;
+    hotEdge = id;
+    for (const p of document.querySelectorAll("#mmStage .mm-links path.mm-edge")) {
+      const on = p.dataset.id === id, isSel = p.classList.contains("sel");
+      p.classList.toggle("hot", on && !isSel);
+      if (on && !isSel) { p.setAttribute("stroke", EDGE_HOT); p.setAttribute("stroke-width", "3"); p.setAttribute("opacity", "1"); }
+      else if (!isSel) { p.setAttribute("stroke", EDGE_COLOR); p.setAttribute("stroke-width", "2"); p.setAttribute("opacity", ".9"); }
+    }
+    for (const a of document.querySelectorAll("#mmStage .mm-links path.mm-arrow")) {
+      const owner = cur && (cur.edges || []).find((e) => e.id === id);
+      const isHot = !!owner && a.dataset.end && (owner.dir || "fwd") === (a.dataset.end === "to" ? "fwd" : "rev") && !selEdge;
+      a.setAttribute("fill", isHot ? EDGE_HOT : EDGE_COLOR);
+    }
   }
   const E = (s) => esc(s);
   function draw() {
@@ -1447,7 +1471,14 @@
         return;
       }
       /* 未在拖动：指针进入某方向命中区就给**那个节点**加方向类（角 > 边；内部维持原光标） */
-      if (!drag) { const hz = zoneAt(e.clientX, e.clientY); markZone(hz && hz.id, hz && hz.dir); hoverMagnets(e.clientX, e.clientY); return; }
+      if (!drag) {
+        const hz = zoneAt(e.clientX, e.clientY);
+        markZone(hz && hz.id, hz && hz.dir);
+        hoverMagnets(e.clientX, e.clientY);
+        /* 边悬停：**节点优先于边** —— 只有指针没落在任何节点上时才看线（与点击同一口径）。 */
+        markEdgeHot(hz || e.target.closest(".mm-node") ? null : (edgeAt(e.clientX, e.clientY) || {}).id || null);
+        return;
+      }
       if (!drag) return;
       const dx = e.clientX - drag.sx, dy = e.clientY - drag.sy;
       if (!drag.moved && Math.hypot(dx, dy) < 6) return;
