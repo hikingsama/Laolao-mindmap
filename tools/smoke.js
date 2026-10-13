@@ -579,7 +579,7 @@ new Promise((resolve) => {
     ok("折叠节点的后代没有被画进 DOM（原来照画，只是没有连线）", drawn.length === 0, drawn.join(","));
     ok("折叠后代的坐标仍保留在 cur.pos 里（展开时直接用回去、不重算）", desc.every((k) => !!st.cur.pos[k]));
     const js2 = require("fs").readFileSync(require("path").join(__dirname, "..", "vendor", "mindmap.js"), "utf8");
-    ok("prep 遇到 fold 就不再往下建 box（源码形状，防回退）", /if \(!n\.fold\) \(n\.children \|\| \[\]\)\.forEach/.test(js2));
+    ok("prep 遇到 fold 就不再往下建 box（源码形状，防回退）", /if \(!isFold\(n\)\) \(n\.children \|\| \[\]\)\.forEach/.test(js2));
     delete tgt.fold;
     B.localStorage.setItem("mm_map_legacy-map", JSON.stringify(raw));
     M.open("legacy-map");
@@ -693,6 +693,7 @@ new Promise((resolve) => {
     const reset = () => {
       const r = JSON.parse(B.localStorage.getItem("mm_map_legacy-map"));
       (function w(n) { delete n.fold; (n.children || []).forEach(w); })(r.root);
+      r.fold = {}; r.edges = [];     // 折叠状态现在在导图层：复位必须连它一起清，否则会跨子测试累积
       B.localStorage.setItem("mm_map_legacy-map", JSON.stringify(r));
       M.open("legacy-map");
       tgt = M.state().cur.root.children.find((c) => (c.children || []).length);
@@ -707,25 +708,25 @@ new Promise((resolve) => {
       "nodeEl=" + !!nodeEl + " btn=" + !!btn + " 按钮 data-id=" + (btn && btn.dataset.id));
     // ① 委托路径仍在（键盘激活 / 别的调用点都靠它）
     bubble(btn, "click", { target: btn });
-    ok("① click 落在按钮上（委托路径）→ 折叠一次", tgt.fold === true, "fold=" + tgt.fold);
+    ok("① click 落在按钮上（委托路径）→ 折叠一次（状态读导图层 cur.fold）", !!M.state().cur.fold[tgt.id], "cur.fold=" + JSON.stringify(M.state().cur.fold));
     // ② 真实浏览器那条序列：按下/松手在按钮上，随后 click 的 target 解析成节点 —— 原来这里整条丢掉
     reset();
     bubble(vwF, "pointerdown", Object.assign({ target: btn }, at));
     bubble(vwF, "pointerup", Object.assign({ target: btn }, at));
     bubble(vwF, "click", Object.assign({ target: nodeEl }, at));
-    ok("② 按下在按钮、click 目标解析成节点 → 仍然折一次、不是零次", tgt.fold === true, "fold=" + tgt.fold);
+    ok("② 按下在按钮、click 目标解析成节点 → 仍然折一次、不是零次", !!M.state().cur.fold[tgt.id], "cur.fold=" + JSON.stringify(M.state().cur.fold));
     // ③ 浏览器真实的完整序列（click 也在按钮上）：指针路径折一次 + 委托路径被吞掉 → 净效果是"折一次"
     reset();
     bubble(vwF, "pointerdown", Object.assign({ target: btn }, at));
     bubble(vwF, "pointerup", Object.assign({ target: btn }, at));
     bubble(vwF, "click", Object.assign({ target: btn }, at));
-    ok("③ 指针路径 + 随后的 click 不双折（一按一展开会净效果为零）", tgt.fold === true, "fold=" + tgt.fold);
+    ok("③ 指针路径 + 随后的 click 不双折（一按一展开会净效果为零）", !!M.state().cur.fold[tgt.id], "cur.fold=" + JSON.stringify(M.state().cur.fold));
     // ④ 按下后拖开 = 取消（与节点拖动同一套 6px 阈值），不许把"拖一下"当成折叠
     reset();
     bubble(vwF, "pointerdown", Object.assign({ target: btn }, at));
     bubble(vwF, "pointermove", { target: btn, clientX: at.clientX + 40, clientY: at.clientY });
     bubble(vwF, "pointerup", { target: btn, clientX: at.clientX + 40, clientY: at.clientY });
-    ok("④ 按下后拖开 → 不折叠（松手位置离按下 >6px）", tgt.fold !== true, "fold=" + tgt.fold);
+    ok("④ 按下后拖开 → 不折叠（松手位置离按下 >6px）", !M.state().cur.fold[tgt.id], "cur.fold=" + JSON.stringify(M.state().cur.fold));
     // ⑤ 普通点选不被按钮抢走：按住/松手都在节点盒内部 → 只选中、不折叠
     reset();
     const plain = M.state().cur.root.children.find((c) => !(c.children || []).length) || tgt;   // 不带按钮的节点
@@ -733,7 +734,7 @@ new Promise((resolve) => {
     bubble(vwF, "pointerdown", Object.assign({ target: pEl }, at));
     bubble(vwF, "pointerup", Object.assign({ target: pEl }, at));
     ok("⑤ 点在节点上（不是按钮）→ 只选中、不折叠，且 fold 仍是未设置",
-      M.state().sel === plain.id && plain.fold !== true, "sel=" + M.state().sel + " fold=" + plain.fold);
+      M.state().sel === plain.id && !M.state().cur.fold[plain.id], "sel=" + M.state().sel + " cur.fold=" + JSON.stringify(M.state().cur.fold));
     const jsF = require("fs").readFileSync(require("path").join(__dirname, "..", "vendor", "mindmap.js"), "utf8");
     ok("源码形状：折叠在 pointerup 完成，不再只挂在 click 委托上",
       /const fb = e\.target\.closest\("\[data-mm=fold\]"\)/.test(jsF) &&

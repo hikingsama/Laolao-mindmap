@@ -204,11 +204,11 @@
       const pinned = !!(z && Number.isFinite(z.w) && Number.isFinite(z.h) && z.w > 0 && z.h > 0);
       const cs = clampSize(pinned ? z.w : m.w, pinned ? z.h : m.h, m.w, m.h);
       if (!pinned || cs.w !== z.w || cs.h !== z.h) { curSize()[n.id] = cs; sizeDirty = true; }
-      nodes.set(n.id, { n, depth, ...m, w: cs.w, h: cs.h, measW: m.w, measH: m.h, color: c, parent: parent ? parent.id : null, kids: n.fold ? [] : n.children || [] });
+      nodes.set(n.id, { n, depth, ...m, w: cs.w, h: cs.h, measW: m.w, measH: m.h, color: c, parent: parent ? parent.id : null, kids: isFold(n) ? [] : n.children || [] });
       /* 【独立版】折叠就**不再往下建 box**：折叠后代不进 L.nodes，于是 draw / span / nudgeFree / bounds
          全都只看得见可见节点 —— 修掉"收起后连线没了、子节点还在"（原来只有连线消失，后代照样画）。
          cur.pos / cur.size 里这些后代的条目**故意保留**：它们是"用户摆过的位置"，展开时直接用回去。 */
-      if (!n.fold) (n.children || []).forEach((k, i) => prep(k, depth + 1, depth === 0 ? (k.color || th.colors[i % th.colors.length]) : c, n));
+      if (!isFold(n)) (n.children || []).forEach((k, i) => prep(k, depth + 1, depth === 0 ? (k.color || th.colors[i % th.colors.length]) : c, n));
     })(cur.root, 0, th.root, null);
     const S = (id) => nodes.get(id);
     // 2) 子树大小
@@ -263,6 +263,21 @@
     if (!cur) return {};
     if (!cur.pos || typeof cur.pos !== "object") cur.pos = {};
     return cur.pos;
+  }
+  /* 【独立版·平级】折叠状态在**导图层** `cur.fold = { 节点id: true }`（与 pos/size 同层，绝不写节点字段）。
+     所有读写走这两个入口：节点字段里**不再有** fold（迁移时 delete n.fold）。 */
+  const isFold = (n) => !!(n && cur && cur.fold && cur.fold[n.id]);
+  const setFold = (n, v) => { if (!n || !cur) return; if (v) (cur.fold ||= {})[n.id] = true; else if (cur.fold) delete cur.fold[n.id]; };
+  /* 【独立版·平级】迁移（**显式步骤，不顺带**）：把老图节点字段上的折叠搬进导图层，
+     并保证两个新导图层字段存在（fold 映射 / edges 列表）。幂等靠 v:2 —— 否则用户"删光折叠"后重开又被重建。 */
+  function migrateMap(m) {
+    if (!m || typeof m !== "object") return false;
+    let changed = false;
+    if (!m.fold || typeof m.fold !== "object" || Array.isArray(m.fold)) { m.fold = {}; changed = true; }
+    if (!Array.isArray(m.edges)) { m.edges = []; changed = true; }
+    if (m.root) walk(m.root, (n) => { if (n.fold) { m.fold[n.id] = true; delete n.fold; changed = true; } });
+    if (m.v !== 2) { m.v = 2; changed = true; }
+    return changed;
   }
   /* 【独立版】导图层表的**两个清单**（契约 §2.4）：各自只有一处定义，断言直接读同一处（见导出）。
      · LAYER_MAPS  按键删：`delete map[节点id]`
@@ -505,7 +520,7 @@
       const prog = n.progress ? `<svg class="mm-prog" viewBox="0 0 16 16" title="${n.progress}%"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" opacity=".25" stroke-width="2"/><circle cx="8" cy="8" r="6.5" fill="none" stroke="${d === 0 ? "currentColor" : s.color}" stroke-width="2.4" stroke-dasharray="${(n.progress / 100) * 40.8} 41" transform="rotate(-90 8 8)" stroke-linecap="round"/></svg>` : "";
       html.push(`<div class="mm-node d${Math.min(d, 2)}${isSel ? " sel" : ""}${hit ? " hit" : ""}${n.bold ? " b" : ""}" data-id="${n.id}" style="left:${s.x}px;top:${s.y}px;width:${s.w}px;height:${s.h}px;${style}font:${s.font};line-height:${lineH(d)}px;padding:${s.padY}px ${s.padX}px">`
         + `<span class="mm-t">${E(s.lines.join("\n"))}</span>${prog}${n.note ? `<b class="mm-ic" data-mm="note" title="${E(n.note.slice(0, 100))}">📝</b>` : ""}${n.link ? `<b class="mm-ic" data-mm="link" title="${E(n.link)}">🔗</b>` : ""}`
-        + ((n.children || []).length && d > 0 || (d === 0 && n.fold) ? `<button class="mm-fold${n.fold ? " on" : ""} s${s.side}" data-mm="fold" data-id="${n.id}" style="--c:${s.color}" title="${n.fold ? "展开" : "收起"}">${n.fold ? hidden(n) : "−"}</button>` : "")
+        + ((n.children || []).length && d > 0 || (d === 0 && isFold(n)) ? `<button class="mm-fold${isFold(n) ? " on" : ""} s${s.side}" data-mm="fold" data-id="${n.id}" style="--c:${s.color}" title="${n.fold ? "展开" : "收起"}">${n.fold ? hidden(n) : "−"}</button>` : "")
         + (isSel ? `<span class="mm-rs" data-rs="1" data-id="${n.id}" title="拖动改大小（按住 Shift 锁比例）"></span>` : "")
         + `</div>`);
     }
@@ -553,7 +568,7 @@
   function toolbarState() {
     const r = sel && findNode(sel), isRoot = !r || !r.p;
     for (const [id, off] of [["mmSib", isRoot], ["mmDel", isRoot], ["mmUndo", !hist.length], ["mmRedo", !redo.length], ["mmFold", !r || !(r.n.children || []).length]]) { const b = $(id); if (b) b.disabled = !!off; }
-    const f = $("mmFold"); if (f && r) f.textContent = r.n.fold ? "▸ 展开" : "▾ 收起";
+    const f = $("mmFold"); if (f && r) f.textContent = isFold(r.n) ? "▸ 展开" : "▾ 收起";
   }
 
   // ---------------- 编辑操作 ----------------
@@ -567,7 +582,7 @@
     const at = birthPos({ x: ps ? ps.x : 0, y: ps ? ps.y : 0, w: ps ? ps.w : estSize(r.n.text, 1).w, h: ps ? ps.h : estSize(r.n.text, 1).h });
     change(() => {
       putLayerPos(k.id, at);                       // 坐标写进 change 的 fn 内：撤销"新建"才回得干净（不再留孤儿）
-      r.n.fold = false; (r.n.children ||= []).push(k);
+      setFold(r.n, false); (r.n.children ||= []).push(k);
     });
     sel = k.id; draw(); reveal(k.id); startEdit(k.id, true); editingNew = k.id;
   }
@@ -615,12 +630,12 @@
   }
   function toggleFold(id) {
     const r = findNode(id || sel); if (!r || !(r.n.children || []).length) return;
-    change(() => { r.n.fold = !r.n.fold; });
+    change(() => { setFold(r.n, !isFold(r.n)); });
     /* 【独立版】折叠后若"选中的节点"正好被藏起来（已不在 L.nodes 里），把选中挪到折叠节点上：
        否则 onL.nodes 拿不到布局项，键盘导航 / 面板 / 新建子节点的锚点都会落空。 */
     if (!(L && L.nodes.get(sel))) { sel = r.n.id; draw(); }
   }
-  function foldLevel(lv) { change(() => walk(cur.root, (n, p, d) => { if ((n.children || []).length) n.fold = lv > 0 && d >= lv; })); setTimeout(() => fit(true), 20); }
+  function foldLevel(lv) { change(() => walk(cur.root, (n, p, d) => { if ((n.children || []).length) setFold(n, lv > 0 && d >= lv); })); setTimeout(() => fit(true), 20); }
   function setProp(k, v) { const r = findNode(sel); if (!r) return; change(() => { if (v === undefined || v === "" || v === false || v === null) delete r.n[k]; else r.n[k] = v; }); }
   function toggleMark(m) {
     const r = findNode(sel); if (!r) return;
@@ -645,7 +660,7 @@
     else if (clip) items = [clone(clip)];
     if (!items || !items.length) return;
     const fresh = items.map((n) => { walk(n, (x) => { x.id = nid(); }); return fill(n); });
-    change(() => { r.n.fold = false; (r.n.children ||= []).push(...fresh); });
+    change(() => { setFold(r.n, false); (r.n.children ||= []).push(...fresh); });
     select(fresh[0].id, true);
   }
 
@@ -776,7 +791,7 @@
       if (n.progress) { g.beginPath(); g.arc(ix + 9, s.y + s.h / 2, 6.5, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * n.progress / 100); g.strokeStyle = d === 0 ? th.rootText : s.color; g.lineWidth = 2.4; g.stroke(); ix += 20; }
       if (n.note) { g.fillText("📝", ix, s.y + s.h / 2); ix += 18; }
       if (n.link) g.fillText("🔗", ix, s.y + s.h / 2);
-      if (n.fold && (n.children || []).length) { const fx = s.side < 0 ? s.x - 10 : s.side > 0 ? s.x + s.w + 10 : s.x + s.w / 2, fy = s.side === 0 ? s.y + s.h + 10 : s.y + s.h / 2; g.beginPath(); g.arc(fx, fy, 9, 0, Math.PI * 2); g.fillStyle = th.sub; g.fill(); g.strokeStyle = s.color; g.lineWidth = 1.5; g.stroke(); g.fillStyle = s.color; g.font = `700 10px ${FONT}`; g.textAlign = "center"; g.fillText(String(hidden(n)), fx, fy + .5); g.textAlign = "left"; }
+      if (isFold(n) && (n.children || []).length) { const fx = s.side < 0 ? s.x - 10 : s.side > 0 ? s.x + s.w + 10 : s.x + s.w / 2, fy = s.side === 0 ? s.y + s.h + 10 : s.y + s.h / 2; g.beginPath(); g.arc(fx, fy, 9, 0, Math.PI * 2); g.fillStyle = th.sub; g.fill(); g.strokeStyle = s.color; g.lineWidth = 1.5; g.stroke(); g.fillStyle = s.color; g.font = `700 10px ${FONT}`; g.textAlign = "center"; g.fillText(String(hidden(n)), fx, fy + .5); g.textAlign = "left"; }
     }
     g.setTransform(sc, 0, 0, sc, 0, 0); g.font = `12px ${FONT}`; g.fillStyle = th.text; g.globalAlpha = .45; g.textBaseline = "alphabetic";
     g.fillText("捞捞思维导图 · laolaokechengbiao.cn", pad, b.y1 - b.y0 + pad * 2 + 14);
@@ -860,7 +875,7 @@
   function outline(focusId) {
     const box = $("mmOutline"); if (!box) return;
     const rows = [];
-    (function w(n, d) { rows.push(`<div class="mo-row" style="--d:${d}" data-id="${n.id}">${(n.children || []).length ? `<button class="mo-tog" data-mm="ofold" data-id="${n.id}">${n.fold ? "▸" : "▾"}</button>` : `<span class="mo-dot">•</span>`}<input class="mo-in${d === 0 ? " root" : ""}" data-id="${n.id}" value="${E(n.text.replace(/\n/g, " "))}" maxlength="500"></div>`); if (!n.fold) for (const c of n.children || []) w(c, d + 1); })(cur.root, 0);
+    (function w(n, d) { rows.push(`<div class="mo-row" style="--d:${d}" data-id="${n.id}">${(n.children || []).length ? `<button class="mo-tog" data-mm="ofold" data-id="${n.id}">${isFold(n) ? "▸" : "▾"}</button>` : `<span class="mo-dot">•</span>`}<input class="mo-in${d === 0 ? " root" : ""}" data-id="${n.id}" value="${E(n.text.replace(/\n/g, " "))}" maxlength="500"></div>`); if (!isFold(n)) for (const c of n.children || []) w(c, d + 1); })(cur.root, 0);
     box.innerHTML = `<div class="mo-tip">Enter 新建一行 · Tab 缩进 · Shift+Tab 退回 · 空行按退格删除 · ↑↓ 换行</div>` + rows.join("");
     const f = focusId && box.querySelector(`.mo-in[data-id="${focusId}"]`); if (f) { f.focus(); f.setSelectionRange(f.value.length, f.value.length); }
   }
@@ -877,8 +892,10 @@
     const e = idxGet(id) || {};
     // [独立版] 云同步已停用：不再从账号取导图，只读本机（原 mm_get 分支及 fromServer 语义见 git 历史）
     if (!m) { tip("这张导图在这台设备上找不到了"); return; }
+    const migrated = migrateMap(m);        // 【独立版·平级】显式迁移：fold 搬进导图层 + 两个新字段 + v:2
     fill(m.root);
     cur = m; cur.layout ||= "mind"; cur.line ||= "curve"; cur.theme ||= "fresh";
+    if (migrated) { try { storeLocal(cur); } catch (e) {} }
     /* 【独立版】读取容错：旧图上可能已经有"表里有、树里没有"的孤儿条目（本次修复之前删出来的）。
        打开时清一次并落盘（治本在 del 的 dropLayer）。清完再播种，免得"只剩孤儿"时被 seedPos 的
        `if (Object.keys(p).length) return false` 误判成"已固化"。 */
@@ -984,7 +1001,7 @@
     q = $("mmFindIn").value.trim().toLowerCase(); found = [];
     if (q) walk(cur.root, (n) => { if ((n.text + " " + (n.note || "")).toLowerCase().includes(q)) found.push(n.id); });
     // 搜到的在收起的分支里：展开它的上级
-    for (const id of found) { let r = findNode(id); while (r && r.p) { r.p.fold = false; r = findNode(r.p.id); } }
+    for (const id of found) { let r = findNode(id); while (r && r.p) { setFold(r.p, false); r = findNode(r.p.id); } }
     fi = 0; $("mmFindN").textContent = q ? (found.length ? `1 / ${found.length}` : "没找到") : "";
     draw(); if (found.length) select(found[0], true);
   }
@@ -1217,7 +1234,7 @@
     change(() => {
       putPos();
       src.p.children.splice(src.p.children.indexOf(src.n), 1);
-      if (tg.where === "in") { dst.n.fold = false; (dst.n.children ||= []).push(src.n); }
+      if (tg.where === "in") { setFold(dst.n, false); (dst.n.children ||= []).push(src.n); }
       else { const a = dst.p.children, i = a.indexOf(dst.n); a.splice(tg.where === "before" ? i : i + 1, 0, src.n); }
       delete src.n.side;
     });
@@ -1235,7 +1252,7 @@
     if (key === "ArrowUp" || key === "ArrowDown") { sib(key === "ArrowUp" ? -1 : 1); return; }
     const right = key === "ArrowRight";
     if (!r.p) { toChild(right ? 1 : -1); return; }
-    if ((side > 0) === right) { if (r.n.fold) toggleFold(); else toChild(); } else toParent();
+    if ((side > 0) === right) { if (isFold(r.n)) toggleFold(); else toChild(); } else toParent();
   }
   document.addEventListener("keydown", (e) => {
     if (!cur || currentView() !== "mindmap" || $("mmDlg").open) return;
@@ -1286,12 +1303,12 @@
     if (e.key === "Enter" && !e.isComposing) {
       e.preventDefault();
       const k = { id: nid(), text: "", children: [] };
-      change(() => { if (!r.p || (r.n.children.length && !r.n.fold)) r.n.children.unshift(k); else r.p.children.splice(r.p.children.indexOf(r.n) + 1, 0, k); });
+      change(() => { if (!r.p || (r.n.children.length && !isFold(r.n))) r.n.children.unshift(k); else r.p.children.splice(r.p.children.indexOf(r.n) + 1, 0, k); });
       sel = k.id; outline(k.id);
     } else if (e.key === "Tab") {
       e.preventDefault();
       if (e.shiftKey) { if (!r.p || !findNode(r.p.id).p) return; const gp = findNode(r.p.id).p; change(() => { r.p.children.splice(r.p.children.indexOf(r.n), 1); gp.children.splice(gp.children.indexOf(r.p) + 1, 0, r.n); }); }
-      else { if (!r.p) return; const i = r.p.children.indexOf(r.n); if (i < 1) return; const prev = r.p.children[i - 1]; change(() => { r.p.children.splice(i, 1); prev.fold = false; (prev.children ||= []).push(r.n); }); }
+      else { if (!r.p) return; const i = r.p.children.indexOf(r.n); if (i < 1) return; const prev = r.p.children[i - 1]; change(() => { r.p.children.splice(i, 1); setFold(prev, false); (prev.children ||= []).push(r.n); }); }
       outline(id);
     } else if (e.key === "Backspace" && !e.target.value && r.p && !(r.n.children || []).length) {
       e.preventDefault();
@@ -1333,7 +1350,7 @@
       case "style": togglePanel(!panelOpen); break;
       case "pclose": togglePanel(false); break;
       case "outline": setMode(mode === "outline" ? "map" : "outline"); break;
-      case "ofold": { const r = findNode(id); if (r) { change(() => { r.n.fold = !r.n.fold; }); outline(id); } break; }
+      case "ofold": { const r = findNode(id); if (r) { change(() => { setFold(r.n, !isFold(r.n)); }); outline(id); } break; }
       case "find": openFind(); break;
       case "fnext": stepFind(1); break;
       case "fprev": stepFind(-1); break;
@@ -1348,7 +1365,7 @@
       case "zin": zoomAt(view.k * 1.2); break;
       case "zout": zoomAt(view.k / 1.2); break;
       case "fit": fit(true); break;
-      case "lv": { let any = false; walk(cur.root, (n, p, d) => { if (d >= 2 && !n.fold && (n.children || []).length) any = true; }); foldLevel(any ? 2 : 0); break; }
+      case "lv": { let any = false; walk(cur.root, (n, p, d) => { if (d >= 2 && !isFold(n) && (n.children || []).length) any = true; }); foldLevel(any ? 2 : 0); break; }
       case "lv1": foldLevel(1); break;
       case "lv2": foldLevel(2); break;
       case "lv0": foldLevel(0); break;
