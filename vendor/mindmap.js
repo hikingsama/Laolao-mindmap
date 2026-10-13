@@ -975,6 +975,7 @@
     const c = { ...clone(src), id: uid(), title: (src.title || "导图") + " 副本" };
     /* 【独立版·平级】重发节点 id 的同时**必须重映射导图层**：pos/size/fold 的键 + edges 的端点。
        不重映射的后果：副本一打开就被 pruneLayer 当孤儿清掉（位置全丢），边指向原图节点（跨图引用）。 */
+    migrateMap(c);                    // 旧格式来源（只有 root）先成容器，否则下面没有可遍历的节点
     const old2new = new Map();
     for (const r of (c.nodes || [])) walk(r, (n) => { const nw = nid(); old2new.set(n.id, nw); n.id = nw; });
     for (const t of LAYER_MAPS) {
