@@ -129,6 +129,20 @@ body {
 .mm-stage { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform; }
 .mm-stage.anim { transition: transform .24s ease; }
 .mm-links { position: absolute; overflow: visible; pointer-events: none; }
+/* 【独立版·平级】拖动磁吸点时的虚线预览：与 .mm-links 同一坐标空间，压在连线之上、节点之下。 */
+.mm-linkprev { position: absolute; overflow: visible; pointer-events: none; }
+/* 【独立版·平级】四个磁吸点：常态隐藏、靠近淡入、屏幕恒定（直径由 JS 按 1/view.k 写）。
+   单独一层覆盖在节点之上 —— .mm-node 是 overflow:hidden，骑在边线上的圆点会被裁掉一半。
+   层是 pointer-events:none：命中一律在 magnetAt() 里按几何算，不让元素抢事件。 */
+.mm-magwrap { position: absolute; pointer-events: none; opacity: 0; transition: opacity .12s ease; }
+.mm-magwrap.mag-on, .mm-magwrap.linking { opacity: 1; }
+.mm-mag { position: absolute; border-radius: 999px; background: #2f7cf6; border: 2px solid #fff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, .28); transform: translate(-50%, -50%); }
+.mm-mag.n { left: 50%; top: 0; }
+.mm-mag.e { left: 100%; top: 50%; }
+.mm-mag.s { left: 50%; top: 100%; }
+.mm-mag.w { left: 0; top: 50%; }
+.mm-magwrap.hot .mm-mag { background: #12b76a; box-shadow: 0 0 0 3px rgba(18, 183, 106, .35); }
 
 .mm-node {
   position: absolute; overflow: hidden;
@@ -161,9 +175,7 @@ body {
 .mm-node.dragging { opacity: .35; }
 .mm-node.ghost { opacity: .8; pointer-events: none; box-shadow: 0 10px 28px rgba(31, 42, 61, .22); }
 .mm-node.ghost.sel { outline: none; }
-.mm-node.drop-in { outline: 2px solid #2bb98a; outline-offset: 2px; }
-.mm-node.drop-before { box-shadow: 0 -3px 0 0 #2bb98a; }
-.mm-node.drop-after { box-shadow: 0 3px 0 0 #2bb98a; }
+/* 旧的"拖到节点上换父子"反馈类（drop-in / drop-before / drop-after）已随那套落点模型删除：落点只认磁吸点。 */
 .mm-t { display: block; }
 .mm-ic { position: absolute; right: 6px; bottom: 4px; font-size: 11px; font-weight: 400; cursor: pointer; }
 .mm-prog { position: absolute; right: 6px; top: 6px; width: 14px; height: 14px; }

@@ -271,6 +271,63 @@ const main = async () => {
   check("撤销「新建」后导图层里没有孤儿（树回到 " + a6.tree + "、pos 回到 " + a6.pos + "）",
     a6.orphans.length === 0 && a6.tree === b5.tree && a6.pos === b5.pos, "孤儿=" + a6.orphans.join(","));
 
+  /* ---- 6) 第 1 步可见部分：四个磁吸点 + 拖拽虚线预览 + 松手建边（真浏览器 + 真鼠标） ---- */
+  const magOf = async (id, side) => JSON.parse(await ev(`(() => {
+    const st = window.Mindmap.state(), s = st.L.nodes.get("${id}");
+    const tr = document.getElementById('mmStage').style.transform.match(/translate\\((-?[\\d.]+)px,\\s*(-?[\\d.]+)px\\)\\s*scale\\(([\\d.]+)\\)/);
+    const r = document.getElementById('mmView').getBoundingClientRect();
+    const k = +tr[3], ox = r.left + +tr[1], oy = r.top + +tr[2];
+    const p = "${side}" === "n" ? { x: s.x + s.w / 2, y: s.y } : "${side}" === "s" ? { x: s.x + s.w / 2, y: s.y + s.h }
+      : "${side}" === "w" ? { x: s.x, y: s.y + s.h / 2 } : { x: s.x + s.w, y: s.y + s.h / 2 };
+    return JSON.stringify({ x: Math.round(ox + p.x * k), y: Math.round(oy + p.y * k), k });
+  })()`));
+  const twoNodes = JSON.parse(await ev(`(() => {
+    const st = window.Mindmap.state(), list = [...st.L.nodes.values()].filter((s) => s.x != null);
+    const a = list.find((s) => s.depth === 1) || list[0], b = list.find((s) => s.n.id !== a.n.id && Math.abs(s.y - a.y) < 40) || list.find((s) => s.n.id !== a.n.id);
+    return JSON.stringify({ a: a.n.id, b: b.n.id });
+  })()`));
+  const mA = await magOf(twoNodes.a, "e"), mB = await magOf(twoNodes.b, "w");
+  await mouse("mouseMoved", mA.x, mA.y, 0, 0);        // 悬停到磁吸点附近
+  await sleep(250);
+  const magVis = JSON.parse(await ev(`(() => {
+    const w = document.querySelector('#mmStage .mm-magwrap[data-id="${twoNodes.a}"]'), d = w && w.querySelector('.mm-mag');
+    const cs = w ? getComputedStyle(w) : null, rd = d ? d.getBoundingClientRect() : null;
+    return JSON.stringify({ opacity: cs ? cs.opacity : null, pe: cs ? cs.pointerEvents : null, d: rd ? +rd.width.toFixed(1) : null });
+  })()`));
+  check("悬停后该节点的磁吸点真的淡入（computed opacity=" + magVis.opacity + "，圆点屏幕直径 " + magVis.d + "px）",
+    Number(magVis.opacity) === 1 && magVis.d >= 6 && magVis.d <= 12 + mA.k / 2 + 0.6, JSON.stringify(magVis));
+  check("磁吸点层不吃事件（pointer-events:none —— 命中是几何算的，不让元素抢事件）", magVis.pe === "none", "pe=" + magVis.pe);
+  const edgesBefore = Number(await ev("(window.Mindmap.state().cur.edges || []).length"));
+  await mouse("mousePressed", mA.x, mA.y, 1, 1);
+  await mouse("mouseMoved", Math.round((mA.x + mB.x) / 2), Math.round((mA.y + mB.y) / 2), 0, 1);
+  await sleep(120);
+  const prevN = Number(await ev("document.querySelectorAll('#mmStage .mm-linkprev path').length"));
+  check("按住磁吸点拖动时，页面里真的画出了虚线预览（.mm-linkprev path = " + prevN + "）", prevN === 1, "path=" + prevN);
+  await mouse("mouseMoved", mB.x, mB.y, 0, 1);
+  await sleep(80);
+  await mouse("mouseReleased", mB.x, mB.y, 1, 0);
+  await sleep(250);
+  const afterEdge = JSON.parse(await ev(`(() => { const c = window.Mindmap.state().cur, es = c.edges || []; return JSON.stringify({ n: es.length, last: es[es.length - 1] || null, prev: document.querySelectorAll('#mmStage .mm-linkprev path').length }); })()`));
+  check("真实鼠标从一个磁吸点拖到另一个磁吸点 → 建出一条边（" + edgesBefore + " → " + afterEdge.n + "）",
+    afterEdge.n === edgesBefore + 1, JSON.stringify(afterEdge));
+  check("边的端点就是那两个磁吸点（from=" + JSON.stringify(afterEdge.last && afterEdge.last.from) + " to=" + JSON.stringify(afterEdge.last && afterEdge.last.to) + "）",
+    !!afterEdge.last && afterEdge.last.from.node === twoNodes.a && afterEdge.last.from.side === "e" &&
+    afterEdge.last.to.node === twoNodes.b && afterEdge.last.to.side === "w", JSON.stringify(afterEdge.last));
+  check("松手后预览线自己收掉（不留残影）", afterEdge.prev === 0, "path=" + afterEdge.prev);
+  /* 屏幕恒定：放大之后圆点的**屏幕**直径必须还在 6–12.5px（不跟着舞台一起放大）。 */
+  const boxBefore = JSON.parse(await ev(`(() => { const r = document.querySelector('#mmStage .mm-node[data-id="${twoNodes.a}"]').getBoundingClientRect(); return JSON.stringify({ w: +r.width.toFixed(1) }); })()`));
+  await mouse("mouseMoved", mA.x, mA.y, 0, 0);
+  await send("Input.dispatchMouseEvent", { type: "mouseWheel", x: mA.x, y: mA.y, deltaX: 0, deltaY: -240, modifiers: 2 });
+  await sleep(250);
+  const zoomed = JSON.parse(await ev(`(() => {
+    const w = document.querySelector('#mmStage .mm-magwrap[data-id="${twoNodes.a}"]'), d = w && w.querySelector('.mm-mag');
+    const rd = d ? d.getBoundingClientRect() : null;
+    const r = document.querySelector('#mmStage .mm-node[data-id="${twoNodes.a}"]').getBoundingClientRect();
+    return JSON.stringify({ d: rd ? +rd.width.toFixed(1) : null, w: +r.width.toFixed(1) });
+  })()`));
+  check("放大后节点变大（" + boxBefore.w + " → " + zoomed.w + "）而圆点屏幕直径仍在 6–13px（" + zoomed.d + "）—— 屏幕恒定",
+    zoomed.w > boxBefore.w * 1.05 && zoomed.d >= 6 && zoomed.d <= 13, JSON.stringify(zoomed));
+
   guard();
   const bad = RESULTS.filter((r) => !r.ok);
   console.log("\n结果：" + (RESULTS.length - bad.length) + " 通过 / " + bad.length + " 失败" +

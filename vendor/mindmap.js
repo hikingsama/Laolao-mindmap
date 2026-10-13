@@ -156,6 +156,8 @@
      foldDown = 按下时命中的收起按钮；foldSwallow = 这次折叠已经由指针路径处理过，
      浏览器随后还会补发一次 click，别在 click 委托里再折一次（否则一按一展开、净效果为零）。 */
   let foldDown = null, foldSwallow = null;
+  /* 【独立版·平级】正在从某个磁吸点拖出的连线：{ from:{node,side} }；松手时按松手位置的磁吸点建边。 */
+  let link = null;
   let L = null;   // 最近一次布局：{nodes: Map(id → {n, x, y, w, h, depth, side, color, parent}), bounds}
   const node = (id) => (L && L.nodes.get(id) ? L.nodes.get(id).n : null);
   /* 【独立版·平级】按 id 查找必须覆盖**全部容器**（多容器下只搜 nodes[0] = 选中/编辑/删除/撤销里
@@ -548,6 +550,69 @@
   }
   const hidden = (n) => { let k = 0; for (const c of n.children || []) walk(c, () => k++); return k; };
 
+  /* ---------------- 磁吸点（连线落点） ----------------
+     【独立版·平级】每条边记的是 { from:{node,side}, to:{node,side} } —— **只有端点语义，没有坐标**：
+     端点位置每帧从布局盒现算（节点被拖动/缩放/换 zoom 后连线自然跟着走，不需要"重锚"）。
+     磁吸点 = 节点盒四条边的中点（n/e/s/w），屏幕坐标下**大小恒定**：
+       · 命中半径 magRadius：clamp(0.4 × min(节点屏幕宽, 屏幕高), 8, 16)   —— 常规节点退化成 16
+       · 圆点直径 magDia   ：clamp(0.25 × min(…), 6, 12)                 —— 常规节点退化成 12
+     圆点**只做视觉**（pointer-events:none），命中一律在 magnetAt() 里按几何算 ——
+     与八方向缩放同一套口径，避免"元素命中抢事件"（第一次点被 hover 状态吃掉那次的教训）。 */
+  const MAG_SIDES = ["n", "e", "s", "w"];
+  const MAG_DIST = 26;                 // 指针离节点屏幕矩形多少像素以内 → 磁吸点淡入（屏幕像素，恒定）
+  const magRadius = (s) => Math.max(8, Math.min(16, Math.round(0.4 * Math.min(s.w * view.k, s.h * view.k))));
+  const magDia = (s) => Math.max(6, Math.min(12, Math.round(0.25 * Math.min(s.w * view.k, s.h * view.k))));
+  /* 磁吸点的**舞台坐标**（每帧现算，不落盘） */
+  const magPos = (s, side) => side === "n" ? { x: s.x + s.w / 2, y: s.y }
+    : side === "s" ? { x: s.x + s.w / 2, y: s.y + s.h }
+    : side === "w" ? { x: s.x, y: s.y + s.h / 2 }
+    : { x: s.x + s.w, y: s.y + s.h / 2 };
+  const magScreen = (s, side) => { const p = magPos(s, side); return { x: p.x * view.k + view.x, y: p.y * view.k + view.y }; };
+  /* 磁吸点"屏幕恒定"：缩放变了要**立刻**把圆点直径改回 magDia/view.k（不然它会跟着舞台一起缩放）。
+     只在 k 真的变了时才动 DOM —— 平移每帧都调 applyView，不做无谓的样式写。 */
+  let magK = 1;
+  function syncMagSize() {
+    if (magK === view.k || !L) return;
+    magK = view.k;
+    const kk = view.k || 1;
+    for (const w of document.querySelectorAll("#mmStage .mm-magwrap")) {
+      const s = L.nodes.get(w.dataset.id); if (!s) continue;
+      const md = Math.max(4, Math.round(magDia(s) / kk));
+      for (const d of w.children) { d.style.width = md + "px"; d.style.height = md + "px"; }
+    }
+  }
+  /* 磁吸点命中（屏幕坐标入参）：返回 { id, side, cx, cy } 或 null。
+     选中节点优先（与 zoneAt 同口径）—— 选中那一个的最后一次操作最可能是它。 */
+  function magnetAt(cx, cy) {
+    if (!L || !cur) return null;
+    const r = $("mmView").getBoundingClientRect(), px = cx - r.left, py = cy - r.top;
+    const list = [...L.nodes.values()];
+    const si = list.findIndex((s) => s.n.id === sel);
+    if (si > 0) { const s = list.splice(si, 1)[0]; list.unshift(s); }
+    for (const s of list) {
+      if (s.x == null || s.y == null) continue;
+      const rad = magRadius(s);
+      for (const side of MAG_SIDES) {
+        const p = magScreen(s, side);
+        if (Math.hypot(px - p.x, py - p.y) <= rad) return { id: s.n.id, side, cx: p.x, cy: p.y };
+      }
+    }
+    return null;
+  }
+  /* 同一对磁吸点只允许一条边（允许平行边：不同 side 组合可以并存）；禁自环。 */
+  function edgeDup(from, to) {
+    return (cur.edges || []).some((e) => e && e.from && e.to && e.from.node === from.node && e.from.side === from.side &&
+      e.to.node === to.node && e.to.side === to.side);
+  }
+  function addEdge(from, to, dir) {
+    if (!cur || !from || !to) return null;
+    if (from.node === to.node) { tip("同一个主题的磁吸点之间不能连线"); return null; }
+    if (edgeDup(from, to)) { tip("这对磁吸点之间已经有一条线了"); return null; }
+    const e = { id: eid(), from: { node: from.node, side: from.side }, to: { node: to.node, side: to.side }, dir: dir || "fwd" };
+    change(() => { (cur.edges ||= []).push(e); });     // 走 change：可撤销、能落盘
+    return e;
+  }
+
   // ---------------- 画 ----------------
   const E = (s) => esc(s);
   function draw() {
@@ -572,8 +637,20 @@
         + (isSel ? `<span class="mm-rs" data-rs="1" data-id="${n.id}" title="拖动改大小（按住 Shift 锁比例）"></span>` : "")
         + `</div>`);
     }
+    /* 磁吸点画成**独立覆盖层**（在节点之上、不放进 .mm-node 里）：.mm-node 是 overflow:hidden，
+       圆点骑在盒子边线上会被裁掉一半。层本身 pointer-events:none —— 命中在 magnetAt 里按几何算。
+       直径要写 val/view.k：#mmStage 整体被 scale(view.k) 放大，写死屏幕像素才"大小恒定"。 */
+    const magHtml = [];
+    for (const s of L.nodes.values()) {
+      if (s.x == null) continue;
+      const md = Math.max(4, Math.round(magDia(s) / (view.k || 1)));
+      magHtml.push(`<span class="mm-magwrap" data-id="${s.n.id}" style="left:${s.x}px;top:${s.y}px;width:${s.w}px;height:${s.h}px">`
+        + MAG_SIDES.map((sd) => `<i class="mm-mag ${sd}" data-side="${sd}" style="width:${md}px;height:${md}px"></i>`).join("") + `</span>`);
+    }
     const b = L.bounds, pad = 400;
-    st.innerHTML = `<svg class="mm-links" style="left:${b.x0 - pad}px;top:${b.y0 - pad}px;width:${b.x1 - b.x0 + pad * 2}px;height:${b.y1 - b.y0 + pad * 2}px" viewBox="${b.x0 - pad} ${b.y0 - pad} ${b.x1 - b.x0 + pad * 2} ${b.y1 - b.y0 + pad * 2}">${svg.join("")}</svg>${html.join("")}`;
+    /* 预览线（拖磁吸点时那条虚线）与连线同坐标空间：每帧重建，拖动过程中只改它的 innerHTML。 */
+    const prevBox = `left:${b.x0 - pad}px;top:${b.y0 - pad}px;width:${b.x1 - b.x0 + pad * 2}px;height:${b.y1 - b.y0 + pad * 2}px" viewBox="${b.x0 - pad} ${b.y0 - pad} ${b.x1 - b.x0 + pad * 2} ${b.y1 - b.y0 + pad * 2}`;
+    st.innerHTML = `<svg class="mm-links" style="${prevBox}">${svg.join("")}</svg><svg class="mm-linkprev" style="${prevBox}"></svg>${html.join("")}${magHtml.join("")}`;
     const vw = $("mmView");
     vw.style.background = th.bg; vw.style.setProperty("--grid", th.grid); vw.dataset.theme = cur.theme;
     applyView();
@@ -586,7 +663,7 @@
     const p = (h) => { h = h.replace("#", ""); if (h.length === 3) h = h.split("").map((c) => c + c).join(""); return [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16)); };
     try { const x = p(hex), y = p(base); return "rgb(" + x.map((v, i) => Math.round(v * a + y[i] * (1 - a))).join(",") + ")"; } catch (e) { return base; }
   }
-  function applyView() { const st = $("mmStage"); if (st) st.style.transform = `translate(${view.x}px,${view.y}px) scale(${view.k})`; const z = $("mmZoom"); if (z) z.textContent = Math.round(view.k * 100) + "%"; }
+  function applyView() { const st = $("mmStage"); if (st) st.style.transform = `translate(${view.x}px,${view.y}px) scale(${view.k})`; const z = $("mmZoom"); if (z) z.textContent = Math.round(view.k * 100) + "%"; syncMagSize(); }
   function fit(anim) {
     if (!L) return;
     const vw = $("mmView"), r = vw.getBoundingClientRect(), b = L.bounds, pad = 40;
@@ -922,6 +999,9 @@
   // 大纲：像写列表一样编辑（Enter 新一行、Tab 缩进、Shift+Tab 退回、空行退格删除）
   function outline(focusId) {
     const box = $("mmOutline"); if (!box) return;
+    /* 多容器不许静默：大纲是从 topNode() 递归出来的，只列第一个容器 —— 这里的循环留到第②步再改，
+       但**现在就必须说一声**（宁可吵，不要安静丢）。 */
+    if (nodesArr().length > 1) tip("这张图有 " + nodesArr().length + " 个独立容器，大纲当前只列第一个", 4000);
     const rows = [];
     (function w(n, d) { if (!n) return; rows.push(`<div class="mo-row" style="--d:${d}" data-id="${n.id}">${(n.children || []).length ? `<button class="mo-tog" data-mm="ofold" data-id="${n.id}">${isFold(n) ? "▸" : "▾"}</button>` : `<span class="mo-dot">•</span>`}<input class="mo-in${d === 0 ? " root" : ""}" data-id="${n.id}" value="${E(n.text.replace(/\n/g, " "))}" maxlength="500"></div>`); if (!isFold(n)) for (const c of n.children || []) w(c, d + 1); })(topNode(), 0);
     box.innerHTML = `<div class="mo-tip">Enter 新建一行 · Tab 缩进 · Shift+Tab 退回 · 空行按退格删除 · ↑↓ 换行</div>` + rows.join("");
@@ -1092,6 +1172,10 @@
   function zoomAt(k, cx, cy) {
     const r = $("mmView").getBoundingClientRect(); cx = cx ?? r.width / 2; cy = cy ?? r.height / 2;
     const nk = Math.max(0.15, Math.min(3, k));
+    /* 【独立版】非有限值必须在这儿挡掉：`Math.min(3, NaN)` 是 NaN，`NaN` 一旦写进 view.x
+       就**永久污染**画布（transform 变成 translate(NaNpx,NaNpx)，之后所有几何命中全落空，
+       而且不会报错、只是"点哪儿都不对"）。多指手势的比值/中心可能退化成非有限值，所以两道都守。 */
+    if (!isFinite(nk) || !isFinite(cx) || !isFinite(cy)) return;
     view.x = cx - (cx - view.x) * (nk / view.k); view.y = cy - (cy - view.y) * (nk / view.k); view.k = nk; applyView();
   }
   function bindCanvas() {
@@ -1110,6 +1194,45 @@
        顺带把 #mmView 的行内值彻底去掉：它就是"内部区域仍读到上一次 nwse-resize"的来源。 */
     const RZCLS = ["rz-n", "rz-s", "rz-e", "rz-w", "rz-nw", "rz-ne", "rz-sw", "rz-se"];
     let rzEl = null;
+    /* 拖动中的连线预览：起点 = 按下那个磁吸点，终点 = 指针（吸附到候选磁吸点时吸附过去）。
+       坐标都在**舞台坐标系**里画（预览 svg 与连线 svg 同一坐标空间），所以缩放变更时不用重算。 */
+    function drawLinkPrev(cx, cy, hover) {
+      const svg = document.querySelector("#mmStage .mm-linkprev");
+      if (!svg || !link || !L) return;
+      const s0 = L.nodes.get(link.from.node); if (!s0) return;
+      const a = magPos(s0, link.from.side);
+      const hs = hover && hover.id !== link.from.node ? L.nodes.get(hover.id) : null;
+      const t = hs ? magPos(hs, hover.side) : local({ clientX: cx, clientY: cy });
+      svg.innerHTML = `<path d="M${a.x},${a.y} L${t.x},${t.y}" stroke="#2f7cf6" stroke-width="2" stroke-dasharray="6 5" fill="none" stroke-linecap="round"/>`
+        + (hs ? `<circle cx="${t.x}" cy="${t.y}" r="4" fill="none" stroke="#2f7cf6" stroke-width="2"/>` : "");   // 目标端空心圆 = "松手就连到这里"
+    }
+    const clearLinkPrev = () => { const svg = document.querySelector("#mmStage .mm-linkprev"); if (svg) svg.innerHTML = ""; };
+    /* 磁吸点的视觉：源节点加 .linking（四个点常亮），当前候选节点加 .hot（高亮）。
+       命中仍然是 magnetAt() 的几何算 —— 这里只改类名。
+       目标选择器是**覆盖层** .mm-magwrap[data-id=…]（圆点不在 .mm-node 里）。 */
+    function markLink(onId, hotId) {
+      for (const el of document.querySelectorAll("#mmStage .mm-magwrap")) {
+        el.classList.toggle("mag-on", !!onId && el.dataset.id === onId);
+        el.classList.toggle("linking", !!onId && el.dataset.id === onId);
+        el.classList.toggle("hot", !!hotId && el.dataset.id === hotId);
+      }
+    }
+    /* 靠近淡入：指针离节点屏幕矩形 MAG_DIST 以内 → 亮出那一个节点的磁吸点。
+       只亮"最近的一个"，否则节点密集时一片圆点同时淡入。 */
+    function hoverMagnets(cx, cy) {
+      if (!L || !cur) return;
+      const r = $("mmView").getBoundingClientRect(), px = cx - r.left, py = cy - r.top;
+      let best = null, bestD = Infinity;
+      for (const s of L.nodes.values()) {
+        if (s.x == null || s.y == null) continue;
+        const x0 = s.x * view.k + view.x, y0 = s.y * view.k + view.y, w = s.w * view.k, h = s.h * view.k;
+        if (px < x0 - MAG_DIST || px > x0 + w + MAG_DIST || py < y0 - MAG_DIST || py > y0 + h + MAG_DIST) continue;
+        const d = Math.hypot(px - (x0 + w / 2), py - (y0 + h / 2));
+        if (d < bestD) { bestD = d; best = s.n.id; }
+      }
+      for (const el of document.querySelectorAll("#mmStage .mm-magwrap.mag-on")) if (el.dataset.id !== best) el.classList.remove("mag-on");
+      if (best) { const el = document.querySelector(`#mmStage .mm-magwrap[data-id="${best}"]`); if (el) el.classList.add("mag-on"); }
+    }
     function markZone(id, dir) {
       const el = id ? document.querySelector(`#mmStage .mm-node[data-id="${id}"]`) : null;
       if (rzEl && rzEl !== el) RZCLS.forEach((c) => rzEl.classList.remove(c));
@@ -1162,6 +1285,19 @@
         return;
       }
       if (e.target.closest(".mm-zoom, .mm-edit, .mm-ic")) return;
+      /* 【独立版·平级】磁吸点**优先于缩放**：指针落在某个磁吸点的命中半径内 → 进入连线模式，
+         不触发八方向缩放；出了半径、仍在边缘带内 → 才是缩放（下面那段 zoneAt）。
+         这与 A3/A4 的口径一致：圆内是连线、圆外才是缩放，二者互斥。 */
+      const mg0 = magnetAt(e.clientX, e.clientY);
+      if (mg0) {
+        link = { from: { node: mg0.id, side: mg0.side } };
+        select(mg0.id);                                  // select 会重画（预览 svg 被重建），所以先 select 再画预览
+        markLink(mg0.id, null);
+        drawLinkPrev(e.clientX, e.clientY, null);
+        try { vw.setPointerCapture(e.pointerId); } catch (err) {}
+        e.preventDefault();
+        return;
+      }
       /* 【独立版】八方向缩放：命中按屏幕几何算（zoneAt），不再依赖 .mm-rs 元素 */
       if (cur) {
         const hz = zoneAt(e.clientX, e.clientY), s0 = hz && L && L.nodes.get(hz.id);
@@ -1189,7 +1325,14 @@
       if (pts.has(e.pointerId)) pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
       /* 收起按钮：拖开超过阈值就算取消（与节点拖动同一套 6px 阈值） */
       if (foldDown && !foldDown.moved && Math.hypot(e.clientX - foldDown.sx, e.clientY - foldDown.sy) > 6) foldDown.moved = true;
-      if (pinch && pts.size >= 2) { const [a, b] = [...pts.values()]; const r = vw.getBoundingClientRect(); zoomAt(pinch.k * Math.hypot(a.x - b.x, a.y - b.y) / pinch.d, pinch.cx - r.left, pinch.cy - r.top); return; }
+      if (pinch && pts.size >= 2 && isFinite(pinch.d) && pinch.d > 0) { const [a, b] = [...pts.values()]; const r = vw.getBoundingClientRect(); zoomAt(pinch.k * Math.hypot(a.x - b.x, a.y - b.y) / pinch.d, pinch.cx - r.left, pinch.cy - r.top); return; }
+      /* 连线拖动中：预览线跟手；落在候选磁吸点上就吸附过去（目标端空心圆提示"会连到这里"） */
+      if (link) {
+        const mg = magnetAt(e.clientX, e.clientY);
+        markLink(link.from.node, mg && mg.id !== link.from.node ? mg.id : null);
+        drawLinkPrev(e.clientX, e.clientY, mg && mg.id !== link.from.node ? mg : null);
+        return;
+      }
       if (drag && drag.resize) {
         const z = drag.resize, k = view.k || 1;
         const dx = (e.clientX - z.mx) / k, dy = (e.clientY - z.my) / k;
@@ -1211,7 +1354,7 @@
         return;
       }
       /* 未在拖动：指针进入某方向命中区就给**那个节点**加方向类（角 > 边；内部维持原光标） */
-      if (!drag) { const hz = zoneAt(e.clientX, e.clientY); markZone(hz && hz.id, hz && hz.dir); return; }
+      if (!drag) { const hz = zoneAt(e.clientX, e.clientY); markZone(hz && hz.id, hz && hz.dir); hoverMagnets(e.clientX, e.clientY); return; }
       if (!drag) return;
       const dx = e.clientX - drag.sx, dy = e.clientY - drag.sy;
       if (!drag.moved && Math.hypot(dx, dy) < 6) return;
@@ -1221,6 +1364,18 @@
     });
     const up = (e) => {
       pts.delete(e.pointerId); clearTimeout(press);
+      /* 【独立版·平级】连线：松手位置落在一个磁吸点上就建边（默认单指向 fwd）；
+         松在空白 = 静默取消；松回自己 = addEdge 给一句确定原因的提示（不静默）。
+         一条边一次 change —— 一次撤销撤掉的就是这条边。 */
+      if (link) {
+        const l = link; link = null;
+        clearLinkPrev(); markLink(null, null);
+        if (e.type !== "pointercancel") {
+          const mg = magnetAt(e.clientX, e.clientY);
+          if (mg) addEdge(l.from, { node: mg.id, side: mg.side }, "fwd");
+        }
+        return;
+      }
       if (foldDown) {                                   // 收起按钮：按下→原地松手 才折叠（拖开/取消都不算）
         const f = foldDown; foldDown = null;
         if (e.type === "pointercancel" || f.moved) return;
@@ -1279,7 +1434,7 @@
       sel = k.id; draw(); startEdit(k.id, true); editingNew = k.id;
     });
   }
-  // 拖节点：放到别的主题中间 = 成为它的子主题；放到上 / 下边缘 = 插到它前面 / 后面
+  // 拖节点：**只落坐标**（位置就是数据）。换父子那套已删 —— 层级现在由边表达。
   function startNodeDrag(d, e) {
     if (isTopNode(d.id)) { d.node = false; return; }
     const el = document.querySelector(`#mmStage .mm-node[data-id="${d.id}"]`); if (!el) return;
@@ -1289,41 +1444,17 @@
   function moveNodeDrag(d, e, p) {
     if (!d.ghost) return;
     const s = L.nodes.get(d.id); d.ghost.style.left = p.x - s.w / 2 + "px"; d.ghost.style.top = p.y - s.h / 2 + "px";
-    document.querySelectorAll("#mmStage .drop-in, #mmStage .drop-before, #mmStage .drop-after").forEach((x) => x.classList.remove("drop-in", "drop-before", "drop-after"));
-    d.target = null;
-    for (const t of L.nodes.values()) {
-      if (t.x == null || t.n.id === d.id || isAncestor(d.id, t.n.id)) continue;
-      if (p.x < t.x - 6 || p.x > t.x + t.w + 6 || p.y < t.y - 10 || p.y > t.y + t.h + 10) continue;
-      const rel = (cur.layout === "down" ? (p.x - t.x) / t.w : (p.y - t.y) / t.h), isRoot = !t.parent;
-      const where = isRoot ? "in" : rel < .25 ? "before" : rel > .75 ? "after" : "in";
-      d.target = { id: t.n.id, where };
-      document.querySelector(`#mmStage .mm-node[data-id="${t.n.id}"]`).classList.add("drop-" + where);
-      break;
-    }
   }
   function endNodeDrag(d) {
-    if (d.ghost) d.ghost.remove();
-    /* 【独立版】松手时把坐标落地：拖到哪，位置就是数据（写进导图层 cur.pos，不写节点字段）
-     * 先按拖到的位置记坐标，再走原来的"换父子关系"；最后统一重画。 */
     const g = d.ghost;
+    if (g) g.remove();
+    /* 【独立版·平级】松手只把坐标落地（写进导图层 cur.pos，不写节点字段）。
+       原来那套"拖到节点中间 / 上边缘 = 换父子 / 插到前面"（drop-in / drop-before / drop-after）已删：
+       落点只认磁吸点，改结构只走连线。坐标写入在 change() 的 fn 内，撤销才回得干净。 */
     const px = g ? Math.round(parseFloat(g.style.left) || 0) : null;
     const py = g ? Math.round(parseFloat(g.style.top) || 0) : null;
-    const tg = d.target;
-    const src0 = findNode(d.id);
-    /* 【独立版】坐标写入必须发生在 change() 的 fn 内部：
-       change() 会先快照当前 cur，再执行 fn —— 先写坐标再进 change 的话，快照里已经含新坐标，撤销就回不去。 */
-    const putPos = () => { if (px != null && py != null) putLayerPos(d.id, { x: px, y: py }); };
-    // 拖到空白：只落坐标、不改父子关系。走 change() 才会进撤销栈（并负责 storeLocal / draw）
-    if (!tg) { if (px != null) change(putPos); else draw(); return; }
-    const src = src0, dst = findNode(tg.id);
-    if (!src || !dst || !src.p) { if (px != null) change(putPos); else draw(); return; }
-    change(() => {
-      putPos();
-      src.p.children.splice(src.p.children.indexOf(src.n), 1);
-      if (tg.where === "in") { setFold(dst.n, false); (dst.n.children ||= []).push(src.n); }
-      else { const a = dst.p.children, i = a.indexOf(dst.n); a.splice(tg.where === "before" ? i : i + 1, 0, src.n); }
-      delete src.n.side;
-    });
+    if (px != null && py != null) change(() => putLayerPos(d.id, { x: px, y: py }));
+    else draw();
     select(d.id, true);
   }
 
@@ -1380,7 +1511,12 @@
     e.preventDefault();
     if (text && text.trim() && (!clip || text.trim() !== toText(clip, 0).trim())) pasteTo(sel, text); else if (clip) pasteTo(sel);
   });
-  function openFind() { const b = $("mmFindBar"); b.classList.remove("hidden"); const i = $("mmFindIn"); i.focus(); i.select(); }
+  function openFind() {
+    const b = $("mmFindBar"); b.classList.remove("hidden"); const i = $("mmFindIn"); i.focus(); i.select();
+    /* 多容器不许静默：搜索只走 topNode()（第二个容器里的节点搜不到）—— 循环留第②步，这里先讲清楚。
+       提示放在"打开搜索"这一步，而不是每次 doFind —— 每敲一个字符弹一次会吵死人。 */
+    if (nodesArr().length > 1) tip("这张图有 " + nodesArr().length + " 个独立容器，搜索当前只覆盖第一个", 4000);
+  }
   function togglePanel(on) { panelOpen = on; $("mmPanel").classList.toggle("hidden", !on); if (!isMobile()) lsSet("mm_panel_v1", on); if (on) panel(); }
 
   // 大纲的键盘

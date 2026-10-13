@@ -89,6 +89,10 @@ class El {
       if (cls) e.className = cls;
       const tt = attrs.match(/\btitle=["']([^"']*)["']/);      // 真实 DOM 的 el.title 是反射属性
       if (tt) e.title = tt[1];
+      /* 行内 style 也要解析：真实 DOM 里 el.style.width 读的就是 style 属性（磁吸点直径写在行内），
+         不解析的话"圆点直径是屏幕像素口径"这类断言只能拿到 undefined —— 又变成断不了的事。 */
+      const sl = attrs.match(/\bstyle=["']([^"']*)["']/);
+      if (sl) for (const decl of sl[1].split(";")) { const ci = decl.indexOf(":"); if (ci > 0) e.style[decl.slice(0, ci).trim()] = decl.slice(ci + 1).trim(); }
       const dre = /\bdata-([\w-]+)=["']?([^"'\s>]+)["']?/g;
       let dm;
       while ((dm = dre.exec(attrs))) e.dataset[dm[1]] = dm[2];
@@ -492,13 +496,10 @@ new Promise((resolve) => {
     // 它和 Chief 挂起的仿真台新活是同一件 —— 如实标"未覆盖"，不报假通过。
     const src = require("fs").readFileSync(require("path").join(__dirname, "..", "vendor", "mindmap.js"), "utf8");
     const fn = src.slice(src.indexOf("function endNodeDrag("), src.indexOf("function endNodeDrag(") + 2000);
-    ok("endNodeDrag 里拖到空白那条走 change()（进撤销栈），且坐标写入在 change 的 fn 内部",
-      /if \(!tg\) \{ if \(px != null\) change\(putPos\); else draw\(\); return; \}/.test(fn) && /change\(\(\) => \{\s*putPos\(\);/.test(fn));
-    ok("旧写法已消失：不再有 change() 之外直接写 curPos / 手动 storeLocal 的落点分支",
-      !/if \(px != null && py != null && src0\) curPos\(\)\[d\.id\]/.test(fn) && !/\{ storeLocal\(cur\); scheduleCloud\(\); \} draw\(\); return; \}/.test(fn));
-    ok("[未覆盖] 「拖到空白 → 撤销 → 坐标回到拖动前」的端到端断言还没有", false,
-      "本轮更正：元素已查得到、拖动端到端已在 B 组跑通（落座标/落盘/重开不变），缺的只是撤销那一步；" +
-      "把它补成端到端属于 Chief 挂起的新活，当前靠上面两条源码形状断言盯着");
+    ok("endNodeDrag 只落坐标：坐标写入在 change() 的 fn 内部（进撤销栈）",
+      /change\(\(\) => putLayerPos\(d\.id, \{ x: px, y: py \}\)\)/.test(fn), fn.slice(0, 160).replace(/\s+/g, " "));
+    ok("旧落点模型已删：drop-in / drop-before / drop-after / d.target 在 vendor 里都不再出现",
+      !/drop-in|drop-before|drop-after|d\.target/.test(src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "")));
   }
 
   console.log("\nC3. 删除整棵子树 → pos/size 一起清（不残留）");
@@ -582,7 +583,8 @@ new Promise((resolve) => {
     const js = require("fs").readFileSync(require("path").join(__dirname, "..", "vendor", "mindmap.js"), "utf8");
     ok("单击选中：pointerup 未移动时走 select(d.id)", /if \(d\.id\) \{[\s\S]{0,220}?select\(d\.id\)/.test(js));
     ok("双击进编辑：startEdit 定义在、dblclick 绑定在", js.includes("function startEdit") && js.includes("dblclick"));
-    ok("拖节点改位置：endNodeDrag 仍把坐标写进 cur.pos", js.includes("function endNodeDrag(") && js.includes("change(putPos)"));
+    ok("拖节点改位置：endNodeDrag 仍把坐标写进 cur.pos（写入口唯一，且只落坐标）",
+      js.includes("function endNodeDrag(") && js.includes("change(() => putLayerPos(d.id, { x: px, y: py }))"));
     ok("拖空白平移：panning 分支在", js.includes('vw.classList.add("panning")'));
     ok("滚轮平移/缩放：wheel 监听在", js.includes('addEventListener("wheel"'));
     // addChild 的锚点必须是真实盒子：用 estSize 的文本估算，父节点被放大过时会算出"压住父节点"的位置
@@ -964,7 +966,7 @@ new Promise((resolve) => {
       (src9.match(/curPos\(\)\[[^\]]*\]\s*=/g) || []).length === 1 &&
       /function putLayerPos\(id, p\) \{ if \(p\) curPos\(\)\[id\] = p; \}/.test(src9));
     const shape = {
-      endNodeDrag: [/change\(putPos\)/.test(fnSrc("endNodeDrag")), /const putPos = \(\) => \{ if \(px != null && py != null\) putLayerPos\(d\.id/.test(fnSrc("endNodeDrag"))],
+      endNodeDrag: [/change\(\(\) => putLayerPos\(d\.id, \{ x: px, y: py \}\)\)/.test(fnSrc("endNodeDrag"))],
       addChild: [/change\(\(\) => \{\s*putLayerPos\(k\.id, at\);/.test(fnSrc("addChild"))],
       addSibling: [/change\(\(\) => \{\s*putLayerPos\(k\.id, at\);/.test(fnSrc("addSibling"))],
       addParent: [/change\(\(\) => \{\s*putLayerPos\(k\.id, at\);/.test(fnSrc("addParent"))],
@@ -1014,7 +1016,6 @@ new Promise((resolve) => {
       { name: "toggleFold", pat: "change(() => { setFold(r.n, !isFold(r.n)); })" },
       { name: "foldLevel", pat: "setFold(n, lv > 0 && d >= lv)" },
       { name: "doFind", pat: "for (const n of toOpen) setFold(n, false)" },
-      { name: "drag-into-node", pat: 'if (tg.where === "in") { setFold(dst.n, false);' },
       { name: "moveSibling", pat: "setFold(prev, false); (prev.children ||= []).push(r.n)" },
       { name: "outlineFold", pat: "change(() => { setFold(r.n, !isFold(r.n)); }); outline(id)" },
     ];
@@ -1329,6 +1330,154 @@ new Promise((resolve) => {
     ok("产品 findNode 能按 id 找到第二个容器里的节点（修前：只搜 nodes[0] → null）",
       !!hitB && hitB.n && hitB.n.id === "b1x" && hitB.n.text === "B 子",
       "hit=" + (hitB && hitB.n ? hitB.n.id : "null"));
+    /* 「多容器不许静默」扩到大纲与搜索：两处都只走 topNode()（循环留第②步），但必须**说一声**。 */
+    const nBanner0 = B.banners.length;
+    const oBtn = B.doc.querySelector('[data-mm="outline"]');
+    ok("找得到「大纲」入口", !!oBtn);
+    if (oBtn) bubble(oBtn, "click", { target: oBtn });
+    ok("切到大纲时给可见提示（只列第一个容器）", B.banners.slice(nBanner0).some((s) => /独立容器/.test(s)),
+      JSON.stringify(B.banners.slice(nBanner0)));
+    if (oBtn) bubble(oBtn, "click", { target: oBtn });          // 切回导图
+    const nBanner1 = B.banners.length;
+    const fBtn = B.doc.querySelector('[data-mm="find"]');
+    ok("找得到「搜索」入口", !!fBtn);
+    if (fBtn) bubble(fBtn, "click", { target: fBtn });
+    ok("打开搜索时给可见提示（只覆盖第一个容器）", B.banners.slice(nBanner1).some((s) => /独立容器/.test(s)),
+      JSON.stringify(B.banners.slice(nBanner1)));
+    B.localStorage.setItem("mm_map_legacy-map", JSON.stringify(LEGACY));
+    M.open("legacy-map");
+  }
+
+  console.log("\nC17. 磁吸点 + 拖拽预览线 + 松手建边（第 1 步：能拖出一条线）");
+  {
+    /* 屏幕坐标：把舞台坐标按 #mmStage 的 transform 换算成浏览器像素（与真实鼠标一致）。
+       magPoint 算的是**磁吸点**（节点盒四条边的中点），不是节点中心。 */
+    function magPoint(id, side) {
+      const s = M.state().L.nodes.get(id);
+      const v = view2screen();
+      const p = side === "n" ? { x: s.x + s.w / 2, y: s.y } : side === "s" ? { x: s.x + s.w / 2, y: s.y + s.h }
+        : side === "w" ? { x: s.x, y: s.y + s.h / 2 } : { x: s.x + s.w, y: s.y + s.h / 2 };
+      return { x: v.ox + p.x * v.k, y: v.oy + p.y * v.k };
+    }
+    const cur17 = () => M.state().cur;
+    /* ⚠️ #mmView 会被重渲染成**新对象**（仿真台按 innerHTML 重建 #mmBox 的壳），所以事件一律**现取**：
+       开局抓一次存着的话，事件全部打在不再接线的旧对象上 —— 表现是"鼠标操作静默变成空操作"，
+       而且不报错（这次我就在这上面栽了一轮）。 */
+    const vwOf = () => B.win.$("mmView") || B.doc.querySelector("#mmView");
+    const wrapOf = (id) => B.doc.querySelector('#mmStage .mm-magwrap[data-id="' + id + '"]');
+    const kAt = () => { const v = view2screen(); return v ? v.k : NaN; };
+    /* 圆点的**屏幕**直径 = clamp(0.25 × min(节点屏幕宽, 高), 6, 12)；写进舞台的是它除以 view.k ——
+       所以"屏幕恒定"的准确含义是"不跟着舞台缩放"，不是"永远同一个像素数"。 */
+    const magDiaAt = (s, k) => Math.max(6, Math.min(12, Math.round(0.25 * Math.min(s.w * k, s.h * k))));
+    const reset17 = () => { B.localStorage.setItem("mm_map_legacy-map", JSON.stringify(LEGACY)); M.open("legacy-map"); };
+
+    reset17();
+    const nodes17 = [...M.state().L.nodes.values()].filter((s) => s.x != null);
+    const wraps17 = B.doc.querySelectorAll("#mmStage .mm-magwrap");
+    ok("每个节点都渲染了磁吸点层，每层 4 个点（" + wraps17.length + " 层 / " +
+      B.doc.querySelectorAll("#mmStage .mm-magwrap .mm-mag").length + " 个点）",
+      wraps17.length === nodes17.length && B.doc.querySelectorAll("#mmStage .mm-magwrap .mm-mag").length === nodes17.length * 4);
+    const oneId = nodes17.find((s) => s.depth === 1).n.id, oneS = M.state().L.nodes.get(oneId);
+    const dot0 = wrapOf(oneId).children[0];
+    const wantDia = magDiaAt(oneS, kAt());
+    ok("圆点直径是**屏幕**像素口径（舞台内 " + dot0.style.width + " × k=" + kAt().toFixed(2) + " → " +
+      (parseFloat(dot0.style.width) * kAt()).toFixed(1) + "px，期望 " + wantDia + "px = clamp(0.25×min(节点屏幕w,h),6,12)）",
+      Math.abs(parseFloat(dot0.style.width) * kAt() - wantDia) <= 1);
+
+    /* 靠近淡入：常态没有 mag-on；指针移到节点附近 → 那一个亮；移开 → 灭。 */
+    bubble(vwOf(), "pointermove", { clientX: 5, clientY: 5 });
+    ok("常态：没有节点亮着磁吸点（靠近才淡入）", B.doc.querySelectorAll("#mmStage .mm-magwrap.mag-on").length === 0);
+    const c17 = magPoint(oneId, "e");
+    bubble(vwOf(), "pointermove", { clientX: c17.x + 6, clientY: c17.y });
+    ok("指针靠近节点 → 该节点的磁吸点亮起（.mag-on）",
+      !!wrapOf(oneId) && wrapOf(oneId).classList.contains("mag-on"),
+      "亮着的=" + B.doc.querySelectorAll("#mmStage .mm-magwrap.mag-on").length);
+
+    /* 屏幕恒定：缩放后圆点直径必须回到 magDia(当前 k)/view.k（否则它会跟着舞台一起放大/缩小）。 */
+    bubble(vwOf(), "wheel", { ctrlKey: true, deltaY: 300, clientX: c17.x, clientY: c17.y });
+    const kNow = kAt(), wAfter = parseFloat(wrapOf(oneId).children[0].style.width);
+    const wantNow = magDiaAt(M.state().L.nodes.get(oneId), kNow);
+    ok("缩放后圆点的**屏幕直径**仍等于 magDia(当前 k)（k=" + kNow.toFixed(2) + "：舞台内 " + wAfter +
+      " × k = " + (wAfter * kNow).toFixed(1) + "px，期望 " + wantNow + "px）",
+      Math.abs(wAfter * kNow - wantNow) <= 1.5);
+    reset17();
+    ok("前提：#mmStage 的 transform 可解析（view.x/view.y 不是 NaN —— 被污染了后面所有几何都会静默落空）",
+      !!view2screen(), String(B.win.$("mmStage").style.transform));
+
+    /* 拖出一条线：按在磁吸点上 → 移动 → 虚线预览 + 目标端空心圆 → 松在另一个节点的磁吸点上 = 建边 */
+    const a = root0(cur17()).children.find((n) => n.id !== oneId && (n.children || []).length) || root0(cur17()).children[1];
+    const fromP = magPoint(oneId, "e"), toP = magPoint(a.id, "w");
+    ok("前提：取到两个不同节点的磁吸点（" + oneId + ".e → " + a.id + ".w）", oneId !== a.id);
+    const edges0 = (cur17().edges || []).length;
+    bubble(vwOf(), "pointerdown", { clientX: fromP.x, clientY: fromP.y });
+    ok("按在磁吸点上：源点所在节点进连线态（.linking），且**没有**进入缩放态",
+      !!wrapOf(oneId) && wrapOf(oneId).classList.contains("linking") &&
+      B.doc.querySelectorAll("#mmStage .mm-node").length > 0);
+    bubble(vwOf(), "pointermove", { clientX: (fromP.x + toP.x) / 2, clientY: (fromP.y + toP.y) / 2 });
+    const prevHtml = String(B.doc.querySelector("#mmStage .mm-linkprev").innerHTML || "");
+    ok("拖动中有一条**虚线**预览线", /<path[^>]*stroke-dasharray/.test(prevHtml), prevHtml.slice(0, 90));
+    bubble(vwOf(), "pointermove", { clientX: toP.x, clientY: toP.y });
+    ok("指针落到候选磁吸点上：预览吸附过去并给目标端空心圆",
+      /<circle[^>]*fill="none"/.test(String(B.doc.querySelector("#mmStage .mm-linkprev").innerHTML || "")),
+      String(B.doc.querySelector("#mmStage .mm-linkprev").innerHTML || "").slice(0, 120));
+    bubble(vwOf(), "pointerup", { clientX: toP.x, clientY: toP.y });
+    const es = cur17().edges || [];
+    ok("松手落在另一个磁吸点上 → 建出一条边（" + edges0 + " → " + es.length + "）", es.length === edges0 + 1);
+    const e0 = es[es.length - 1];
+    ok("边的端点就是那两个磁吸点（from=" + JSON.stringify(e0 && e0.from) + " to=" + JSON.stringify(e0 && e0.to) + "，默认 dir=fwd）",
+      !!e0 && e0.from.node === oneId && e0.from.side === "e" && e0.to.node === a.id && e0.to.side === "w" && e0.dir === "fwd");
+    ok("松手后预览线清空、连线态解除",
+      String(B.doc.querySelector("#mmStage .mm-linkprev").innerHTML || "") === "" &&
+      B.doc.querySelectorAll("#mmStage .mm-magwrap.linking, #mmStage .mm-magwrap.hot").length === 0);
+    ok("**端点不落盘坐标**：这条边里没有任何 x/y 字样（只有 id + side + dir）",
+      !/"x"|"y"/.test(JSON.stringify(e0)), JSON.stringify(e0));
+    const disk17 = JSON.parse(B.localStorage.getItem("mm_map_legacy-map"));
+    ok("边已落盘（磁盘上也是 " + (edges0 + 1) + " 条）", Array.isArray(disk17.edges) && disk17.edges.length === edges0 + 1);
+    ok("建边没有动尺寸（连线不触发缩放）", JSON.stringify(cur17().size) === JSON.stringify(disk17.size));
+
+    /* 非法目标：同一个节点（自环）/ 已经连过的那对 → 不建边，并给一句确定的提示（不静默） */
+    const nB = (cur17().edges || []).length;
+    bubble(vwOf(), "pointerdown", { clientX: fromP.x, clientY: fromP.y });
+    const sameP = magPoint(oneId, "w");
+    bubble(vwOf(), "pointerup", { clientX: sameP.x, clientY: sameP.y });
+    ok("松回**同一个节点**的磁吸点 → 不建自环，并给提示",
+      (cur17().edges || []).length === nB && B.banners.some((s) => /不能连线/.test(s)),
+      "banners=" + JSON.stringify(B.banners.slice(-2)));
+    bubble(vwOf(), "pointerdown", { clientX: fromP.x, clientY: fromP.y });
+    bubble(vwOf(), "pointerup", { clientX: toP.x, clientY: toP.y });
+    ok("同一对磁吸点再来一次 → 不重复建边，并给提示",
+      (cur17().edges || []).length === nB && B.banners.some((s) => /已经有一条线/.test(s)),
+      "banners=" + JSON.stringify(B.banners.slice(-2)));
+
+    /* 松在空白 = 静默取消（不建边、不留预览、不报错） */
+    bubble(vwOf(), "pointerdown", { clientX: fromP.x, clientY: fromP.y });
+    bubble(vwOf(), "pointermove", { clientX: fromP.x + 300, clientY: fromP.y + 220 });
+    bubble(vwOf(), "pointerup", { clientX: fromP.x + 300, clientY: fromP.y + 220 });
+    ok("松在空白 → 不建边、预览清空（静默取消）",
+      (cur17().edges || []).length === nB && String(B.doc.querySelector("#mmStage .mm-linkprev").innerHTML || "") === "");
+
+    /* 优先级：磁吸点半径**外**、仍在边缘带内 → 走缩放（不是连线）—— 两条路互斥。 */
+    reset17();
+    const s17 = M.state().L.nodes.get(oneId);
+    const magR17 = Math.max(8, Math.min(16, Math.round(0.4 * Math.min(s17.w * kAt(), s17.h * kAt()))));
+    const sP = magPoint(oneId, "s");
+    const inBand = { clientX: sP.x + magR17 + 8, clientY: sP.y };   // 出了磁吸点半径，但还压在**下边缘**上
+    const sizeBefore = JSON.stringify(M.state().cur.size[oneId]);
+    /* ⚠️ 事件挂在**当前 DOM 里的节点元素**上派发（它到 #mmView 的祖先链是活的）：
+       直接 `bubble(B.win.$("mmView"), …)` 在这台仿真台里会打到一个**拿到过的旧对象**上，
+       监听不在它身上 → 整条手势静默变成空操作（不报错、断言只会"尺寸没变"）。 */
+    const evAt = (type, x, y) => {
+      const host = B.doc.querySelector('#mmStage .mm-node[data-id="' + oneId + '"]') || B.win.$("mmStage");
+      bubble(host, type, { clientX: x, clientY: y, pointerId: 3 });
+    };
+    evAt("pointerdown", inBand.clientX, inBand.clientY);
+    evAt("pointermove", inBand.clientX, inBand.clientY + 40);   // 往下拖 = 拉高
+    evAt("pointerup", inBand.clientX, inBand.clientY + 40);
+    ok("磁吸点半径外、仍在边缘带内 → 走缩放（尺寸 " + sizeBefore + " → " + JSON.stringify(M.state().cur.size[oneId]) + "）",
+      JSON.stringify(M.state().cur.size[oneId]) !== sizeBefore);
+    ok("那条缩放没有顺手建边（两条路互斥）", (M.state().cur.edges || []).length === 0,
+      "edges=" + JSON.stringify((M.state().cur.edges || []).map((e) => e.from.node + "→" + e.to.node)));
+
     B.localStorage.setItem("mm_map_legacy-map", JSON.stringify(LEGACY));
     M.open("legacy-map");
   }
@@ -1366,17 +1515,29 @@ new Promise((resolve) => {
   const dragS = [...st3.L.nodes.values()].find((s) => s.depth === 1);
   const dEl = B.doc.querySelector('.mm-node[data-id="' + dragS.n.id + '"]');
   const vw = B.doc.querySelector("#mmView");
+  const posBeforeDrag = JSON.parse(JSON.stringify(M.state().cur.pos[dragS.n.id]));
   ok("画布上找得到要拖的节点 " + dragS.n.id + " 和 #mmView", !!dEl && !!vw);
   if (dEl && vw) {
     const fromX = 300, fromY = 300;
-    bubble(dEl, "pointerdown", { clientX: fromX, clientY: fromY });
-    bubble(vw, "pointermove", { clientX: fromX + 240, clientY: fromY + 160 });
-    bubble(vw, "pointerup", { clientX: fromX + 240, clientY: fromY + 160 });
+    /* 事件派发在**当前 DOM 的节点元素**上（它到 #mmView 的祖先链是活的）——见 C17 里那条注释：
+       直接拿 `B.win.$("mmView")` 或旧的元素对象派发，监听不在它身上，整条手势静默变空操作。 */
+    const hostB = () => B.doc.querySelector('#mmStage .mm-node[data-id="' + dragS.n.id + '"]') || B.win.$("mmStage");
+    /* `target` 必须**显式传**：仿真台的 fire() 走到哪个祖先就把 e.target 覆写成那个祖先，
+       于是 vendor 里的 `e.target.closest(".mm-node")` 拿到的是 #mmView → drag.id 为空 →
+       整个"拖节点"退化成"平移画布"，坐标一直不变（这条断言原来就是这样空转的）。 */
+    bubble(hostB(), "pointerdown", { target: hostB(), clientX: fromX, clientY: fromY });
+    bubble(hostB(), "pointermove", { target: hostB(), clientX: fromX + 240, clientY: fromY + 160 });
+    bubble(hostB(), "pointerup", { target: hostB(), clientX: fromX + 240, clientY: fromY + 160 });
     const p = M.state().cur.pos[dragS.n.id];
     ok("松手后该节点坐标写进 cur.pos " + JSON.stringify(p), !!p);
+    ok("拖动**真的改了**坐标（" + JSON.stringify(posBeforeDrag) + " → " + JSON.stringify(p) + "）—— 否则「撤销回到原值」是空断言",
+      JSON.stringify(p) !== JSON.stringify(posBeforeDrag), "拖动前=" + JSON.stringify(posBeforeDrag));
     ok("松手后跟手 ghost 已移除", B.doc.querySelectorAll(".mm-node.ghost").length === 0);
     const saved = JSON.parse(B.localStorage.getItem("mm_map_legacy-map"));
     ok("已落盘：磁盘坐标 == 内存坐标", !!saved.pos && !!saved.pos[dragS.n.id] && saved.pos[dragS.n.id].x === p.x && saved.pos[dragS.n.id].y === p.y);
+    /* 注意：`boot()` 会把**全局**的文档级委派表清空（DELEGATES = []），所以 B2 建完之后，
+       B 这个大本营的 click 委派已经没人接了（撤销按钮就点不动了）。这里存一份、跑完 B2 再放回去。 */
+    const savedDelegates = DELEGATES.slice();
     const B2 = boot();
     for (const [k, v] of B.localStorage._m) B2.localStorage.setItem(k, v);
     loadInto(B2.sandbox, "js/host-bridge.js", B2.sandbox.window);
@@ -1386,6 +1547,17 @@ new Promise((resolve) => {
     ok("重开页面后位置不变（" + JSON.stringify(p) + " → " + JSON.stringify(p2) + "）", !!p2 && p2.x === p.x && p2.y === p.y);
     const s2 = M2.state().L.nodes.get(dragS.n.id);
     ok("重开后渲染坐标 == 数据坐标", !!s2 && Math.round(s2.x) === p.x && Math.round(s2.y) === p.y);
+    DELEGATES = savedDelegates;
+    /* 拖完 → 撤销：坐标回到拖动前（这条原来是"未覆盖"，现在补成端到端 —— 拖动的坐标写在 change 的
+       fn 内，所以整段拖动只占一条撤销历史）。 */
+    const ub = B.doc.querySelector('[data-mm="undo"]');
+    ok("找得到撤销按钮", !!ub);
+    if (ub) bubble(ub, "click", { target: ub });
+    const pBack = M.state().cur.pos[dragS.n.id];
+    ok("撤销后坐标回到拖动前（" + JSON.stringify(p) + " → " + JSON.stringify(pBack) + "，拖动前 " + JSON.stringify(posBeforeDrag) + "）",
+      JSON.stringify(pBack) === JSON.stringify(posBeforeDrag));
+    const orphB = layerOrphans(M.state().cur);
+    ok("撤销后导图层里没有孤儿", orphB.length === 0, orphB.join(","));
   }
 
   console.log("\nE. 全流程无异常");
