@@ -1034,8 +1034,12 @@ new Promise((resolve) => {
     ok("导图层里没有孤儿（全部容器的 id 都算 live）", layerOrphans(c).length === 0, layerOrphans(c).join(","));
     const disk = JSON.parse(B.localStorage.getItem("mm_map_legacy-map"));
     ok("落盘后第二个容器的条目仍在（没有把丢数据写回盘）", !!disk.pos.b1 && !!disk.size.b1 && !!disk.fold.b1);
-    ok("findNode 能按 id 找到第二个容器里的节点", !!findNodeProbe(c, "b1x"));
-    function findNodeProbe(map, id) { for (const r of (map.nodes || [])) { const hit = (function w(n) { if (n.id === id) return n; for (const k of n.children || []) { const q = w(k); if (q) return q; } return null; })(r); if (hit) return hit; } return null; }
+    /* 走**产品侧** findNode（window.Mindmap 导出），不自己写遍历：自写遍历只能证明"夹具里有那个节点"，
+       证明不了产品的按 id 查找路径覆盖了全部容器。修前这条会红（findNode 默认只搜 nodes[0]）。 */
+    const hitB = M.findNode("b1x");
+    ok("产品 findNode 能按 id 找到第二个容器里的节点（修前：只搜 nodes[0] → null）",
+      !!hitB && hitB.n && hitB.n.id === "b1x" && hitB.n.text === "B 子",
+      "hit=" + (hitB && hitB.n ? hitB.n.id : "null"));
     B.localStorage.setItem("mm_map_legacy-map", JSON.stringify(LEGACY));
     M.open("legacy-map");
   }

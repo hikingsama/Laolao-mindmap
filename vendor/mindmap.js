@@ -158,7 +158,18 @@
   let foldDown = null, foldSwallow = null;
   let L = null;   // 最近一次布局：{nodes: Map(id → {n, x, y, w, h, depth, side, color, parent}), bounds}
   const node = (id) => (L && L.nodes.get(id) ? L.nodes.get(id).n : null);
-  function findNode(id, n = cur && topNode(), p = null) { if (!n) return null; if (n.id === id) return { n, p }; for (const c of n.children || []) { const r = findNode(id, c, n); if (r) return r; } return null; }
+  /* 【独立版·平级】按 id 查找必须覆盖**全部容器**（多容器下只搜 nodes[0] = 选中/编辑/删除/撤销里
+     第二个容器的节点"找不到"，随后被当成"已删除"清掉 sel）。不传 n 时遍历全部容器；
+     传 n 时仍是单棵树的递归（内部递归、isAncestor 都走这条）。 */
+  function findNode(id, n, p = null) {
+    if (n) {
+      if (n.id === id) return { n, p };
+      for (const c of n.children || []) { const r = findNode(id, c, n); if (r) return r; }
+      return null;
+    }
+    for (const r of nodesArr()) { const hit = findNode(id, r, null); if (hit) return hit; }
+    return null;
+  }
   const isAncestor = (a, b) => { let r = findNode(b); while (r && r.p) { if (r.p.id === a) return true; r = findNode(r.p.id); } return false; };
 
   function change(fn, keepSel) {
@@ -1471,5 +1482,8 @@
        全部读这两个数组（自测台不许再写一份字面量）。加新表只改上面那两行。 */
     LAYER_MAPS, LAYER_LISTS,
     state: () => ({ cur, sel, index, L }), open: openMap, create,
+    /* 【独立版】导出给断言读**同一处**：多容器下 findNode 必须能找到非第一个容器里的节点，
+       断言不能自己再写一份遍历（自写遍历只是证明"夹具里有那个节点"，证明不了产品路径）。 */
+    findNode,
   };
 })();
