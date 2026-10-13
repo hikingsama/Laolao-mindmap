@@ -67,6 +67,8 @@
   const walk = (n, f, p = null, depth = 0) => { if (!n) return; f(n, p, depth); if (n.children) for (const c of n.children) walk(c, f, n, depth + 1); };
   const count = (n) => { let k = 0; walk(n, () => k++); return k; };
   /* 容器版计数：新格式 nodes 数组、旧格式 root 都认。 */
+  /* 【独立版·平级】边的 id 走独立空间（与节点 id 不同源），便于排查与断言。 */
+  const eid = () => "e" + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
   const countNodes = (m) => (Array.isArray(m && m.nodes) ? m.nodes : m && m.root ? [m.root] : []).reduce((a, r) => a + count(r), 0);
   const pref = Object.assign({ layout: "mind", line: "curve", theme: "fresh" }, lsGet(LS_PREF, {}));
 
@@ -971,7 +973,24 @@
     // [独立版] 云同步已停用：不再从账号取导图（原 mm_get 分支见 git 历史）
     if (!src) { tip("这张图还没下载到这台设备，先打开一次再复制"); return; }
     const c = { ...clone(src), id: uid(), title: (src.title || "导图") + " 副本" };
-    for (const r of (c.nodes || [])) walk(r, (n) => { n.id = nid(); }); const c0 = (c.nodes || [])[0]; if (c0) c0.text = c.title;
+    /* 【独立版·平级】重发节点 id 的同时**必须重映射导图层**：pos/size/fold 的键 + edges 的端点。
+       不重映射的后果：副本一打开就被 pruneLayer 当孤儿清掉（位置全丢），边指向原图节点（跨图引用）。 */
+    const old2new = new Map();
+    for (const r of (c.nodes || [])) walk(r, (n) => { const nw = nid(); old2new.set(n.id, nw); n.id = nw; });
+    for (const t of LAYER_MAPS) {
+      const d = c[t]; if (!d || typeof d !== "object") continue;
+      const out = {};
+      for (const k of Object.keys(d)) { const nw = old2new.get(k); if (nw) out[nw] = d[k]; }
+      c[t] = out;
+    }
+    if (Array.isArray(c.edges)) {
+      c.edges = c.edges.map((e) => {
+        const a = old2new.get(e && e.from && e.from.node), b = old2new.get(e && e.to && e.to.node);
+        if (!a || !b) return null;
+        return { id: eid(), from: { node: a, side: e.from.side }, to: { node: b, side: e.to.side }, dir: e.dir };
+      }).filter(Boolean);
+    }
+    const c0 = (c.nodes || [])[0]; if (c0) c0.text = c.title;
     storeLocal(c); idxPut({ id: c.id, local: true }); scheduleCloud();
     closeDlg(); if (cur) openMap(c.id); else renderList(); tip("已复制");
   }

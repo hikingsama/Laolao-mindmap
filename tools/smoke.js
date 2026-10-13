@@ -956,7 +956,9 @@ new Promise((resolve) => {
        注意 fill() 会给叶子补 children:[]，所以树要按"结构 + 字段值"比，不能直接比 JSON 字符串。 */
     const srcM = JSON.parse(B.localStorage.getItem("mm_map_legacy-map"));
     const backup = { app: "laolao-mindmap", v: 1, layout: srcM.layout, theme: srcM.theme, line: srcM.line,
-      root: JSON.parse(JSON.stringify(root0(srcM))), pos: Object.assign({}, srcM.pos), size: Object.assign({}, srcM.size) };
+      root: JSON.parse(JSON.stringify(root0(srcM))), pos: Object.assign({}, srcM.pos), size: Object.assign({}, srcM.size),
+      fold: { [ids0[1]]: true },
+      edges: [{ id: "edgeRT", from: { node: ids0[0], side: "e" }, to: { node: ids0[1], side: "w" }, dir: "fwd" }] };
     const shapeOf = (n) => JSON.stringify({ id: n.id, text: n.text, bold: n.bold, color: n.color, progress: n.progress, note: n.note, link: n.link, marks: n.marks,
       children: (n.children || []).map((x) => JSON.parse(shapeOf(x))) });
     const norm = (o) => JSON.stringify(Object.keys(o || {}).sort().map((k) => [k, o[k]]));
@@ -970,6 +972,10 @@ new Promise((resolve) => {
       norm(rt.pos) === norm(backup.pos) && norm(rt.size) === norm(backup.size),
       "pos 本地=" + Object.keys(rt.pos).length + " 备份=" + Object.keys(backup.pos).length);
     ok("往返：布局/主题/线型也带过来了", rt.layout === backup.layout && rt.theme === backup.theme && rt.line === backup.line);
+    ok("往返：fold 一起搬回来（" + ids0[1] + " 仍是折叠状态）", !!rt.fold[ids0[1]], JSON.stringify(rt.fold));
+    ok("往返：edges 一起搬回来（1 条，端点与方向不变）",
+      Array.isArray(rt.edges) && rt.edges.length === 1 && rt.edges[0].from.node === ids0[0] &&
+      rt.edges[0].to.node === ids0[1] && rt.edges[0].dir === "fwd", JSON.stringify(rt.edges));
 
     /* ③ 复制导图：重发 id 时两个方向都要成立（新 id 有条目 + 没有旧 id 残留）。 */
     B.localStorage.setItem("mm_map_legacy-map", JSON.stringify(LEGACY));
@@ -994,8 +1000,8 @@ new Promise((resolve) => {
       /* 实测：副本的节点 id 与原图**完全重叠** —— 回退时把 reidAll 一起退掉了（现在是既有的
          walk(root0(c), n => n.id = nid()) 老实现，且 pos/size 的键没跟着搬）。这正是审计列的
          "副本未重映射"同族缺陷、也是"外科拆除"清单要求**保留 reidAll** 的理由。下一笔修掉它。 */
-      ok("[已知缺陷·下一笔修] 副本 id 与原图重叠（回退把 reidAll 退掉了，外科拆除必须恢复）",
-        idsC.every((id) => ids0.indexOf(id) < 0) === false, "重叠 " + idsC.filter((id) => ids0.indexOf(id) >= 0).length + " / " + idsC.length);
+      ok("副本：id 与原图完全不重叠（键与端点重映射生效）", idsC.every((id) => ids0.indexOf(id) < 0),
+        "重叠 " + idsC.filter((id) => ids0.indexOf(id) >= 0).length + " / " + idsC.length);
     }
     B.localStorage.setItem("mm_map_legacy-map", JSON.stringify(LEGACY));
     M.open("legacy-map");
