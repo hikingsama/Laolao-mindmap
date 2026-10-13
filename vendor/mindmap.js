@@ -286,13 +286,6 @@
     }
     return n;
   }
-  // 把这次布局里所有有坐标的节点的最终位置写回 cur.pos（只补新出现的，不删旧的）
-  function syncPosFromLayout(lay) {
-    const p = curPos();
-    lay = lay || L || layoutWithPos();
-    for (const [id, s] of lay.nodes) { if (s.x != null && s.y != null) putLayerPos(id, { x: Math.round(s.x), y: Math.round(s.y) }); }
-    return p;
-  }
 
   function collide(rects, x, y, w, h) {
     for (const r of rects) if (x < r.x + r.w + 8 && x + w + 8 > r.x && y < r.y + r.h + 8 && y + h + 8 > r.y) return true;
