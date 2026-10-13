@@ -1522,6 +1522,58 @@ new Promise((resolve) => {
     ok("那条缩放没有顺手建边（两条路互斥）", (M.state().cur.edges || []).length === 0,
       "edges=" + JSON.stringify((M.state().cur.edges || []).map((e) => e.from.node + "→" + e.to.node)));
 
+    /* 第 3 步：点线选中（屏幕 10px 命中带）+ 节点优先 + 右键菜单（四种指向 + 删边）。
+       这一段自带一条现成的边（重新拖一条），免得依赖前面测试留下的状态。 */
+    reset17();
+    const stA = M.state().L.nodes.get(oneId);
+    const centerA = { x: Math.round(view2screen().ox + (stA.x + stA.w / 2) * view2screen().k),
+                      y: Math.round(view2screen().oy + (stA.y + stA.h / 2) * view2screen().k) };
+    const pA = magPoint(oneId, "e"), pB = magPoint(a.id, "w");
+    bubble(B.doc.querySelector('#mmStage .mm-node[data-id="' + oneId + '"]') || B.win.$("mmStage"), "pointerdown", { clientX: pA.x, clientY: pA.y });
+    bubble(B.doc.querySelector('#mmStage .mm-node[data-id="' + oneId + '"]') || B.win.$("mmStage"), "pointerup", { clientX: pB.x, clientY: pB.y });
+    const e3 = (cur17().edges || [])[0];
+    ok("（第 3 步前提）重新拖出一条边", !!e3, JSON.stringify(cur17().edges));
+    const stage17 = () => B.win.$("mmStage");
+    const evOn = (host, type, x, y) => bubble(host, type, { target: host, clientX: x, clientY: y, pointerId: 6 });
+    const midP = { x: Math.round((pA.x + pB.x) / 2), y: Math.round((pA.y + pB.y) / 2) };   // 线中点（在 10px 命中带内）
+    ok("点之前：没有边处于选中态", B.doc.querySelectorAll("#mmStage .mm-edge.sel").length === 0);
+    evOn(stage17(), "pointerdown", midP.x, midP.y);
+    evOn(stage17(), "pointerup", midP.x, midP.y);
+    ok("点在线（10px 命中带内）→ 这条边被选中（.mm-edge.sel = " + B.doc.querySelectorAll("#mmStage .mm-edge.sel").length + "）",
+      B.doc.querySelectorAll("#mmStage .mm-edge.sel").length === 1);
+    /* 节点优先于边：按在节点**中心**（离任何磁吸点都远）不该选中边。
+       注意 pointerup 要用**现取**的节点元素：上一步"取消选边"的 draw() 已经把 DOM 重建过了，
+       抓着的旧元素已经脱离文档（真实浏览器里松手命中的也是当前 DOM 的元素）。 */
+    evOn(B.doc.querySelector('#mmStage .mm-node[data-id="' + oneId + '"]') || stage17(), "pointerdown", centerA.x, centerA.y);
+    evOn(B.doc.querySelector('#mmStage .mm-node[data-id="' + oneId + '"]') || stage17(), "pointerup", centerA.x, centerA.y);
+    ok("节点优先于边：按在节点身上不选边，选中的是那个节点",
+      B.doc.querySelectorAll("#mmStage .mm-edge.sel").length === 0 && M.state().sel === oneId,
+      "sel=" + M.state().sel + " 选中边=" + B.doc.querySelectorAll("#mmStage .mm-edge.sel").length);
+    /* 右键：菜单四项 + 删除，且写成人话 */
+    evOn(stage17(), "contextmenu", midP.x, midP.y);
+    const menuHtml = String(B.win.$("mmDlgBody").innerHTML || "");
+    ok("右键线 → 弹出这条线的菜单（四种指向 + 删除这条线）",
+      /data-mm="edir"[^>]*data-dir="none"/.test(menuHtml) && /data-dir="fwd"/.test(menuHtml) && /data-dir="rev"/.test(menuHtml) &&
+      /data-dir="both"/.test(menuHtml) && /data-mm="edel"/.test(menuHtml), menuHtml.slice(0, 180));
+    ok("菜单写成人话（→ 指向「…」/ ← 指向「…」，当前那一项打勾）",
+      /→ 指向「/.test(menuHtml) && /← 指向「/.test(menuHtml) && /✓ /.test(menuHtml));
+    const revBtn17 = B.doc.querySelector('#mmDlgBody [data-dir="rev"]');
+    ok("菜单里找得到「← 指向」那一项", !!revBtn17);
+    if (revBtn17) bubble(revBtn17, "click", { target: revBtn17 });
+    let ed3 = { to: B.doc.querySelectorAll("#mmStage .mm-links path.mm-arrow").filter((x) => x.dataset.end === "to").length,
+                from: B.doc.querySelectorAll("#mmStage .mm-links path.mm-arrow").filter((x) => x.dataset.end === "from").length };
+    ok("点「← 指向」→ 立即重画：箭头改到起点（to=" + ed3.to + " from=" + ed3.from + "）", ed3.to === 0 && ed3.from === 1, JSON.stringify(ed3));
+    const disk3 = JSON.parse(B.localStorage.getItem("mm_map_legacy-map"));
+    ok("指向改完已落盘（磁盘上也是 rev）", disk3.edges[0].dir === "rev", JSON.stringify(disk3.edges));
+    evOn(stage17(), "contextmenu", midP.x, midP.y);
+    const delBtn17 = B.doc.querySelector('#mmDlgBody [data-mm="edel"]');
+    ok("菜单里找得到「删除这条线」", !!delBtn17);
+    if (delBtn17) bubble(delBtn17, "click", { target: delBtn17 });
+    ok("点「删除这条线」→ 内存与磁盘上都没了，画布上也不再有 .mm-edge",
+      (cur17().edges || []).length === 0 && JSON.parse(B.localStorage.getItem("mm_map_legacy-map")).edges.length === 0 &&
+      B.doc.querySelectorAll("#mmStage .mm-edge").length === 0,
+      "内存=" + (cur17().edges || []).length + " DOM=" + B.doc.querySelectorAll("#mmStage .mm-edge").length);
+
     B.localStorage.setItem("mm_map_legacy-map", JSON.stringify(LEGACY));
     M.open("legacy-map");
   }

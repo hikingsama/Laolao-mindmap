@@ -340,6 +340,41 @@ const main = async () => {
   check("放大后节点变大（" + boxBefore.w + " → " + zoomed.w + "）而圆点屏幕直径仍在 6–13px（" + zoomed.d + "）—— 屏幕恒定",
     zoomed.w > boxBefore.w * 1.05 && zoomed.d >= 6 && zoomed.d <= 13, JSON.stringify(zoomed));
 
+  /* ---- 7) 第 3 步：点线选中（屏幕命中带）+ 右键菜单（四种指向 / 删边） ---- */
+  const mA2 = await magOf(twoNodes.a, "e"), mB2 = await magOf(twoNodes.b, "w");
+  const midE = { x: Math.round((mA2.x + mB2.x) / 2), y: Math.round((mA2.y + mB2.y) / 2) };
+  await clickAt(midE.x, midE.y);
+  await sleep(200);
+  const selN = Number(await ev("document.querySelectorAll('#mmStage .mm-edge.sel').length"));
+  check("点在线上（真实鼠标，10px 命中带）→ 这条边被选中（.mm-edge.sel = " + selN + "）", selN === 1, "sel=" + selN);
+  /* 右键：无头 CDP 的 Input.dispatchMouseEvent 不会合成 contextmenu 事件，所以在页内派发一个
+     MouseEvent('contextmenu')（走的是**同一条监听**：真实右键就是这条路径）。 */
+  await ev(`(() => {
+    const el = document.elementFromPoint(${midE.x}, ${midE.y}) || document.getElementById('mmView');
+    el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: ${midE.x}, clientY: ${midE.y}, button: 2 }));
+    return true;
+  })()`);
+  await sleep(250);
+  const menu = JSON.parse(await ev(`(() => {
+    const d = document.getElementById('mmDlg'), body = document.getElementById('mmDlgBody');
+    const items = [...body.querySelectorAll('[data-dir]')].map((x) => x.getAttribute('data-dir'));
+    return JSON.stringify({ open: !!(d && d.open), items, hasDel: !!body.querySelector('[data-mm="edel"]'),
+      text: body.textContent.replace(/\\s+/g, ' ').slice(0, 120) });
+  })()`));
+  check("真实右键线 → 弹出菜单（open=" + menu.open + "，四项=" + JSON.stringify(menu.items) + "，有删除=" + menu.hasDel + "）",
+    menu.open === true && menu.items.length === 4 && ["none", "fwd", "rev", "both"].every((v) => menu.items.indexOf(v) >= 0) && menu.hasDel === true,
+    JSON.stringify(menu));
+  check("菜单是人话（不是枚举值）：" + menu.text, /指向/.test(menu.text) && /没有箭头/.test(menu.text), menu.text);
+  await clickSel('#mmDlgBody [data-dir="rev"]');
+  await sleep(250);
+  const afterRev = JSON.parse(await ev(`(() => {
+    const a = [...document.querySelectorAll('#mmStage .mm-links path.mm-arrow')];
+    return JSON.stringify({ to: a.filter((x) => x.dataset.end === "to").length, from: a.filter((x) => x.dataset.end === "from").length,
+      open: document.getElementById('mmDlg').open, dir: (window.Mindmap.state().cur.edges[0] || {}).dir });
+  })()`));
+  check("点「← 指向」→ 箭头立刻改到起点、弹窗关掉（dir=" + afterRev.dir + "，to=" + afterRev.to + " from=" + afterRev.from + "）",
+    afterRev.dir === "rev" && afterRev.to === 0 && afterRev.from === 1 && afterRev.open === false, JSON.stringify(afterRev));
+
   guard();
   const bad = RESULTS.filter((r) => !r.ok);
   console.log("\n结果：" + (RESULTS.length - bad.length) + " 通过 / " + bad.length + " 失败" +

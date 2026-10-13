@@ -158,6 +158,8 @@
   let foldDown = null, foldSwallow = null;
   /* 【独立版·平级】正在从某个磁吸点拖出的连线：{ from:{node,side} }；松手时按松手位置的磁吸点建边。 */
   let link = null;
+  /* 选中的边（与"选中的节点" sel 是两套：点线选线、点节点选节点）。右键菜单与 Delete 都看它。 */
+  let selEdge = null;
   let L = null;   // 最近一次布局：{nodes: Map(id → {n, x, y, w, h, depth, side, color, parent}), bounds}
   const node = (id) => (L && L.nodes.get(id) ? L.nodes.get(id).n : null);
   /* 【独立版·平级】按 id 查找必须覆盖**全部容器**（多容器下只搜 nodes[0] = 选中/编辑/删除/撤销里
@@ -581,6 +583,24 @@
       for (const d of w.children) { d.style.width = md + "px"; d.style.height = md + "px"; }
     }
   }
+  /* 【独立版·平级】边的命中（屏幕坐标入参）：线只有 1–2px，用户点不中就是没做 —— 所以按**屏幕 10px
+     命中带**算（点到线段的距离）。节点优先于边：调用方先问节点、再问边。 */
+  const EDGE_HIT = 10;
+  function edgeAt(cx, cy) {
+    if (!L || !cur || !Array.isArray(cur.edges) || !cur.edges.length) return null;
+    const r = $("mmView").getBoundingClientRect(), px = cx - r.left, py = cy - r.top;
+    let best = null, bestD = EDGE_HIT;
+    for (const e of cur.edges) {
+      const a = L.nodes.get(e.from.node), b = L.nodes.get(e.to.node);
+      if (!a || !b || a.x == null || b.x == null) continue;
+      const p1 = magScreen(a, e.from.side), p2 = magScreen(b, e.to.side);
+      const vx = p2.x - p1.x, vy = p2.y - p1.y, len2 = vx * vx + vy * vy;
+      const t = len2 ? Math.max(0, Math.min(1, ((px - p1.x) * vx + (py - p1.y) * vy) / len2)) : 0;
+      const d = Math.hypot(px - (p1.x + t * vx), py - (p1.y + t * vy));
+      if (d <= bestD) { bestD = d; best = e; }
+    }
+    return best;
+  }
   /* 磁吸点命中（屏幕坐标入参）：返回 { id, side, cx, cy } 或 null。
      选中节点优先（与 zoneAt 同口径）—— 选中那一个的最后一次操作最可能是它。 */
   function magnetAt(cx, cy) {
@@ -630,7 +650,7 @@
       const a = L.nodes.get(e.from.node), b = L.nodes.get(e.to.node);
       if (!a || !b || a.x == null || b.x == null) continue;      // 端点不在画布上（折叠/已删）就这条不画
       const p1 = magPos(a, e.from.side), p2 = magPos(b, e.to.side), dir = e.dir || "fwd";
-      out.push(`<path class="mm-edge" data-id="${e.id}" d="M${p1.x},${p1.y} L${p2.x},${p2.y}" stroke="${EDGE_COLOR}" stroke-width="2" fill="none" stroke-linecap="round" opacity=".9"/>`);
+      out.push(`<path class="mm-edge${selEdge && e.id === selEdge ? " sel" : ""}" data-id="${e.id}" d="M${p1.x},${p1.y} L${p2.x},${p2.y}" stroke="${EDGE_COLOR}" stroke-width="2" fill="none" stroke-linecap="round" opacity=".9"/>`);
       if (dir === "fwd" || dir === "both") out.push(edgeArrow(p2, p1, "to"));
       if (dir === "rev" || dir === "both") out.push(edgeArrow(p1, p2, "from"));
     }
@@ -1107,8 +1127,22 @@
       <button type="button" data-mm="delmap" data-id="${id}" class="danger">🗑 删除</button></div>
       <div class="nd-actions"><span class="spacer"></span><button type="button" class="small" data-mm="dclose">取消</button></div></form>`);
   }
-  async function duplicate(id) {
-    const m = id === (cur && cur.id) ? clone(cur) : lsGet(mapKey(id), null);
+  /* 【独立版·平级】一条边的菜单：四种指向 + 删除。写成"→ 指向「第二章」"这种话，
+     用户不用理解 fwd/rev/none/both；当前那一项打勾。 */
+  function edgeMenu(e) {
+    const a = findNode(e.from.node), b = findNode(e.to.node);
+    const na = a ? a.n.text.split("\n")[0].slice(0, 14) : "?", nb = b ? b.n.text.split("\n")[0].slice(0, 14) : "?";
+    const now = e.dir || "fwd";
+    const item = (v, label) => `<button type="button" data-mm="edir" data-id="${e.id}" data-dir="${v}">${now === v ? "✓ " : ""}${label}</button>`;
+    dlg(`<form method="dialog"><h3>这条线指向谁</h3><div class="mm-menu">
+      ${item("none", "— 没有箭头")}
+      ${item("fwd", "→ 指向「" + E(nb) + "」")}
+      ${item("rev", "← 指向「" + E(na) + "」")}
+      ${item("both", "↔ 两头都有箭头")}
+      <button type="button" data-mm="edel" data-id="${e.id}" class="danger">🗑 删除这条线</button></div>
+      <div class="nd-actions"><span class="spacer"></span><button type="button" class="small" data-mm="dclose">取消</button></div></form>`);
+  }
+  async function duplicate(id) {    const m = id === (cur && cur.id) ? clone(cur) : lsGet(mapKey(id), null);
     let src = m;
     // [独立版] 云同步已停用：不再从账号取导图（原 mm_get 分支见 git 历史）
     if (!src) { tip("这张图还没下载到这台设备，先打开一次再复制"); return; }
@@ -1335,6 +1369,19 @@
         }
       }
       vw.focus({ preventScroll: true });
+      /* 【独立版·平级】点空白处**线**：节点优先于边 —— 所以只有在"指针没落在任何节点上"时才问边
+         （落在节点上又想去点边，那是用户自己没对准）。命中带 10px 屏幕像素，线本身仍然只有 2px。 */
+      if (!e.target.closest(".mm-node") && cur) {
+        const eh = edgeAt(e.clientX, e.clientY);
+        if (eh) {
+          selEdge = eh.id; sel = null;
+          document.querySelectorAll("#mmStage .mm-node.sel").forEach((x) => x.classList.remove("sel"));
+          draw();
+          e.preventDefault();
+          return;
+        }
+      }
+      if (selEdge) { selEdge = null; draw(); }               // 点别处 = 取消选中这条线（与节点选中同口径）
       pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (pts.size === 2) { const [a, b] = [...pts.values()]; pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), k: view.k, cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2 }; drag = null; clearTimeout(press); return; }
       const nd = e.target.closest(".mm-node");
@@ -1427,6 +1474,17 @@
       }
     };
     vw.addEventListener("pointerup", up); vw.addEventListener("pointercancel", up);
+    /* 【独立版·平级】右键：只接管**线**上的右键（节点优先于边；别处留给浏览器）。
+       菜单四项写成"→ 指向 XX / ← 指向 XX"，用户不用理解 fwd/rev 这类枚举值。 */
+    vw.addEventListener("contextmenu", (e) => {
+      if (!cur) return;
+      if (e.target.closest(".mm-node")) return;
+      const eh = edgeAt(e.clientX, e.clientY);
+      if (!eh) return;
+      e.preventDefault();
+      selEdge = eh.id; draw();
+      edgeMenu(eh);
+    });
     vw.addEventListener("wheel", (e) => {
       e.preventDefault();
       const r = vw.getBoundingClientRect();
@@ -1592,6 +1650,16 @@
       case "sib": addSibling(); break;
       case "del": del(); break;
       case "foldsel": toggleFold(); break;
+      case "edir": {                                            // 改这条线的指向（走 change：可撤销、落盘）
+        const eg = (cur.edges || []).find((x) => x.id === id);
+        if (eg) { const d2 = b.dataset.dir; change(() => { eg.dir = d2; }); selEdge = eg.id; }
+        closeDlg(); break;
+      }
+      case "edel": {                                            // 删这条线（一条边一条撤销）
+        const eg = (cur.edges || []).find((x) => x.id === id);
+        if (eg) change(() => { cur.edges = cur.edges.filter((x) => x !== eg); selEdge = null; });
+        closeDlg(); break;
+      }
       case "fold": { const sw = pendFoldSwallow === id; if (!sw) toggleFold(id); break; }   // 指针路径已折过就跳过
       case "undo": undo(); break;
       case "redo": redoIt(); break;
