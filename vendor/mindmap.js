@@ -148,6 +148,10 @@
 
   // ---------------- 状态 ----------------
   let cur = null, sel = null, editing = null, editingNew = null, hist = [], redo = [], view = { x: 0, y: 0, k: 1 }, mode = "map", q = "", found = [], clip = null, panelOpen = false, listQ = "";
+  /* 【独立版】收起按钮的指针路径状态（见 bindCanvas 的 pointerdown / up）：
+     foldDown = 按下时命中的收起按钮；foldSwallow = 这次折叠已经由指针路径处理过，
+     浏览器随后还会补发一次 click，别在 click 委托里再折一次（否则一按一展开、净效果为零）。 */
+  let foldDown = null, foldSwallow = null;
   let L = null;   // 最近一次布局：{nodes: Map(id → {n, x, y, w, h, depth, side, color, parent}), bounds}
   const node = (id) => (L && L.nodes.get(id) ? L.nodes.get(id).n : null);
   function findNode(id, n = cur && cur.root, p = null) { if (!n) return null; if (n.id === id) return { n, p }; for (const c of n.children || []) { const r = findNode(id, c, n); if (r) return r; } return null; }
@@ -952,7 +956,20 @@
       return null;
     }
     vw.addEventListener("pointerdown", (e) => {
-      if (e.target.closest(".mm-zoom, .mm-edit, [data-mm=fold], .mm-ic")) return;
+      /* 【独立版】收起按钮走**指针**路径，不再只靠 click 的 target：
+         click 的 target 是 mousedown / mouseup 的**共同祖先** —— 按下落在按钮上、松手偏一点落到节点上，
+         target 就变成 .mm-node，文档级 click 委托收到时 closest("[data-mm]") 是 null，这次折叠整条丢掉。
+         真实浏览器实测的"第一次点按钮没用、要点第二次"就是这个形态。
+         按下记下来 → 松手没怎么动才算一次点击（拖开 = 取消），折叠在这一步完成。 */
+      const fb = e.target.closest("[data-mm=fold]");
+      foldDown = null;              // 每次按下都从干净状态开始：万一上一次按下没等到 pointerup（指针跑到窗口外），陈旧值不会误折
+      if (fb) {
+        foldDown = { id: fb.dataset.id, sx: e.clientX, sy: e.clientY, moved: false };
+        try { vw.setPointerCapture(e.pointerId); } catch (err) {}
+        e.preventDefault();
+        return;
+      }
+      if (e.target.closest(".mm-zoom, .mm-edit, .mm-ic")) return;
       /* 【独立版】八方向缩放：命中按屏幕几何算（zoneAt），不再依赖 .mm-rs 元素 */
       if (cur) {
         const hz = zoneAt(e.clientX, e.clientY), s0 = hz && L && L.nodes.get(hz.id);
@@ -978,6 +995,8 @@
     });
     vw.addEventListener("pointermove", (e) => {
       if (pts.has(e.pointerId)) pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      /* 收起按钮：拖开超过阈值就算取消（与节点拖动同一套 6px 阈值） */
+      if (foldDown && !foldDown.moved && Math.hypot(e.clientX - foldDown.sx, e.clientY - foldDown.sy) > 6) foldDown.moved = true;
       if (pinch && pts.size >= 2) { const [a, b] = [...pts.values()]; const r = vw.getBoundingClientRect(); zoomAt(pinch.k * Math.hypot(a.x - b.x, a.y - b.y) / pinch.d, pinch.cx - r.left, pinch.cy - r.top); return; }
       if (drag && drag.resize) {
         const z = drag.resize, k = view.k || 1;
@@ -1009,6 +1028,12 @@
     });
     const up = (e) => {
       pts.delete(e.pointerId); clearTimeout(press);
+      if (foldDown) {                                   // 收起按钮：按下→原地松手 才折叠（拖开/取消都不算）
+        const f = foldDown; foldDown = null;
+        if (e.type === "pointercancel" || f.moved) return;
+        foldSwallow = f.id; toggleFold(f.id);
+        return;
+      }
       if (pinch) { if (pts.size < 2) pinch = null; drag = null; return; }
       if (!drag) return;
       vw.classList.remove("panning");
@@ -1204,7 +1229,7 @@
       case "sib": addSibling(); break;
       case "del": del(); break;
       case "foldsel": toggleFold(); break;
-      case "fold": toggleFold(id); break;
+      case "fold": { const sw = foldSwallow === id; foldSwallow = null; if (!sw) toggleFold(id); break; }   // 指针路径已折过就跳过
       case "undo": undo(); break;
       case "redo": redoIt(); break;
       case "style": togglePanel(!panelOpen); break;

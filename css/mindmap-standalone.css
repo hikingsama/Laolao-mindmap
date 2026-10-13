@@ -174,9 +174,15 @@ body {
 }
 /* 【独立版】收起按钮：常态完全隐藏，鼠标进入节点才完整显示（实心，不要半透明）。
    位置改到**节点内侧**（原来 right:-10px 会被 .mm-node 的 overflow:hidden 裁掉一半）。
-   用透明度 + pointer-events 切换，不用 display/visibility —— 否则没有过渡。 */
-.mm-fold { opacity: 0; pointer-events: none; z-index: 7; transition: opacity .12s; }
-.mm-node:hover .mm-fold, .mm-node.sel .mm-fold { opacity: 1; pointer-events: auto; }
+   视觉开关用透明度，不用 display/visibility —— 否则没有过渡；"能不能点"见下面两条。 */
+.mm-fold { opacity: 0; z-index: 7; transition: opacity .12s; }
+.mm-node:hover .mm-fold, .mm-node.sel .mm-fold { opacity: 1; }
+/* 【独立版】"能不能点"不再由 :hover 决定。
+   原来 base 是 pointer-events:none、要等 :hover 才放开；真实浏览器实测：**第一次点按钮没用、要点第二次**
+   （第二次生效是因为选中态的 .sel 也放开了）—— 判定"谁被按下"的命中测试不保证已经吃到 hover 放开的状态。
+   现在常态就参与命中（视觉仍靠 opacity 隐藏，鼠标一进节点就实心显示），
+   触屏维持原样（不可见即不可点），触屏的握把方案另定。 */
+@media (hover: none) { .mm-fold { pointer-events: none; } }
 /* 光标：.mm-node{cursor:grab} 是 (0,1,0)，这里 (0,2,0) 更具体，能盖掉抓手 */
 .mm-node .mm-fold { cursor: pointer; }
 /* 命中区按屏幕 ≥24px 放宽：视觉仍是小圆点，靠透明外扩把可点区域撑到 24px */
