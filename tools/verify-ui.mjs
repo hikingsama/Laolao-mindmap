@@ -375,6 +375,29 @@ const main = async () => {
   check("点「← 指向」→ 箭头立刻改到起点、弹窗关掉（dir=" + afterRev.dir + "，to=" + afterRev.to + " from=" + afterRev.from + "）",
     afterRev.dir === "rev" && afterRev.to === 0 && afterRev.from === 1 && afterRev.open === false, JSON.stringify(afterRev));
 
+  /* ---- 8) 第②步：多容器图在真浏览器里也要**全部**画出来（draw 与 PNG 共用同一份 layout） ---- */
+  await ev(`(() => {
+    const m = { id: "ui-two", title: "两个容器", layout: "mind", line: "curve", theme: "fresh", v: 2, edges: [], fold: {},
+      nodes: [{ id: "rA", text: "容器一", children: [{ id: "aA", text: "一的子" }] },
+              { id: "rB", text: "容器二", children: [{ id: "aB", text: "二的子" }] }],
+      pos: { rA: { x: 0, y: 0 }, aA: { x: 220, y: 0 }, rB: { x: 0, y: 220 }, aB: { x: 220, y: 220 } }, size: {} };
+    localStorage.setItem("mm_map_ui-two", JSON.stringify(m));
+    const idx = JSON.parse(localStorage.getItem("mm_index_v1") || "[]");
+    if (!idx.some((x) => x.id === "ui-two")) { idx.push({ id: "ui-two", title: "两个容器", updated: Date.now(), nodes: 4, version: 2, local: true, dirty: false }); localStorage.setItem("mm_index_v1", JSON.stringify(idx)); }
+    return "ok";
+  })()`);
+  await ev("window.Mindmap.open('ui-two')");
+  await sleep(400);
+  const twoDom = JSON.parse(await ev(`(() => {
+    const st = window.Mindmap.state(), b = st.L.nodes.get("aB");
+    return JSON.stringify({ dom: document.querySelectorAll('#mmStage .mm-node').length, live: window.Mindmap.liveIds(st.cur).size,
+      hasB: !!document.querySelector('#mmStage .mm-node[data-id="aB"]'), bx: b ? Math.round(b.x) : null, x1: Math.round(st.L.bounds.x1) });
+  })()`));
+  check("多容器图在真浏览器里**全画出来**（DOM=" + twoDom.dom + " / 树=" + twoDom.live + "，第二个容器在=" + twoDom.hasB + "，其 x=" + twoDom.bx + "）",
+    twoDom.dom === twoDom.live && twoDom.dom === 4 && twoDom.hasB === true && twoDom.bx === 220, JSON.stringify(twoDom));
+  check("布局 bounds 覆盖第二个容器（x1=" + twoDom.x1 + " ≥ 220）—— PNG 导出用同一份 layout",
+    twoDom.x1 >= 220, JSON.stringify(twoDom));
+
   guard();
   const bad = RESULTS.filter((r) => !r.ok);
   console.log("\n结果：" + (RESULTS.length - bad.length) + " 通过 / " + bad.length + " 失败" +

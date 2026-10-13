@@ -213,10 +213,14 @@
   }
   function layoutAuto() {
     const th = THEMES[cur.theme] || THEMES.fresh, nodes = new Map(), lay = cur.layout || "mind";
-    if (!topNode()) return { nodes, th, bounds: { x0: 0, y0: 0, x1: 0, y1: 0 } };
+    /* 【独立版·平级】**每个容器都是一棵树**：布局从全部容器开始摆，不再只看第一个。
+       这里只改"从哪几个根开始"—— span / placeH / placeV 的算法本身一字不动
+       （老图首次打开还要靠它们播种坐标，见 seedPos）。 */
+    const roots = nodesArr();
+    if (!roots.length) return { nodes, th, bounds: { x0: 0, y0: 0, x1: 0, y1: 0 } };
     const HG = lay === "down" ? 26 : 46, VG = lay === "down" ? 56 : 14;
-    // 1) 量大小、记颜色
-    (function prep(n, depth, color, parent) {
+    // 1) 量大小、记颜色（每个容器各量一棵，容器根一律是 depth 0）
+    function prep(n, depth, color, parent) {
       const m = measure(n, depth);
       const c = n.color || (depth === 0 ? th.root : color);
       /* 【独立版】尺寸在这里合并（measure 之后、nodes.set 之前）：让 span() 的缓存从一开始就按最终尺寸算 */
@@ -229,7 +233,8 @@
          全都只看得见可见节点 —— 修掉"收起后连线没了、子节点还在"（原来只有连线消失，后代照样画）。
          cur.pos / cur.size 里这些后代的条目**故意保留**：它们是"用户摆过的位置"，展开时直接用回去。 */
       if (!isFold(n)) (n.children || []).forEach((k, i) => prep(k, depth + 1, depth === 0 ? (k.color || th.colors[i % th.colors.length]) : c, n));
-    })(topNode(), 0, th.root, null);
+    }
+    for (const r of roots) prep(r, 0, th.root, null);
     const S = (id) => nodes.get(id);
     // 2) 子树大小
     const span = (n) => { const s = S(n.id); if (s.span != null) return s.span;
@@ -252,21 +257,37 @@
       const rowH = Math.max(...s.kids.map((k) => S(k.id).h), 0);
       for (const k of s.kids) { placeV(k, x, y + s.h + VG + (rowH - S(k.id).h) * 0); x += span(k) + HG; }
     }
-    const root = topNode(), rs = S(root.id);
-    if (lay === "down") placeV(root, 0, 0);
-    else if (lay === "right") placeH(root, 0, 0, 1);
-    else {
-      // 左右分布：按高度把一级主题分成两边（右边先放、尽量各一半）；可以手动指定 side
-      const ks = rs.kids, total = ks.reduce((a, k) => a + span(k), 0);
-      const right = [], left = []; let acc = 0;
-      ks.forEach((k) => { const want = k.side === "l" ? left : k.side === "r" ? right : (acc + span(k) / 2 <= total / 2 + 1 || !right.length ? right : left); want.push(k); if (want === right) acc += span(k); });
-      rs.side = 0; rs.x = -rs.w / 2; rs.y = -rs.h / 2;
-      const stack = (arr, dir) => {
-        const tot = arr.reduce((a, k) => a + span(k), 0) + VG * Math.max(0, arr.length - 1);
-        let y = -tot / 2;
-        for (const k of arr) { placeH(k, dir > 0 ? rs.x + rs.w + HG + 14 : rs.x - HG - 14, y, dir); y += span(k) + VG; }
-      };
-      stack(right, 1); stack(left, -1);
+    /* 3) 摆位置：**每个容器各摆一棵**，然后纵向叠放（容器之间留一条空）。
+       `mind` 那套"左右按高度分两半"每个容器内部照旧。 */
+    const placeRoot = (root) => {
+      const rs = S(root.id);
+      if (lay === "down") placeV(root, 0, 0);
+      else if (lay === "right") placeH(root, 0, 0, 1);
+      else {
+        // 左右分布：按高度把一级主题分成两边（右边先放、尽量各一半）；可以手动指定 side
+        const ks = rs.kids, total = ks.reduce((a, k) => a + span(k), 0);
+        const right = [], left = []; let acc = 0;
+        ks.forEach((k) => { const want = k.side === "l" ? left : k.side === "r" ? right : (acc + span(k) / 2 <= total / 2 + 1 || !right.length ? right : left); want.push(k); if (want === right) acc += span(k); });
+        rs.side = 0; rs.x = -rs.w / 2; rs.y = -rs.h / 2;
+        const stack = (arr, dir) => {
+          const tot = arr.reduce((a, k) => a + span(k), 0) + VG * Math.max(0, arr.length - 1);
+          let y = -tot / 2;
+          for (const k of arr) { placeH(k, dir > 0 ? rs.x + rs.w + HG + 14 : rs.x - HG - 14, y, dir); y += span(k) + VG; }
+        };
+        stack(right, 1); stack(left, -1);
+      }
+    };
+    let yOff = 0;
+    for (const root of roots) {
+      placeRoot(root);
+      const sub = [];
+      walk(root, (n) => { const s = S(n.id); if (s && s.x != null) sub.push(s); });
+      if (!sub.length) continue;
+      let mn = Infinity, mx = -Infinity;
+      for (const s of sub) { mn = Math.min(mn, s.y); mx = Math.max(mx, s.y + s.h); }
+      const dy = yOff - mn;
+      for (const s of sub) s.y += dy;
+      yOff += (mx - mn) + (lay === "down" ? 48 : 72);
     }
     let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
     for (const s of nodes.values()) { if (s.x == null) continue; x0 = Math.min(x0, s.x); y0 = Math.min(y0, s.y); x1 = Math.max(x1, s.x + s.w); y1 = Math.max(y1, s.y + s.h); }
@@ -1041,11 +1062,14 @@
   // 大纲：像写列表一样编辑（Enter 新一行、Tab 缩进、Shift+Tab 退回、空行退格删除）
   function outline(focusId) {
     const box = $("mmOutline"); if (!box) return;
-    /* 多容器不许静默：大纲是从 topNode() 递归出来的，只列第一个容器 —— 这里的循环留到第②步再改，
-       但**现在就必须说一声**（宁可吵，不要安静丢）。 */
-    if (nodesArr().length > 1) tip("这张图有 " + nodesArr().length + " 个独立容器，大纲当前只列第一个", 4000);
+    /* 【独立版·平级】大纲列**全部容器**（每个容器一棵，容器之间来一条分隔行）。
+       原来只列第一个容器，多容器下第二个容器在大纲里根本看不到。 */
     const rows = [];
-    (function w(n, d) { if (!n) return; rows.push(`<div class="mo-row" style="--d:${d}" data-id="${n.id}">${(n.children || []).length ? `<button class="mo-tog" data-mm="ofold" data-id="${n.id}">${isFold(n) ? "▸" : "▾"}</button>` : `<span class="mo-dot">•</span>`}<input class="mo-in${d === 0 ? " root" : ""}" data-id="${n.id}" value="${E(n.text.replace(/\n/g, " "))}" maxlength="500"></div>`); if (!isFold(n)) for (const c of n.children || []) w(c, d + 1); })(topNode(), 0);
+    const roots18 = nodesArr();
+    for (let ri = 0; ri < roots18.length; ri++) {
+      if (ri) rows.push(`<div class="mo-sep">— 另一个容器 —</div>`);
+      (function w(n, d) { if (!n) return; rows.push(`<div class="mo-row" style="--d:${d}" data-id="${n.id}">${(n.children || []).length ? `<button class="mo-tog" data-mm="ofold" data-id="${n.id}">${isFold(n) ? "▸" : "▾"}</button>` : `<span class="mo-dot">•</span>`}<input class="mo-in${d === 0 ? " root" : ""}" data-id="${n.id}" value="${E(n.text.replace(/\n/g, " "))}" maxlength="500"></div>`); if (!isFold(n)) for (const c of n.children || []) w(c, d + 1); })(roots18[ri], 0);
+    }
     box.innerHTML = `<div class="mo-tip">Enter 新建一行 · Tab 缩进 · Shift+Tab 退回 · 空行按退格删除 · ↑↓ 换行</div>` + rows.join("");
     const f = focusId && box.querySelector(`.mo-in[data-id="${focusId}"]`); if (f) { f.focus(); f.setSelectionRange(f.value.length, f.value.length); }
   }
@@ -1212,7 +1236,8 @@
   let fi = 0;
   function doFind() {
     q = $("mmFindIn").value.trim().toLowerCase(); found = [];
-    if (q) walk(topNode(), (n) => { if ((n.text + " " + (n.note || "")).toLowerCase().includes(q)) found.push(n.id); });
+    /* 【独立版·平级】搜索覆盖**全部容器**（原来只走 topNode()，第二个容器里的节点永远搜不到）。 */
+    if (q) for (const r of nodesArr()) walk(r, (n) => { if ((n.text + " " + (n.note || "")).toLowerCase().includes(q)) found.push(n.id); });
     /* 搜到的在收起的分支里：沿路展开它的上级。**必须走 change** —— 写在 change 外的话，
        这次展开既不进撤销栈、也不落盘（doFind 末尾那两句 draw/storeLocal 拿不到它）。
        先收集"确实要展开的"，避免一次什么都没改的空 change 白占一格撤销。 */
@@ -1593,9 +1618,6 @@
   });
   function openFind() {
     const b = $("mmFindBar"); b.classList.remove("hidden"); const i = $("mmFindIn"); i.focus(); i.select();
-    /* 多容器不许静默：搜索只走 topNode()（第二个容器里的节点搜不到）—— 循环留第②步，这里先讲清楚。
-       提示放在"打开搜索"这一步，而不是每次 doFind —— 每敲一个字符弹一次会吵死人。 */
-    if (nodesArr().length > 1) tip("这张图有 " + nodesArr().length + " 个独立容器，搜索当前只覆盖第一个", 4000);
   }
   function togglePanel(on) { panelOpen = on; $("mmPanel").classList.toggle("hidden", !on); if (!isMobile()) lsSet("mm_panel_v1", on); if (on) panel(); }
 

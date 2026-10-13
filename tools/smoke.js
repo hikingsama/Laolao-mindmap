@@ -1334,20 +1334,57 @@ new Promise((resolve) => {
     ok("产品 findNode 能按 id 找到第二个容器里的节点（修前：只搜 nodes[0] → null）",
       !!hitB && hitB.n && hitB.n.id === "b1x" && hitB.n.text === "B 子",
       "hit=" + (hitB && hitB.n ? hitB.n.id : "null"));
-    /* 「多容器不许静默」扩到大纲与搜索：两处都只走 topNode()（循环留第②步），但必须**说一声**。 */
-    const nBanner0 = B.banners.length;
+    /* 「多容器不许静默」在大纲与搜索上已经**改成覆盖全部容器**（第②步，见 C18）：
+       所以这两处不再需要"只列/只搜第一个"的提示了 —— 这里改成断"真覆盖到了"。 */
     const oBtn = B.doc.querySelector('[data-mm="outline"]');
     ok("找得到「大纲」入口", !!oBtn);
     if (oBtn) bubble(oBtn, "click", { target: oBtn });
-    ok("切到大纲时给可见提示（只列第一个容器）", B.banners.slice(nBanner0).some((s) => /独立容器/.test(s)),
-      JSON.stringify(B.banners.slice(nBanner0)));
+    /* 注意：这份夹具把**第二个容器的根**设成了折叠（two.fold[rootB]=true），所以大纲按折叠语义
+       只列到 b1、不列 b1x —— 断 b1 才对（这本身也是"折叠不再往下建行"的正确表现）。 */
+    ok("大纲里能看到第二个容器（b1，且带容器分隔行）—— 不再只列第一个",
+      !!B.doc.querySelector('#mmOutline [data-id="b1"]') && !!B.doc.querySelector("#mmOutline .mo-sep"));
     if (oBtn) bubble(oBtn, "click", { target: oBtn });          // 切回导图
-    const nBanner1 = B.banners.length;
     const fBtn = B.doc.querySelector('[data-mm="find"]');
     ok("找得到「搜索」入口", !!fBtn);
     if (fBtn) bubble(fBtn, "click", { target: fBtn });
-    ok("打开搜索时给可见提示（只覆盖第一个容器）", B.banners.slice(nBanner1).some((s) => /独立容器/.test(s)),
-      JSON.stringify(B.banners.slice(nBanner1)));
+    const findIn14 = B.win.$("mmFindIn"); findIn14.value = "B 子"; bubble(B.doc, "input", { target: findIn14 });
+    ok("搜索覆盖到第二个容器（#mmFindN = " + String(B.win.$("mmFindN").textContent) + "）",
+      String(B.win.$("mmFindN").textContent) === "1 / 1");
+    B.localStorage.setItem("mm_map_legacy-map", JSON.stringify(LEGACY));
+    M.open("legacy-map");
+  }
+
+  console.log("\nC18. 渲染与布局：**所有容器**都要画出来（draw 与 PNG 导出共用同一份 layout）");
+  {
+    const two = JSON.parse(JSON.stringify(LEGACY));
+    const rA = root0(two);
+    const rB = { id: "b1", text: "第二丛", children: [{ id: "b1x", text: "B 子" }] };
+    delete two.root; two.nodes = [rA, rB];
+    two.pos = { [rA.id]: { x: 0, y: 0 }, b1: { x: 900, y: 0 }, b1x: { x: 1100, y: 0 } };
+    two.size = { [rA.id]: { w: 120, h: 52 }, b1: { w: 120, h: 52 }, b1x: { w: 90, h: 40 } };
+    B.localStorage.setItem("mm_map_legacy-map", JSON.stringify(two));
+    M.open("legacy-map");
+    const c18 = M.state().cur;
+    const total = M.nodesOf(c18).reduce((a, r) => { let k = 0; (function w(n) { k++; (n.children || []).forEach(w); })(r); return a + k; }, 0);
+    const domN = B.doc.querySelectorAll("#mmStage .mm-node").length;
+    ok("画布上画出的节点数 == 全部容器的节点数（" + domN + " / " + total + "）—— 修前只画第一个容器", domN === total, "dom=" + domN);
+    ok("第二个容器里的节点真的在画布上（b1 / b1x）",
+      !!B.doc.querySelector('#mmStage .mm-node[data-id="b1x"]') && !!B.doc.querySelector('#mmStage .mm-node[data-id="b1"]'));
+    const b1s = M.state().L.nodes.get("b1");
+    ok("第二个容器的坐标按 cur.pos 落地（b1.x ≈ 900，实测 " + (b1s && b1s.x) + "）", !!b1s && Math.abs(b1s.x - 900) < 1);
+    /* draw() 与 exportPng() 共用同一个 layout()：bounds 覆盖到第二个容器 = 导出也画得到它 */
+    const bd = M.state().L.bounds;
+    ok("布局 bounds 覆盖到第二个容器（x1=" + Math.round(bd.x1) + " ≥ b1 右边界 " + (b1s ? Math.round(b1s.x + b1s.w) : "b1 不在布局里") + "）—— PNG 导出用的是同一份",
+      !!b1s && bd.x1 >= b1s.x + b1s.w - 0.5);
+    /* 大纲与搜索也要看到全部容器 */
+    const oBtn18 = B.doc.querySelector('[data-mm="outline"]');
+    if (oBtn18) bubble(oBtn18, "click", { target: oBtn18 });
+    ok("大纲里出现第二个容器的节点（b1x）", !!B.doc.querySelector('#mmOutline [data-id="b1x"]'));
+    if (oBtn18) bubble(oBtn18, "click", { target: oBtn18 });
+    const findIn18 = B.win.$("mmFindIn");
+    if (findIn18) { findIn18.value = "B 子"; bubble(B.doc, "input", { target: findIn18 }); }
+    ok("搜索能搜到第二个容器里的节点（#mmFindN = " + String(B.win.$("mmFindN").textContent) + "）",
+      String(B.win.$("mmFindN").textContent) === "1 / 1");
     B.localStorage.setItem("mm_map_legacy-map", JSON.stringify(LEGACY));
     M.open("legacy-map");
   }
