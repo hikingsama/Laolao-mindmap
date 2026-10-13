@@ -264,11 +264,33 @@
     if (!cur.pos || typeof cur.pos !== "object") cur.pos = {};
     return cur.pos;
   }
+  /* 【独立版】导图层里"按节点 id 存条目"的表清单 —— 删除一律按它清。
+     森林要加的 cur.origin（每丛整体偏移）将来**只加在这里一处**，del 不用改。 */
+  const LAYER_TABLES = ["pos", "size"];
+  /* 【独立版】**唯一的坐标写入口**：全文只有这里出现 `curPos()[…] = …`。
+     调用方必须在 change() 的 fn 内调它（change 先快照再执行 fn，写在 fn 外就撤不回去）。 */
+  function putLayerPos(id, p) { if (p) curPos()[id] = p; }
+  // 清掉这些 id 在所有导图层表里的条目（del 按被删子树收集 id 后调用）
+  function dropLayer(ids) {
+    for (const t of LAYER_TABLES) { const d = cur[t]; if (!d) continue; for (const id of ids) delete d[id]; }
+  }
+  /* 读取容错：把"表里有、树里没有"的孤儿条目清掉（返回清掉的条数）。
+     治本在 del 的清理；这里救的是**本次修复之前**就已经被污染、存在盘上的旧图。 */
+  function pruneLayer() {
+    if (!cur || !cur.root) return 0;
+    const live = new Set(); walk(cur.root, (n) => live.add(n.id));
+    let n = 0;
+    for (const t of LAYER_TABLES) {
+      const d = cur[t]; if (!d) continue;
+      for (const id of Object.keys(d)) if (!live.has(id)) { delete d[id]; n++; }
+    }
+    return n;
+  }
   // 把这次布局里所有有坐标的节点的最终位置写回 cur.pos（只补新出现的，不删旧的）
   function syncPosFromLayout(lay) {
     const p = curPos();
     lay = lay || L || layoutWithPos();
-    for (const [id, s] of lay.nodes) { if (s.x != null && s.y != null) p[id] = { x: Math.round(s.x), y: Math.round(s.y) }; }
+    for (const [id, s] of lay.nodes) { if (s.x != null && s.y != null) putLayerPos(id, { x: Math.round(s.x), y: Math.round(s.y) }); }
     return p;
   }
 
@@ -396,10 +418,11 @@
   }
   // 新建节点：算一次初始坐标、立刻固化（改动 4）
   // at：显式指定左上角（双击空白用）；不传就按 spawnPos 算（挂在父/兄弟旁边）
-  function giveBirth(k, anchor, at) {
-    const p = at || spawnPos(anchor);
-    if (p) curPos()[k.id] = p;
-    return k;
+  /* 【独立版】算新节点的出生坐标（**纯计算、不写数据**）。
+     spawnPos 读 L，而 L 只在 draw() 里重算 —— 所以这一步必须在 change() 的 fn **之外**做，
+     fn 里看到的还是旧 L。写入由调用方在 change() 的 fn 内调 putLayerPos，与 endNodeDrag 的 putPos 同构。 */
+  function birthPos(anchor, at) {
+    return at || spawnPos(anchor);
   }
   const layout = layoutWithPos;
 
@@ -494,38 +517,47 @@
     /* 【独立版】锚点必须用**真实盒子**（含 cur.size 固化后的尺寸），不能用 estSize 的文本估算：
        父节点被放大过时，估算宽度偏小 → 出生点算在父节点内部 → "新节点压父节点"。
        这里与 addSibling / addParent 的写法对齐（它们一开始就用 ps）。 */
-    giveBirth(k, { x: ps ? ps.x : 0, y: ps ? ps.y : 0, w: ps ? ps.w : estSize(r.n.text, 1).w, h: ps ? ps.h : estSize(r.n.text, 1).h });
-    change(() => { r.n.fold = false; (r.n.children ||= []).push(k); });
+    const at = birthPos({ x: ps ? ps.x : 0, y: ps ? ps.y : 0, w: ps ? ps.w : estSize(r.n.text, 1).w, h: ps ? ps.h : estSize(r.n.text, 1).h });
+    change(() => {
+      putLayerPos(k.id, at);                       // 坐标写进 change 的 fn 内：撤销"新建"才回得干净（不再留孤儿）
+      r.n.fold = false; (r.n.children ||= []).push(k);
+    });
     sel = k.id; draw(); reveal(k.id); startEdit(k.id, true); editingNew = k.id;
   }
   function addSibling(id, before) {
     const r = findNode(id || sel); if (!r || !r.p) return addChild(id);
     const k = { id: nid(), text: r.p === cur.root ? "分支主题" : "子主题", children: [] };
     const ps = L && L.nodes.get(r.n.id);
-    giveBirth(k, { x: ps ? ps.x : 0, y: ps ? ps.y : 0, w: ps ? ps.w : 150, h: ps ? ps.h : 32 });   // 【独立版】出生位置立刻固化
-    change(() => { const i = r.p.children.indexOf(r.n); r.p.children.splice(before ? i : i + 1, 0, k); });
+    const at = birthPos({ x: ps ? ps.x : 0, y: ps ? ps.y : 0, w: ps ? ps.w : 150, h: ps ? ps.h : 32 });   // 【独立版】出生位置立刻固化
+    change(() => {
+      putLayerPos(k.id, at);                       // 坐标写进 change 的 fn 内（与 endNodeDrag 的 putPos 同构）
+      const i = r.p.children.indexOf(r.n); r.p.children.splice(before ? i : i + 1, 0, k);
+    });
     sel = k.id; draw(); reveal(k.id); startEdit(k.id, true); editingNew = k.id;
   }
   function addParent() {
     const r = findNode(sel); if (!r || !r.p) return;
     const k = { id: nid(), text: "主题", children: [] };
     const ps = L && L.nodes.get(r.n.id);
-    giveBirth(k, { x: ps ? ps.x : 0, y: ps ? ps.y : 0, w: ps ? ps.w : 150, h: ps ? ps.h : 32 });   // 【独立版】出生位置立刻固化
-    change(() => { const i = r.p.children.indexOf(r.n); r.p.children.splice(i, 1, k); k.children.push(r.n); });
+    const at = birthPos({ x: ps ? ps.x : 0, y: ps ? ps.y : 0, w: ps ? ps.w : 150, h: ps ? ps.h : 32 });   // 【独立版】出生位置立刻固化
+    change(() => {
+      putLayerPos(k.id, at);                       // 坐标写进 change 的 fn 内（与 endNodeDrag 的 putPos 同构）
+      const i = r.p.children.indexOf(r.n); r.p.children.splice(i, 1, k); k.children.push(r.n);
+    });
     sel = k.id; draw(); startEdit(k.id, true);
   }
   function del(id) {
     const r = findNode(id || sel); if (!r || !r.p) return;
     const i = r.p.children.indexOf(r.n), nx = r.p.children[i + 1] || r.p.children[i - 1] || r.p;
-    /* 【独立版】删除是**整棵子树**：被删节点及全部后代的 pos / size 必须一起清。
+    /* 【独立版】删除是**整棵子树**：按被删子树收集 id，再由 dropLayer 清掉该 id 在**所有导图层表**里的条目
+       （清单 = LAYER_TABLES；森林加 cur.origin 时只改那一处，这里不动）。
        不清的后果：① 永久残留在导图层，随每次 change() → storeLocal 反复写回 localStorage；
-       ② 残留 id 会污染 spawnPos 的判重（ids = Object.keys(pos)，351 那个 30×26 检查会误让位）。 */
+       ② 残留 id 会污染 spawnPos 的判重（ids = Object.keys(pos)，那个 30×26 检查会误让位）。 */
     const kill = [];
     walk(r.n, (n) => kill.push(n.id));
     change(() => {
       r.p.children.splice(i, 1);
-      const pos = curPos(), size = curSize();
-      for (const k of kill) { delete pos[k]; delete size[k]; }
+      dropLayer(kill);
     });
     select(nx.id, true);
   }
@@ -800,6 +832,11 @@
     if (!m) { tip("这张导图在这台设备上找不到了"); return; }
     fill(m.root);
     cur = m; cur.layout ||= "mind"; cur.line ||= "curve"; cur.theme ||= "fresh";
+    /* 【独立版】读取容错：旧图上可能已经有"表里有、树里没有"的孤儿条目（本次修复之前删出来的）。
+       打开时清一次并落盘（治本在 del 的 dropLayer）。清完再播种，免得"只剩孤儿"时被 seedPos 的
+       `if (Object.keys(p).length) return false` 误判成"已固化"。 */
+    const pruned = pruneLayer();
+    if (pruned) { console.log("[独立版] 打开时清理了 " + pruned + " 条不在树上的导图层条目"); try { storeLocal(cur); } catch (e) {} }
     seedPos();          // 【独立版】旧导图第一次打开：算一遍坐标写进 pos（之后不再重算）
     sel = cur.root.id; hist = []; redo = []; found = []; mode = "map"; panelOpen = !isMobile() && lsGet("mm_panel_v1", false);
     document.body.classList.add("mm-editing");
@@ -1008,10 +1045,11 @@
         const s0 = L && L.nodes.get(z.id);
         const cs = clampSize(w, h, s0 ? s0.measW : z.w0, s0 ? s0.measH : z.h0);
         curSize()[z.id] = cs;
-        /* 西/北方向：左上角要跟着走，否则是从中心缩、不是从边缘缩 */
+        /* 西/北方向：左上角要跟着走，否则是从中心缩、不是从边缘缩。
+           这里在拖动**过程中**写坐标（松手时才由 up 里的 resize 分支落盘 + 进撤销），所以不走 change；但写入口统一走 putLayerPos。 */
         if (W || N) {
           const p = curPos()[z.id] || { x: z.x0, y: z.y0 };
-          curPos()[z.id] = { x: W ? Math.round(z.x0 + (z.w0 - cs.w)) : p.x, y: N ? Math.round(z.y0 + (z.h0 - cs.h)) : p.y };
+          putLayerPos(z.id, { x: W ? Math.round(z.x0 + (z.w0 - cs.w)) : p.x, y: N ? Math.round(z.y0 + (z.h0 - cs.h)) : p.y });
         }
         if (z.raf) cancelAnimationFrame(z.raf);
         z.raf = requestAnimationFrame(() => { try { draw(); } catch (err) {} });   // 重画：连线端点跟着尺寸一起重锚
@@ -1078,8 +1116,11 @@
          坐标换算的基准是 **#mmView 的 rect**（不是 #mmBox）：view.x/view.y 就是相对 #mmView 的，
          两者之间隔着工具条（实测 47px），基准取错就会整块偏移工具条的高度。 */
       const p = local(e), k = { id: nid(), text: "分支主题", children: [] }, m = measure(k, 1);
-      giveBirth(k, null, { x: Math.round(p.x - m.w / 2), y: Math.round(p.y - m.h / 2) });   // 一次 dblclick 只建一个
-      change(() => { (cur.root.children ||= []).push(k); });
+      const at = birthPos(null, { x: Math.round(p.x - m.w / 2), y: Math.round(p.y - m.h / 2) });   // 一次 dblclick 只建一个
+      change(() => {
+        putLayerPos(k.id, at);                     // 坐标写进 change 的 fn 内（与 endNodeDrag 的 putPos 同构）
+        (cur.root.children ||= []).push(k);
+      });
       sel = k.id; draw(); startEdit(k.id, true); editingNew = k.id;
     });
   }
@@ -1116,7 +1157,7 @@
     const src0 = findNode(d.id);
     /* 【独立版】坐标写入必须发生在 change() 的 fn 内部：
        change() 会先快照当前 cur，再执行 fn —— 先写坐标再进 change 的话，快照里已经含新坐标，撤销就回不去。 */
-    const putPos = () => { if (px != null && py != null) curPos()[d.id] = { x: px, y: py }; };
+    const putPos = () => { if (px != null && py != null) putLayerPos(d.id, { x: px, y: py }); };
     // 拖到空白：只落坐标、不改父子关系。走 change() 才会进撤销栈（并负责 storeLocal / draw）
     if (!tg) { if (px != null) change(putPos); else draw(); return; }
     const src = src0, dst = findNode(tg.id);
