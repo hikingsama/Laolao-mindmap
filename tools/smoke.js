@@ -976,12 +976,33 @@ new Promise((resolve) => {
       ok("（源码形状）" + nm + "：不存在 fn 外的直接 curPos()[…] = 写入",
         !!body && !/curPos\(\)\[[^\]]*\]\s*=/.test(body));
     }
-    ok("（源码形状）两个清单各只有一处定义，且**各喂各的函数**：dropLayer 只碰 LAYER_MAPS、dropEdges 只碰 LAYER_LISTS",
+    ok("（源码形状）两个清单各只有一处定义，且**各喂各的函数**：dropLayer 只碰 LAYER_MAPS、dropEdges 只碰 LAYER_LISTS、del 两处都调",
       /const LAYER_MAPS = \["pos", "size", "fold"\];/.test(src9) && /const LAYER_LISTS = \["edges"\];/.test(src9) && /dropLayer\(kill/.test(fnSrc("del")) &&
       /for \(const t of LAYER_MAPS\)/.test(fnSrc("dropLayer")) && !/LAYER_LISTS/.test(fnSrc("dropLayer")) &&
       /for \(const t of LAYER_LISTS\)/.test(fnSrc("dropEdges")) && !/LAYER_MAPS/.test(fnSrc("dropEdges")) &&
-      /dropEdges\(kill\)/.test(fnSrc("del")) &&
-      /for \(const t of LAYER_(MAPS|LISTS)\)/.test(fnSrc("pruneLayer")) && /for \(const t of LAYER_(MAPS|LISTS)\)/.test(fnSrc("applyLayer")));
+      /dropEdges\(kill\)/.test(fnSrc("del")));
+    /* pruneLayer / applyLayer 必须**两类清单都处理**。旧写法 `/for \(const t of LAYER_(MAPS|LISTS)\)/`
+       是假绿：`Regex.test` 命中一次就过，pruneLayer 只遍历 LAYER_MAPS、把列表那半丢了，它照样绿
+       （标签写"处理两类"就成了假绿）。新写法**分别点名、两半都断**，范围是"函数 + 它对应的列表助手"这一对；
+       助手是独立小函数（pruneEdgesIn / applyEdgesInto），所以"列表那半不走按键删"能用"函数体无 delete"钉住
+       —— 正则没法按分支圈范围，整函数断"无 delete"会把映射分支里正当的 `delete d[id]` 逼红。
+       先剥注释再断：注释里的 "delete" 不是代码。 */
+    const codeOf = (name) => fnSrc(name).replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+    const shapeOfLayerFn = (fn, helper) => ({
+      mapsInBody: /for \(const t of LAYER_MAPS\)/.test(codeOf(fn)),
+      callsHelper: codeOf(fn).indexOf(helper + "(") >= 0,
+      listsInHelper: /for \(const t of LAYER_LISTS\)/.test(codeOf(helper)),
+      noDeleteInHelper: !/delete\s/.test(codeOf(helper)),
+      deleteInBody: /delete\s/.test(codeOf(fn)),
+    });
+    const shPrune = shapeOfLayerFn("pruneLayer", "pruneEdgesIn");
+    ok("（源码形状）pruneLayer：映射分支在 + 调 pruneEdgesIn；pruneEdgesIn 只碰 LAYER_LISTS 且函数体无 delete；映射分支仍有 delete（按键删）",
+      shPrune.mapsInBody && shPrune.callsHelper && shPrune.listsInHelper && shPrune.noDeleteInHelper && shPrune.deleteInBody,
+      JSON.stringify(shPrune));
+    const shApply = shapeOfLayerFn("applyLayer", "applyEdgesInto");
+    ok("（源码形状）applyLayer：映射分支在 + 调 applyEdgesInto；applyEdgesInto 只碰 LAYER_LISTS 且函数体无 delete；**全函数体无 delete**（导入只搬不删，与 prune 相反）",
+      shApply.mapsInBody && shApply.callsHelper && shApply.listsInHelper && shApply.noDeleteInHelper && !shApply.deleteInBody,
+      JSON.stringify(shApply));
     /* 常驻反向对照（每次跑自测台都重验，不是改文件再改回）：往两个清单各塞一张假表 ——
        ① 孤儿判据必须立刻开始扫它；② 走真实删除链路时清理也必须跟上；
        ③ **列表类绝不当映射删**：条目自己的 id 恰好在树上也要按端点过滤掉。 */
@@ -1134,6 +1155,7 @@ new Promise((resolve) => {
       !!M.state().cur.fold[foldTgt.id], "cur.fold=" + JSON.stringify(M.state().cur.fold));
     const eRT = { id: "edgeRT", from: { node: ids0[0], side: "e" }, to: { node: foldTgt.id, side: "w" }, dir: "fwd" };
     M.state().cur.edges = [eRT];
+    const vBefore = M.state().cur.v;                 // 迁移标记（应为 2），用来钉导出串里的 v
     /* download() 把数据包成 Blob 再交给 URL.createObjectURL：拦这个入口就能拿到导出原文。
        注意 `Blob` **不在仿真台沙箱的键里**（它解析到 Node 的真实全局 Blob，内容是真的），
        所以这里拿到的是真 Blob，用 await blob.text() 取回字符串 —— 比拦 Blob 构造可靠。 */
@@ -1152,6 +1174,16 @@ new Promise((resolve) => {
     ok("导出串里含 pos/size（导出侧真的写了导图层，而不只是导入侧会读）",
       !!exported && /"pos"/.test(exported) && /"size"/.test(exported), "导出串长度=" + (exported || "").length);
     const exportedObj = JSON.parse(exported);
+    /* 导出串里的 v 跟着 cur.v（= 迁移标记 2）：原来写死 `v: 1` 却被 `...cur` 覆盖 —— 字面量是死代码，
+       而且"写的是 1、导出的是 2"这种自相矛盾会把下一个读代码的人带沟里。 */
+    ok("导出串的 v 与当前图一致（不再有被 ...cur 覆盖的死字面量）",
+      exportedObj.v === vBefore && exportedObj.v === 2, "导出 v=" + exportedObj.v + " cur.v=" + vBefore);
+    /* 上面那条**在旧代码上也是绿的**（旧写法 `{v:1, ...cur}` 里 ...cur 已经把 v 覆盖成 2）——
+       所以缺陷不是"导出错了"，而是"代码写着 1、导出 2"这种自相矛盾（下一个读代码的人会被带沟里）。
+       行为断言抓不到它，只能拿源码形状钉：导出那行不许再有 v: 1 字面量。 */
+    const srcVendor = require("fs").readFileSync(require("path").join(__dirname, "..", "vendor", "mindmap.js"), "utf8");
+    ok("（源码形状）导出 JSON 那行不再写死 v: 1（被 ...cur 覆盖的死字面量）",
+      !/app: "laolao-mindmap", v: 1,/.test(srcVendor), "命中=" + /app: "laolao-mindmap", v: 1,/.test(srcVendor));
     ok("导出串里含 fold/edges（折叠与边也在同一份 blob 里，不是只活在内存）",
       !!exportedObj.fold && !!exportedObj.edges && exportedObj.fold[foldTgt.id] === true && exportedObj.edges.length === 1,
       "fold=" + JSON.stringify(exportedObj.fold) + " edges=" + JSON.stringify(exportedObj.edges));

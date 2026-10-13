@@ -334,6 +334,33 @@
       cur[t] = a.filter((e) => !(e && ((e.from && set.has(e.from.node)) || (e.to && set.has(e.to.node)))));
     }
   }
+  /* 【独立版】**列表类的最小助手**（只碰 LAYER_LISTS，函数体里不出现 delete）。
+     抽出来的唯一目的是让"列表分支绝不按键删"这条形状断言**范围天然干净** —— 正则没法按分支圈范围，
+     写成"整个 pruneLayer 里没有 delete"会把映射分支里正当的 `delete d[id]` 逼红。
+     语义与原来内联的那两段一字不差（纯搬运，不带行为变化）。 */
+  function pruneEdgesIn(live) {
+    let n = 0;
+    for (const t of LAYER_LISTS) {
+      const a = cur[t]; if (!Array.isArray(a)) continue;
+      const keep = a.filter((e) => e && e.from && e.to && live.has(e.from.node) && live.has(e.to.node));
+      n += a.length - keep.length;
+      cur[t] = keep;
+    }
+    return n;
+  }
+  function applyEdgesInto(src, live) {
+    let n = 0;
+    for (const t of LAYER_LISTS) {
+      const from = src[t]; if (!Array.isArray(from)) continue;
+      const to = (cur[t] ||= []);
+      for (const e of from) {
+        if (!e || !e.from || !e.to) continue;
+        if (!live.has(e.from.node) || !live.has(e.to.node)) continue;
+        to.push(clone(e)); n++;
+      }
+    }
+    return n;
+  }
   /* 导入时把文件里的导图层条目搬到当前图上：**只搬树上存在的 id / 两端都在树上的条目**
      （与 pruneLayer 同一判据），并按表做形状校验（坏数据不进门）。清单同样来自上面两处。 */
   const LAYER_OK = {
@@ -353,18 +380,9 @@
         to[id] = clone(v); n++;
       }
     }
-    for (const t of LAYER_LISTS) {                     // 列表类：只搬"两端都在树上"的条目
-      const from = src[t]; if (!Array.isArray(from)) continue;
-      const to = (cur[t] ||= []);
-      for (const e of from) {
-        if (!e || !e.from || !e.to) continue;
-        if (!live.has(e.from.node) || !live.has(e.to.node)) continue;
-        to.push(clone(e)); n++;
-      }
-    }
+    n += applyEdgesInto(src, live);                    // 列表类：只搬"两端都在树上"的条目（助手只碰 LAYER_LISTS）
     return n;
   }
-
   /* 读取容错：把"表里有、树里没有"的孤儿条目清掉（返回清掉的条数）。
      治本在 del 的清理；这里救的是**本次修复之前**就已经被污染、存在盘上的旧图。
      映射类按键清；列表类按**端点**清（条目自己还有 id，绝不能拿节点 id 去 delete）。 */
@@ -376,12 +394,7 @@
       const d = cur[t]; if (!d) continue;
       for (const id of Object.keys(d)) if (!live.has(id)) { delete d[id]; n++; }
     }
-    for (const t of LAYER_LISTS) {
-      const a = cur[t]; if (!Array.isArray(a)) continue;
-      const keep = a.filter((e) => e && e.from && e.to && live.has(e.from.node) && live.has(e.to.node));
-      n += a.length - keep.length;
-      cur[t] = keep;
-    }
+    n += pruneEdgesIn(live);                           // 列表类：按端点清理（助手只碰 LAYER_LISTS）
     return n;
   }
 
@@ -1431,7 +1444,7 @@
       case "ex-png": closeDlg(); exportPng(); break;
       case "ex-md": closeDlg(); download(safeName() + ".md", toMarkdown(topNode()), "text/markdown"); break;
       case "ex-txt": closeDlg(); try { await navigator.clipboard.writeText(toText(topNode(), 0)); tip("大纲已复制，可以直接粘贴"); } catch (err) { download(safeName() + ".txt", toText(topNode(), 0), "text/plain"); } break;
-      case "ex-json": closeDlg(); download(safeName() + ".json", JSON.stringify({ app: "laolao-mindmap", v: 1, ...cur }, null, 1), "application/json"); break;
+      case "ex-json": closeDlg(); download(safeName() + ".json", JSON.stringify({ app: "laolao-mindmap", ...cur }, null, 1), "application/json"); break;
       case "dup": duplicate(cur.id); break;
       case "zin": zoomAt(view.k * 1.2); break;
       case "zout": zoomAt(view.k / 1.2); break;
