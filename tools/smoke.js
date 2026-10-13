@@ -1014,6 +1014,32 @@ new Promise((resolve) => {
     M.open("legacy-map");
   }
 
+  console.log("\nC14. 多容器不许静默丢数据（pruneLayer/applyLayer/findNode 必须看全部容器）");
+  {
+    const two = JSON.parse(JSON.stringify(LEGACY));
+    const rootA = root0(two);
+    const rootB = { id: "b1", text: "第二丛", children: [{ id: "b1x", text: "B 子" }] };
+    two.rootsLegacy = undefined; delete two.root;
+    two.nodes = [rootA, rootB];
+    two.pos = { [rootA.id]: { x: 0, y: 0 }, [rootA.children[0].id]: { x: 200, y: 0 }, [rootB.id]: { x: 900, y: 0 }, [rootB.children[0].id]: { x: 1100, y: 0 } };
+    two.size = { [rootA.id]: { w: 120, h: 52 }, [rootA.children[0].id]: { w: 90, h: 40 }, [rootB.id]: { w: 120, h: 52 }, [rootB.children[0].id]: { w: 90, h: 40 } };
+    two.fold = { [rootB.id]: true };
+    B.localStorage.setItem("mm_map_legacy-map", JSON.stringify(two));
+    M.open("legacy-map");
+    const c = M.state().cur;
+    ok("多容器图：两个容器都还在（" + (c.nodes || []).length + "）", Array.isArray(c.nodes) && c.nodes.length === 2);
+    ok("第二个容器的 pos/size/fold 条目**没有被当孤儿删掉**（这正是修前的静默丢数据）",
+      !!c.pos.b1 && !!c.size.b1 && !!c.size.b1x && c.fold.b1 === true,
+      "pos.b1=" + JSON.stringify(c.pos.b1) + " size.b1=" + JSON.stringify(c.size.b1) + " fold=" + JSON.stringify(c.fold));
+    ok("导图层里没有孤儿（全部容器的 id 都算 live）", layerOrphans(c).length === 0, layerOrphans(c).join(","));
+    const disk = JSON.parse(B.localStorage.getItem("mm_map_legacy-map"));
+    ok("落盘后第二个容器的条目仍在（没有把丢数据写回盘）", !!disk.pos.b1 && !!disk.size.b1 && !!disk.fold.b1);
+    ok("findNode 能按 id 找到第二个容器里的节点", !!findNodeProbe(c, "b1x"));
+    function findNodeProbe(map, id) { for (const r of (map.nodes || [])) { const hit = (function w(n) { if (n.id === id) return n; for (const k of n.children || []) { const q = w(k); if (q) return q; } return null; })(r); if (hit) return hit; } return null; }
+    B.localStorage.setItem("mm_map_legacy-map", JSON.stringify(LEGACY));
+    M.open("legacy-map");
+  }
+
   console.log("\nD. 新建子节点 → 不盖住父节点");
   const st = M.state();
   const target = [...st.L.nodes.values()].find((s) => s.depth === 1);

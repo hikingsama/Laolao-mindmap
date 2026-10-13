@@ -324,7 +324,7 @@
   };
   function applyLayer(src) {
     if (!cur || !src) return 0;
-    const live = new Set(); walk(topNode(), (n) => live.add(n.id));
+    const live = new Set(); for (const r of nodesArr()) walk(r, (n) => live.add(n.id));   // 全部容器（多容器下漏掉 = 把别的容器当孤儿删）
     let n = 0;
     for (const t of LAYER_MAPS) {
       const from = src[t]; if (!from || typeof from !== "object") continue;
@@ -352,7 +352,7 @@
      映射类按键清；列表类按**端点**清（条目自己还有 id，绝不能拿节点 id 去 delete）。 */
   function pruneLayer() {
     if (!cur || !topNode()) return 0;
-    const live = new Set(); walk(topNode(), (n) => live.add(n.id));
+    const live = new Set(); for (const r of nodesArr()) walk(r, (n) => live.add(n.id));   // 全部容器（多容器下漏掉 = 把别的容器当孤儿删）
     let n = 0;
     for (const t of LAYER_MAPS) {
       const d = cur[t]; if (!d) continue;
@@ -904,6 +904,7 @@
     // [独立版] 云同步已停用：不再从账号取导图，只读本机（原 mm_get 分支及 fromServer 语义见 git 历史）
     if (!m) { tip("这张导图在这台设备上找不到了"); return; }
     const migrated = migrateMap(m);        // 【独立版·平级】显式迁移：容器成数组 + fold 搬进导图层 + v:2
+    if ((m.nodes || []).length > 1) tip("这张图有 " + m.nodes.length + " 个独立容器，当前版本只画第一个", 4000);   // 宁可吵，不要安静只画一个
     for (const r of m.nodes) fill(r);
     cur = m; cur.layout ||= "mind"; cur.line ||= "curve"; cur.theme ||= "fresh";
     if (migrated) { try { storeLocal(cur); } catch (e) {} }
