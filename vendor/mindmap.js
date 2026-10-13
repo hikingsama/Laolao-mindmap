@@ -992,7 +992,7 @@
       }).filter(Boolean);
     }
     const c0 = (c.nodes || [])[0]; if (c0) c0.text = c.title;
-    storeLocal(c); idxPut({ id: c.id, local: true }); scheduleCloud();
+    storeLocal(c); idxPut({ id: c.id, title: c.title, local: true }); scheduleCloud();   // 带上标题：不带的话列表里显示旧标题
     closeDlg(); if (cur) openMap(c.id); else renderList(); tip("已复制");
   }
   async function deleteMap(id) {
