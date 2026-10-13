@@ -1,0 +1,252 @@
+/* =========================================================================
+ * mindmap-standalone.css —— 独立仓库自己的一份样式
+ * 原文件是"工具页里的一部分"，样式来自主站 app.css；这里把画布 / 节点 /
+ * 工具条 / 列表 / 弹窗需要的那部分重新写出来，不依赖任何主站样式。
+ * ========================================================================= */
+
+:root {
+  --mm-bg: #f7f9fc;
+  --mm-grid: #e9eef6;
+  --mm-line: #e3e8f0;
+  --mm-text: #1f2a3d;
+  --mm-sub: #6b7a90;
+  --mm-ink: #4f63e8;
+  --mm-surface: #fff;
+  --mm-radius: 10px;
+  --mm-shadow: 0 1px 3px rgba(31, 42, 61, .08), 0 6px 20px rgba(31, 42, 61, .06);
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background: var(--mm-bg);
+  color: var(--mm-text);
+  font: 14px/1.5 -apple-system, BlinkMacSystemFont, "PingFang SC", "HarmonyOS Sans SC", "Microsoft YaHei", sans-serif;
+  overflow: hidden;
+}
+.hidden { display: none !important; }
+
+/* ---------------- 顶部条 ---------------- */
+#banner { display: none; }
+#banner.on {
+  display: block; position: fixed; z-index: 60; left: 50%; top: 12px; transform: translateX(-50%);
+  max-width: 90vw; padding: 9px 16px; border-radius: 999px;
+  background: #1f2a3d; color: #fff; font-size: 13px; box-shadow: var(--mm-shadow);
+}
+.mm-head {
+  display: flex; align-items: center; gap: 10px;
+  height: 52px; padding: 0 14px;
+  background: var(--mm-surface); border-bottom: 1px solid var(--mm-line);
+}
+.mm-head-title { font-size: 15px; }
+.mm-title-in {
+  flex: 0 1 320px; height: 32px; padding: 0 10px;
+  border: 1px solid var(--mm-line); border-radius: 8px; font: inherit; font-weight: 600;
+  background: #fbfcfe; color: inherit;
+}
+.mm-head-gap { flex: 1; }
+.mm-head-link { color: var(--mm-sub); text-decoration: none; font-size: 12px; }
+.mm-head-link:hover { color: var(--mm-ink); }
+.mm-sync { font-size: 12px; color: var(--mm-sub); white-space: nowrap; }
+.mm-sync.busy { color: #f2a20c; }
+.mm-sync.bad { color: #e0524b; }
+
+/* ---------------- 主体容器 ---------------- */
+.mm-box { position: relative; }
+.mm-box.list { padding: 18px; max-width: 1000px; margin: 0 auto; }
+.mm-box.edit { padding: 0; }
+
+/* ---------------- 列表页 ---------------- */
+.mm-list-head p { margin: 4px 0 14px; color: var(--mm-sub); }
+.mm-search {
+  width: 100%; height: 34px; padding: 0 12px; margin-bottom: 12px;
+  border: 1px solid var(--mm-line); border-radius: 8px; font: inherit; background: #fff;
+}
+.mm-sec { display: flex; align-items: baseline; gap: 10px; margin: 18px 0 10px; }
+.mm-sec b { font-size: 14px; }
+.mm-sec span { font-size: 12px; color: var(--mm-sub); }
+.mm-tpls { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; }
+.mm-tpl {
+  display: flex; flex-direction: column; gap: 3px; text-align: left; cursor: pointer;
+  padding: 12px; border: 1px solid var(--mm-line); border-radius: var(--mm-radius);
+  background: var(--mm-surface); font: inherit; color: inherit; box-shadow: var(--mm-shadow);
+}
+.mm-tpl:hover { border-color: var(--mm-ink); }
+.mm-tpl span { font-size: 20px; }
+.mm-tpl b { font-size: 14px; }
+.mm-tpl small { color: var(--mm-sub); font-size: 12px; }
+.mm-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+.mm-card {
+  padding: 12px; border: 1px solid var(--mm-line); border-radius: var(--mm-radius);
+  background: var(--mm-surface); cursor: pointer; box-shadow: var(--mm-shadow);
+}
+.mm-card:hover { border-color: var(--mm-ink); }
+.mc-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.mc-meta { margin-top: 4px; font-size: 12px; color: var(--mm-sub); }
+.mm-more { border: 0; background: transparent; cursor: pointer; font-size: 16px; color: var(--mm-sub); }
+.mm-empty {
+  padding: 26px; text-align: center; color: var(--mm-sub);
+  border: 1px dashed var(--mm-line); border-radius: var(--mm-radius); background: var(--mm-surface);
+}
+
+/* ---------------- 编辑器：工具条 ---------------- */
+.mm-tools {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  padding: 8px 12px; background: var(--mm-surface); border-bottom: 1px solid var(--mm-line);
+}
+.mm-tg { display: flex; align-items: center; gap: 6px; }
+.mm-b {
+  height: 30px; padding: 0 10px; cursor: pointer;
+  border: 1px solid var(--mm-line); border-radius: 8px;
+  background: #fff; color: inherit; font: inherit; font-size: 13px;
+}
+.mm-b:hover { border-color: var(--mm-ink); }
+.mm-b.pri { background: var(--mm-ink); border-color: var(--mm-ink); color: #fff; }
+.mm-b.ic { width: 30px; padding: 0; text-align: center; }
+.mm-b.on { border-color: var(--mm-ink); color: var(--mm-ink); }
+.mm-b:disabled { opacity: .4; cursor: default; }
+.mm-b.danger { color: #e0524b; }
+.mm-sel select {
+  height: 30px; padding: 0 6px; border: 1px solid var(--mm-line);
+  border-radius: 8px; background: #fff; color: inherit; font: inherit; font-size: 13px;
+}
+.mm-findbar { display: flex; align-items: center; gap: 6px; padding: 8px 12px; background: #fbfcfe; border-bottom: 1px solid var(--mm-line); }
+.mm-findbar input { flex: 0 1 260px; height: 30px; padding: 0 10px; border: 1px solid var(--mm-line); border-radius: 8px; font: inherit; }
+.mm-findbar span { font-size: 12px; color: var(--mm-sub); }
+
+/* ---------------- 编辑器：画布 ---------------- */
+.mm-main { display: flex; flex: 1 1 auto; min-height: 0; }
+.mm-box.edit { display: flex; flex-direction: column; }
+.mm-view {
+  position: relative; flex: 1 1 auto; min-width: 0; min-height: 0;
+  overflow: hidden; outline: none; cursor: grab; touch-action: none;
+  background: var(--mm-bg);
+  background-image: radial-gradient(var(--grid, var(--mm-grid)) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+.mm-view.panning { cursor: grabbing; }
+.mm-stage { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform; }
+.mm-stage.anim { transition: transform .24s ease; }
+.mm-links { position: absolute; overflow: visible; pointer-events: none; }
+
+.mm-node {
+  position: absolute; overflow: hidden;
+  border: 1px solid transparent; border-radius: 10px;
+  background: #fff; white-space: pre-wrap; word-break: break-word;
+  cursor: grab; user-select: none;
+}
+.mm-node.sel { outline: 2px solid var(--mm-ink); outline-offset: 1px; }
+.mm-node.hit { outline: 2px dashed #f2a20c; outline-offset: 1px; }
+.mm-node.b .mm-t { font-weight: 700; }
+.mm-node.d0 { border-radius: 14px; box-shadow: var(--mm-shadow); }
+.mm-node.dragging { opacity: .35; }
+.mm-node.ghost { opacity: .8; pointer-events: none; box-shadow: 0 10px 28px rgba(31, 42, 61, .22); }
+.mm-node.ghost.sel { outline: none; }
+.mm-node.drop-in { outline: 2px solid #2bb98a; outline-offset: 2px; }
+.mm-node.drop-before { box-shadow: 0 -3px 0 0 #2bb98a; }
+.mm-node.drop-after { box-shadow: 0 3px 0 0 #2bb98a; }
+.mm-t { display: block; }
+.mm-ic { position: absolute; right: 6px; bottom: 4px; font-size: 11px; font-weight: 400; cursor: pointer; }
+.mm-prog { position: absolute; right: 6px; top: 6px; width: 14px; height: 14px; }
+.mm-fold {
+  position: absolute; width: 18px; height: 18px; padding: 0; cursor: pointer;
+  border: 1px solid var(--c, var(--mm-ink)); border-radius: 50%;
+  background: #fff; color: var(--c, var(--mm-ink)); font-size: 11px; line-height: 1;
+}
+.mm-fold.s1 { right: -10px; top: 50%; transform: translateY(-50%); }
+.mm-fold.s-1 { left: -10px; top: 50%; transform: translateY(-50%); }
+.mm-fold.s0 { left: 50%; bottom: -10px; transform: translateX(-50%); }
+.mm-edit {
+  position: absolute; z-index: 5; resize: none; overflow: hidden;
+  border: 2px solid var(--mm-ink); border-radius: 10px; outline: none;
+  background: #fff; color: inherit;
+}
+
+.mm-zoom {
+  position: absolute; right: 12px; bottom: 12px; z-index: 4;
+  display: flex; align-items: center; gap: 4px;
+  padding: 4px; border: 1px solid var(--mm-line); border-radius: 10px;
+  background: rgba(255, 255, 255, .94); box-shadow: var(--mm-shadow);
+}
+.mm-zoom button {
+  width: 28px; height: 28px; cursor: pointer; font-size: 14px;
+  border: 0; border-radius: 7px; background: transparent; color: inherit;
+}
+.mm-zoom button:hover { background: #eef2f9; }
+.mm-zoom span { min-width: 42px; text-align: center; font-size: 12px; color: var(--mm-sub); }
+.mm-hint {
+  position: absolute; left: 12px; bottom: 12px; z-index: 3;
+  padding: 5px 10px; border-radius: 8px;
+  background: rgba(255, 255, 255, .86); color: var(--mm-sub); font-size: 12px;
+}
+
+/* ---------------- 侧栏 / 大纲 ---------------- */
+.mm-panel {
+  flex: 0 0 272px; overflow: auto; padding: 12px;
+  background: var(--mm-surface); border-left: 1px solid var(--mm-line);
+}
+.mp-h { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.mp-tip { color: var(--mm-sub); }
+.mp-sec { margin: 12px 0 6px; font-size: 12px; color: var(--mm-sub); }
+.mp-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.mp-colors, .mp-marks { display: flex; flex-wrap: wrap; gap: 6px; }
+.mp-c { width: 26px; height: 26px; border: 1px solid var(--mm-line); border-radius: 50%; cursor: pointer; }
+.mp-c.auto { width: auto; padding: 0 8px; border-radius: 999px; font-size: 12px; background: #fff; color: inherit; }
+.mp-c.on { outline: 2px solid var(--mm-ink); outline-offset: 1px; }
+.mp-m { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 44px; padding: 5px; border: 1px solid var(--mm-line); border-radius: 8px; background: #fff; cursor: pointer; color: inherit; font-size: 14px; }
+.mp-m small { font-size: 10px; color: var(--mm-sub); }
+.mp-m.on { border-color: var(--mm-ink); }
+.mp-prog { display: flex; gap: 6px; }
+#mmNote, #mmLink {
+  width: 100%; padding: 8px; border: 1px solid var(--mm-line);
+  border-radius: 8px; background: #fbfcfe; color: inherit; font: inherit; resize: vertical;
+}
+.mp-link { display: flex; gap: 6px; align-items: center; }
+
+.mm-outline { flex: 1 1 auto; overflow: auto; padding: 14px 18px; background: var(--mm-surface); }
+.mo-tip { margin-bottom: 10px; font-size: 12px; color: var(--mm-sub); }
+.mo-row { display: flex; align-items: center; gap: 6px; padding-left: calc(var(--d) * 20px); }
+.mo-tog { width: 20px; height: 20px; padding: 0; border: 0; border-radius: 5px; background: transparent; color: var(--mm-sub); cursor: pointer; }
+.mo-dot { width: 20px; text-align: center; color: var(--mm-sub); }
+.mo-in {
+  flex: 1; height: 30px; margin: 2px 0; padding: 0 8px;
+  border: 1px solid transparent; border-radius: 7px;
+  background: transparent; color: inherit; font: inherit;
+}
+.mo-in:hover { border-color: var(--mm-line); }
+.mo-in:focus { border-color: var(--mm-ink); background: #fff; outline: none; }
+.mo-in.root { font-weight: 700; font-size: 15px; }
+
+/* ---------------- 弹窗 ---------------- */
+#mmDlg {
+  border: 0; border-radius: 14px; padding: 0; max-width: min(560px, 92vw);
+  background: var(--mm-surface); color: var(--mm-text); box-shadow: 0 20px 60px rgba(31, 42, 61, .28);
+}
+#mmDlg::backdrop { background: rgba(31, 42, 61, .35); }
+#mmDlgBody { padding: 18px; }
+#mmDlgBody h3 { margin: 0 0 8px; font-size: 16px; }
+#mmDlgBody .meta { color: var(--mm-sub); font-size: 13px; }
+#mmDlgBody textarea {
+  width: 100%; padding: 10px; border: 1px solid var(--mm-line);
+  border-radius: 10px; background: #fbfcfe; color: inherit; font: inherit; resize: vertical;
+}
+.mm-menu { display: grid; gap: 8px; margin: 10px 0; }
+.mm-menu button {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+  padding: 10px 12px; border: 1px solid var(--mm-line); border-radius: 10px;
+  background: #fff; color: inherit; font: inherit; cursor: pointer; text-align: left;
+}
+.mm-menu button:hover { border-color: var(--mm-ink); }
+.mm-menu small { color: var(--mm-sub); }
+.nd-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; }
+.nd-actions .spacer { flex: 1; }
+.nd-actions button { height: 32px; padding: 0 14px; border: 1px solid var(--mm-line); border-radius: 8px; background: #fff; color: inherit; cursor: pointer; font: inherit; }
+.nd-actions button.btn.ink { background: var(--mm-ink); border-color: var(--mm-ink); color: #fff; }
+.nd-actions button.small { opacity: .8; }
+.mm-prev { margin-top: 8px; font-size: 12px; color: var(--mm-sub); }
+
+/* 主题：跟随 mindmap.js 写在 #mmView 上的 data-theme */
+.mm-view[data-theme="night"] { background-color: #121826; }
+.mm-view[data-theme="warm"] { background-color: #fffaf2; }
+.mm-view[data-theme="board"] { background-color: #24382f; }
