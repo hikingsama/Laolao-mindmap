@@ -458,7 +458,9 @@ new Promise((resolve) => {
   {
     // Chief 在真实浏览器里实测到的缺陷：手柄中心点的 elementFromPoint 命中的是 .mm-edit，
     // 因为 .mm-rs 没有 z-index 而 .mm-edit 是 z-index:5 → 真实鼠标点不到手柄。
-    const cssTxt = require("fs").readFileSync(require("path").join(__dirname, "..", "css", "mindmap-standalone.css"), "utf8");
+    // 注意：必须先剥掉 CSS 注释 —— 注释里提到 "z-index:5" 会污染解析（第一版断言就栽在这，报了 rs=5）。
+    const cssRaw = require("fs").readFileSync(require("path").join(__dirname, "..", "css", "mindmap-standalone.css"), "utf8");
+    const cssTxt = cssRaw.replace(/\/\*[\s\S]*?\*\//g, "");
     const zOf = (sel) => {
       const m = cssTxt.match(new RegExp("\\" + sel + "\\s*\\{([^}]*)\\}"));
       const z = m && m[1].match(/z-index\s*:\s*(-?\d+)/);
@@ -467,6 +469,16 @@ new Promise((resolve) => {
     const zRs = zOf(".mm-rs"), zEdit = zOf(".mm-edit");
     ok(".mm-rs 的 z-index 高于 .mm-edit（" + zRs + " > " + zEdit + "）—— 手柄点得到的前提",
       zRs > zEdit, "rs=" + zRs + " edit=" + zEdit);
+  }
+
+  console.log("\nC5. 交互入口未被破坏（源码形状守卫）");
+  {
+    const js = require("fs").readFileSync(require("path").join(__dirname, "..", "vendor", "mindmap.js"), "utf8");
+    ok("单击选中：pointerup 未移动时走 select(d.id)", /if \(d\.id\) \{[\s\S]{0,220}?select\(d\.id\)/.test(js));
+    ok("双击进编辑：startEdit 定义在、dblclick 绑定在", js.includes("function startEdit") && js.includes("dblclick"));
+    ok("拖节点改位置：endNodeDrag 仍把坐标写进 cur.pos", js.includes("function endNodeDrag(") && js.includes("change(putPos)"));
+    ok("拖空白平移：panning 分支在", js.includes('vw.classList.add("panning")'));
+    ok("滚轮平移/缩放：wheel 监听在", js.includes('addEventListener("wheel"'));
   }
 
   console.log("\nD. 新建子节点 → 不盖住父节点");
