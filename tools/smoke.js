@@ -931,6 +931,70 @@ new Promise((resolve) => {
     M.open("legacy-map");
   }
 
+  console.log("\nC12. 前置③：每个 id 都有条目（反向）+ 导出→导入逐字段往返 + 复制导图重映射");
+  {
+    B.localStorage.setItem("mm_map_legacy-map", JSON.stringify(LEGACY));
+    M.open("legacy-map");
+    const tab = M.state().cur;
+    const ids0 = [];
+    (function w(n) { ids0.push(n.id); (n.children || []).forEach(w); })(tab.root);
+    /* ① 完整性（与"无孤儿"相反的方向）：树上每个 id 都必须有 pos/size 条目 —— 只断"无孤儿"会漏掉
+       "表被清空/键没搬过去"这类静默丢数据。 */
+    const missing0 = ids0.filter((id) => !tab.pos[id] || !tab.size[id]);
+    ok("完整性：树上 " + ids0.length + " 个节点都有 pos/size 条目", missing0.length === 0, "缺=" + missing0.join(","));
+    ok("完整性：两个方向合起来 == 表与树一致（无孤儿 + 无缺失）",
+      layerOrphans(tab).length === 0 && Object.keys(tab.pos).length === ids0.length && Object.keys(tab.size).length === ids0.length,
+      "pos=" + Object.keys(tab.pos).length + " size=" + Object.keys(tab.size).length + " 树=" + ids0.length);
+
+    /* ② 往返：导出（就地取当前图）→ 导入 → 逐字段比对（树 + 导图层）。
+       注意 fill() 会给叶子补 children:[]，所以树要按"结构 + 字段值"比，不能直接比 JSON 字符串。 */
+    const srcM = JSON.parse(B.localStorage.getItem("mm_map_legacy-map"));
+    const backup = { app: "laolao-mindmap", v: 1, layout: srcM.layout, theme: srcM.theme, line: srcM.line,
+      root: JSON.parse(JSON.stringify(srcM.root)), pos: Object.assign({}, srcM.pos), size: Object.assign({}, srcM.size) };
+    const shapeOf = (n) => JSON.stringify({ id: n.id, text: n.text, bold: n.bold, color: n.color, progress: n.progress, note: n.note, link: n.link, marks: n.marks,
+      children: (n.children || []).map((x) => JSON.parse(shapeOf(x))) });
+    const norm = (o) => JSON.stringify(Object.keys(o || {}).sort().map((k) => [k, o[k]]));
+    const inp = B.doc.createElement("input"); inp.id = "mmFileOpen";
+    inp.files = [{ size: 4096, name: "rt.json", text: async () => JSON.stringify(backup) }];
+    bubble(B.doc, "change", { target: inp });
+    await new Promise((res) => setTimeout(res, 20));
+    const rt = M.state().cur;
+    ok("往返：树逐字段相同（结构 + 每个节点的字段值）", shapeOf(rt.root) === shapeOf(backup.root));
+    ok("往返：导图层逐字段相同（pos/size 的键与值都一致）",
+      norm(rt.pos) === norm(backup.pos) && norm(rt.size) === norm(backup.size),
+      "pos 本地=" + Object.keys(rt.pos).length + " 备份=" + Object.keys(backup.pos).length);
+    ok("往返：布局/主题/线型也带过来了", rt.layout === backup.layout && rt.theme === backup.theme && rt.line === backup.line);
+
+    /* ③ 复制导图：重发 id 时两个方向都要成立（新 id 有条目 + 没有旧 id 残留）。 */
+    B.localStorage.setItem("mm_map_legacy-map", JSON.stringify(LEGACY));
+    M.open("legacy-map");
+    const rtId = M.state().cur.id;      // 往返导入那张图的 id（副本必然不是它、也不是 legacy-map）
+    const fakeBtn = B.doc.createElement("button");
+    fakeBtn.className = "mm-b"; fakeBtn.dataset.mm = "dupid"; fakeBtn.dataset.id = "legacy-map";
+    bubble(B.doc, "click", { target: fakeBtn });
+    await new Promise((res) => setTimeout(res, 40));
+    const idx = JSON.parse(B.localStorage.getItem("mm_index_v1")) || [];
+    /* 按 id 差集找副本：副本的索引标题可能还是旧的（idxPut 没带 title，属既有小缺陷，另行记录），
+       所以不能靠标题认副本。 */
+    const copy = idx.filter((e) => e && e.id !== rtId && e.id !== "legacy-map").pop();
+    if (!copy) ok("复制导图产生了副本条目", false, JSON.stringify(idx.map((e) => e && e.id)));
+    else {
+      const cm = JSON.parse(B.localStorage.getItem("mm_map_" + copy.id));
+      const idsC = [];
+      (function w(n) { idsC.push(n.id); (n.children || []).forEach(w); })(cm.root);
+      const missC = idsC.filter((id) => !cm.pos[id] || !cm.size[id]);
+      ok("副本：每个**新 id** 都有 pos/size 条目（反向断言，" + idsC.length + " 个）", missC.length === 0, "缺=" + missC.join(","));
+      ok("副本：没有孤儿（旧 id 不残留）", layerOrphans(cm).length === 0, layerOrphans(cm).join(","));
+      /* 实测：副本的节点 id 与原图**完全重叠** —— 回退时把 reidAll 一起退掉了（现在是既有的
+         walk(c.root, n => n.id = nid()) 老实现，且 pos/size 的键没跟着搬）。这正是审计列的
+         "副本未重映射"同族缺陷、也是"外科拆除"清单要求**保留 reidAll** 的理由。下一笔修掉它。 */
+      ok("[已知缺陷·下一笔修] 副本 id 与原图重叠（回退把 reidAll 退掉了，外科拆除必须恢复）",
+        idsC.every((id) => ids0.indexOf(id) < 0) === false, "重叠 " + idsC.filter((id) => ids0.indexOf(id) >= 0).length + " / " + idsC.length);
+    }
+    B.localStorage.setItem("mm_map_legacy-map", JSON.stringify(LEGACY));
+    M.open("legacy-map");
+  }
+
   console.log("\nD. 新建子节点 → 不盖住父节点");
   const st = M.state();
   const target = [...st.L.nodes.values()].find((s) => s.depth === 1);
