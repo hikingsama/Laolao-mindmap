@@ -112,7 +112,9 @@ const SCAN = `(() => {
   const st = window.Mindmap.state(), m = st.cur;
   const live = new Set(); (function w(n) { live.add(n.id); (n.children || []).forEach(w); })(m.root);
   const bad = [];
-  for (const t of ["pos", "size"]) for (const id of Object.keys(m[t] || {})) if (!live.has(id)) bad.push(t + ":" + id);
+  const maps = (window.Mindmap && window.Mindmap.LAYER_MAPS) || [], lists = (window.Mindmap && window.Mindmap.LAYER_LISTS) || [];
+  for (const t of maps) for (const id of Object.keys(m[t] || {})) if (!live.has(id)) bad.push(t + ":" + id);
+  for (const t of lists) for (const e of (Array.isArray(m[t]) ? m[t] : [])) { if (!e || !e.from || !e.to || !live.has(e.from.node) || !live.has(e.to.node)) bad.push(t + ":" + ((e && e.id) || "?")); }
   let tree = 0; (function w(n) { tree++; (n.children || []).forEach(w); })(m.root);
   return JSON.stringify({ orphans: bad, tree, pos: Object.keys(m.pos || {}).length, size: Object.keys(m.size || {}).length, sel: st.sel });
 })()`;

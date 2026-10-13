@@ -339,6 +339,8 @@ new Promise((resolve) => {
 
   const B = bootAll();
   const M = B.Mindmap;
+  /* 【独立版】"扫哪些表"只有 vendor 那一处真相来源：断言直接读导出，不写第二份字面量。 */
+  const LAYER_MAPS = M.LAYER_MAPS, LAYER_LISTS = M.LAYER_LISTS;
   /* 给"按下/拖动落在某个节点上"算**与真实浏览器一致**的屏幕坐标：布局盒 + #mmStage 的 transform
      （applyView 写的 translate/scale）现算。不写死 (100,100) 这类任意点 —— 那种点可能落在**别的**节点上，
      会被八方向命中区当成"在别的节点边缘缩放"，断言就因夹具不真实而失败（D 组原来就踩这个）。 */
@@ -368,6 +370,14 @@ new Promise((resolve) => {
   }
   ok("\nvendor/mindmap.js 加载不抛错并导出 Mindmap", !!M && typeof M.state === "function" && typeof M.open === "function" && typeof M.create === "function");
   if (!M) { console.log("\n结果：提前中止"); process.exit(1); }
+  {
+    const smokeSrc = require("fs").readFileSync(__filename, "utf8");
+    ok("（源码形状）自测台没有第二份表字面量（不出现 for (const t of [\"pos\", \"size\"…）",
+      !/for \(const t of \["pos", "size"/.test(smokeSrc));
+    ok("扫哪些表来自 vendor 唯一真相来源：LAYER_MAPS = " + JSON.stringify(LAYER_MAPS) + " / LAYER_LISTS = " + JSON.stringify(LAYER_LISTS),
+      Array.isArray(LAYER_MAPS) && LAYER_MAPS.join(",") === "pos,size,fold" && Array.isArray(LAYER_LISTS) && LAYER_LISTS.join(",") === "edges",
+      JSON.stringify([LAYER_MAPS, LAYER_LISTS]));
+  }
 
   console.log("\nC. 旧导图首次打开 → 播种（不重叠、落盘）");
   M.open("legacy-map").catch((e) => { console.log("  !! open 抛错：" + e.message + "\n" + e.stack.split("\n").slice(0, 6).join("\n")); });
@@ -745,7 +755,11 @@ new Promise((resolve) => {
     const live = new Set();
     (function w(n) { live.add(n.id); (n.children || []).forEach(w); })(m.root);
     const bad = [];
-    for (const t of ["pos", "size"]) for (const id of Object.keys(m[t] || {})) if (!live.has(id)) bad.push(t + ":" + id);
+    for (const t of LAYER_MAPS) for (const id of Object.keys(m[t] || {})) if (!live.has(id)) bad.push(t + ":" + id);
+    for (const t of LAYER_LISTS) for (const e of (Array.isArray(m[t]) ? m[t] : [])) {
+      if (!e || !e.from || !e.to) { bad.push(t + ":(坏条目)"); continue; }
+      if (!live.has(e.from.node) || !live.has(e.to.node)) bad.push(t + ":" + (e.id || "?"));
+    }
     return bad;
   };
   {
@@ -824,9 +838,44 @@ new Promise((resolve) => {
       ok("（源码形状）" + nm + "：不存在 fn 外的直接 curPos()[…] = 写入",
         !!body && !/curPos\(\)\[[^\]]*\]\s*=/.test(body));
     }
-    ok("（源码形状）要清理的导图层表清单是常量 LAYER_TABLES = ['pos','size']，del 调 dropLayer（森林加 origin 只改这一处）",
-      /const LAYER_TABLES = \["pos", "size"\];/.test(src9) && /dropLayer\(kill\)/.test(fnSrc("del")) &&
-      /for \(const t of LAYER_TABLES\)/.test(fnSrc("dropLayer")));
+    ok("（源码形状）要清理的导图层表清单是常量 LAYER_TABLES = ['pos','size']，两个清单各只有一处定义（加表只改 vendor 那两行）",
+      /const LAYER_MAPS = \["pos", "size", "fold"\];/.test(src9) && /const LAYER_LISTS = \["edges"\];/.test(src9) && /dropLayer\(kill/.test(fnSrc("del")) &&
+      ["dropLayer", "pruneLayer", "applyLayer"].every((f) => /for \(const t of LAYER_(MAPS|LISTS)\)/.test(fnSrc(f))));
+    /* 常驻反向对照（每次跑自测台都重验，不是改文件再改回）：往两个清单各塞一张假表 ——
+       ① 孤儿判据必须立刻开始扫它；② 走真实删除链路时清理也必须跟上；
+       ③ **列表类绝不当映射删**：条目自己的 id 恰好在树上也要按端点过滤掉。 */
+    const probe = (() => {
+      const m = M.state().cur;
+      LAYER_MAPS.push("__probeMap"); LAYER_LISTS.push("__probeList");
+      try {
+        m.__probeMap = { GHOSTMAP: { x: 0, y: 0 } };
+        const mapScanned = layerOrphans(m).some((x) => x.indexOf("__probeMap:GHOSTMAP") === 0);
+        const victim2 = (M.state().cur.root && M.state().cur.root.children[0] && M.state().cur.root.children[0].id) || null;   // 根节点不可删，取第一个子节点
+        m.__probeList = [
+          { id: victim2, from: { node: victim2, side: "e" }, to: { node: "GHOSTNODE", side: "w" }, dir: "fwd" },
+          { id: "GHOSTEDGE", from: { node: "GHOSTNODE" }, to: { node: "GHOSTNODE2" }, dir: "none" },
+        ];
+        const listScanned = layerOrphans(m).filter((x) => x.indexOf("__probeList:") === 0).length === 2;
+        const el = B.win.$("mmStage").querySelector('.mm-node[data-id="' + victim2 + '"]');
+        const pt = pointOn(victim2) || { x: 200, y: 200 };
+        bubble(el, "pointerdown", { target: el, clientX: pt.x, clientY: pt.y });
+        bubble(el, "pointerup", { target: el, clientX: pt.x, clientY: pt.y });
+        const db = B.doc.querySelector('[data-mm="del"]');
+        bubble(db, "click", { target: db });
+        const after = M.state().cur;
+        return { mapScanned, listScanned,
+          mapCleaned: !(after.__probeMap && after.__probeMap[victim2]),
+          listCleanedByEndpoints: !(after.__probeList || []).some((e) => e && e.from && e.from.node === victim2),
+          keptOtherEntry: (after.__probeList || []).length === 1 };
+      } finally {
+        LAYER_MAPS.pop(); LAYER_LISTS.pop();
+        const m2 = M.state().cur; if (m2) { delete m2.__probeMap; delete m2.__probeList; }
+        B.localStorage.setItem("mm_map_legacy-map", JSON.stringify(LEGACY)); M.open("legacy-map");
+      }
+    })();
+    ok("反向对照：假表塞进 LAYER_MAPS / LAYER_LISTS 后，孤儿判据立刻开始扫它们", probe.mapScanned && probe.listScanned, JSON.stringify(probe));
+    ok("反向对照：真实删除链路按两个清单清理（映射按键删、列表按端点删且只删命中项）",
+      probe.mapCleaned && probe.listCleanedByEndpoints && probe.keptOtherEntry, JSON.stringify(probe));
     ok("（源码形状）birthPos 是纯计算（不再自己写 curPos），spawnPos 仍在 change 之外算",
       /function birthPos\(anchor, at\) \{\s*return at \|\| spawnPos\(anchor\);/.test(src9) && !/function birthPos[\s\S]{0,200}putLayerPos/.test(src9));
 

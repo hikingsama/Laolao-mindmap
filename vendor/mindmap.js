@@ -264,19 +264,27 @@
     if (!cur.pos || typeof cur.pos !== "object") cur.pos = {};
     return cur.pos;
   }
-  /* 【独立版】导图层里"按节点 id 存条目"的表清单 —— 删除一律按它清。
-     森林要加的 cur.origin（每丛整体偏移）将来**只加在这里一处**，del 不用改。 */
-  const LAYER_TABLES = ["pos", "size"];
+  /* 【独立版】导图层表的**两个清单**（契约 §2.4）：各自只有一处定义，断言直接读同一处（见导出）。
+     · LAYER_MAPS  按键删：`delete map[节点id]`
+     · LAYER_LISTS 按**端点**删：过滤掉 from.node / to.node 命中被删集合的**条目**。
+       它们没有"按节点 id 的键"，**绝不可当映射去 `delete d[节点id]`** —— 那删的是条目自己的 id，完全删错东西。
+     `fold` / `edges` 落地时由这两处自动覆盖，清理代码不用再改。 */
+  const LAYER_MAPS = ["pos", "size", "fold"];
+  const LAYER_LISTS = ["edges"];
   /* 【独立版】**唯一的坐标写入口**：全文只有这里出现 `curPos()[…] = …`。
      调用方必须在 change() 的 fn 内调它（change 先快照再执行 fn，写在 fn 外就撤不回去）。 */
   function putLayerPos(id, p) { if (p) curPos()[id] = p; }
-  // 清掉这些 id 在所有导图层表里的条目（del 按被删子树收集 id 后调用）
+  // 清掉这些节点 id 在所有导图层表里的条目（del 收集好被删端的 id 后调用）
   function dropLayer(ids) {
-    for (const t of LAYER_TABLES) { const d = cur[t]; if (!d) continue; for (const id of ids) delete d[id]; }
+    const set = ids instanceof Set ? ids : new Set(ids);
+    for (const t of LAYER_MAPS) { const d = cur[t]; if (!d) continue; for (const id of set) delete d[id]; }
+    for (const t of LAYER_LISTS) {                       // 列表类：按端点过滤条目（不是按键删！）
+      const a = cur[t]; if (!Array.isArray(a)) continue;
+      cur[t] = a.filter((e) => !(e && ((e.from && set.has(e.from.node)) || (e.to && set.has(e.to.node)))));
+    }
   }
-  /* 导入时把文件里的导图层条目搬到当前图上：**只搬树上存在的 id**（与 pruneLayer 同一判据），
-     并按表做形状校验（坏数据不进门）。表清单同样来自 LAYER_TABLES —— 森林加 origin 时在这里补一条校验即可。
-     为什么必须有它："位置就是数据"是这个项目的核心承诺；导出再导入把位置丢掉，用户会当成 bug。 */
+  /* 导入时把文件里的导图层条目搬到当前图上：**只搬树上存在的 id / 两端都在树上的条目**
+     （与 pruneLayer 同一判据），并按表做形状校验（坏数据不进门）。清单同样来自上面两处。 */
   const LAYER_OK = {
     pos: (v) => !!validPos(v),
     size: (v) => !!v && Number.isFinite(v.w) && Number.isFinite(v.h) && v.w > 0 && v.h > 0,
@@ -285,7 +293,7 @@
     if (!cur || !src) return 0;
     const live = new Set(); walk(cur.root, (n) => live.add(n.id));
     let n = 0;
-    for (const t of LAYER_TABLES) {
+    for (const t of LAYER_MAPS) {
       const from = src[t]; if (!from || typeof from !== "object") continue;
       const ok = LAYER_OK[t], to = (cur[t] ||= {});
       for (const id of Object.keys(from)) {
@@ -294,18 +302,34 @@
         to[id] = clone(v); n++;
       }
     }
+    for (const t of LAYER_LISTS) {                     // 列表类：只搬"两端都在树上"的条目
+      const from = src[t]; if (!Array.isArray(from)) continue;
+      const to = (cur[t] ||= []);
+      for (const e of from) {
+        if (!e || !e.from || !e.to) continue;
+        if (!live.has(e.from.node) || !live.has(e.to.node)) continue;
+        to.push(clone(e)); n++;
+      }
+    }
     return n;
   }
 
   /* 读取容错：把"表里有、树里没有"的孤儿条目清掉（返回清掉的条数）。
-     治本在 del 的清理；这里救的是**本次修复之前**就已经被污染、存在盘上的旧图。 */
+     治本在 del 的清理；这里救的是**本次修复之前**就已经被污染、存在盘上的旧图。
+     映射类按键清；列表类按**端点**清（条目自己还有 id，绝不能拿节点 id 去 delete）。 */
   function pruneLayer() {
     if (!cur || !cur.root) return 0;
     const live = new Set(); walk(cur.root, (n) => live.add(n.id));
     let n = 0;
-    for (const t of LAYER_TABLES) {
+    for (const t of LAYER_MAPS) {
       const d = cur[t]; if (!d) continue;
       for (const id of Object.keys(d)) if (!live.has(id)) { delete d[id]; n++; }
+    }
+    for (const t of LAYER_LISTS) {
+      const a = cur[t]; if (!Array.isArray(a)) continue;
+      const keep = a.filter((e) => e && e.from && e.to && live.has(e.from.node) && live.has(e.to.node));
+      n += a.length - keep.length;
+      cur[t] = keep;
     }
     return n;
   }
@@ -1387,5 +1411,11 @@
   setInterval(() => { const u = me() ? me().id : null; if (u !== lastUid) { lastUid = u; if (u) { index.forEach((e) => { if (!e.uid) { e.uid = u; e.dirty = true; } }); idxSave(); pullList(); } if (currentView() === "mindmap" && !cur) renderList(); } }, 2000);
   window.addEventListener("beforeunload", () => { if (index.some((x) => x.dirty) && me()) pushDirty(); });
   ===== [独立版] 云同步停用结束 ===== */
-  window.Mindmap = { parseText, toMarkdown, state: () => ({ cur, sel, index, L }), open: openMap, create };
+  window.Mindmap = {
+    parseText, toMarkdown,
+    /* 【独立版】**"扫哪些表"的唯一真相来源**：del 清理 / 读取容错 / 导入 / 自测台孤儿判据
+       全部读这两个数组（自测台不许再写一份字面量）。加新表只改上面那两行。 */
+    LAYER_MAPS, LAYER_LISTS,
+    state: () => ({ cur, sel, index, L }), open: openMap, create,
+  };
 })();
