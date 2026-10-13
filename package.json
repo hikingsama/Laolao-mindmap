@@ -1,0 +1,12 @@
+{
+  "name": "laolao-mindmap",
+  "version": "0.1.0",
+  "private": true,
+  "description": "捞捞思维导图（独立版）：坐标存在导图层 cur.pos，自由拖拽定位",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

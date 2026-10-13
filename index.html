@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>捞捞思维导图（独立版）</title>
+<link rel="stylesheet" href="css/mindmap-standalone.css">
+</head>
+<body>
+  <!-- 顶部提示条：原代码的 ResizeObserver 观察它，必须有这个元素 -->
+  <div id="banner"></div>
+
+  <header class="mm-head">
+    <b id="mmHeadTitle" class="mm-head-title">捞捞思维导图</b>
+    <input id="mmTitleIn" class="mm-title-in hidden" maxlength="80" placeholder="导图名称">
+    <span id="mmSync" class="mm-sync"></span>
+    <span class="mm-head-gap"></span>
+    <a class="mm-head-link" href="README.md">README</a>
+  </header>
+
+  <main id="mmBox" class="mm-box"></main>
+
+  <dialog id="mmDlg"><div id="mmDlgBody"></div></dialog>
+
+  <script src="js/host-bridge.js"></script>
+  <script src="vendor/mindmap.js"></script>
+  <script src="js/standalone.js"></script>
+</body>
+</html>
