@@ -271,6 +271,32 @@ const main = async () => {
   check("撤销「新建」后导图层里没有孤儿（树回到 " + a6.tree + "、pos 回到 " + a6.pos + "）",
     a6.orphans.length === 0 && a6.tree === b5.tree && a6.pos === b5.pos, "孤儿=" + a6.orphans.join(","));
 
+  /* ---- 5b) 孤岛必须可见：真浏览器里"把所有线删光"，树上的节点一个都不许消失 ---- */
+  {
+    const cnt = `(() => {
+      const M2 = window.Mindmap, m = M2.state().cur, vis = M2.visibleIds(m);
+      let tree = 0, seen = 0;
+      for (const t of M2.nodesOf(m)) (function w(n) { tree++; if (vis.has(n.id)) seen++; (n.children || []).forEach(w); })(t);
+      return JSON.stringify({ edges: (m.edges || []).length, tree, seen });
+    })()`;
+    const before = JSON.parse(await ev(cnt));
+    const beforeIds = JSON.parse(await ev("JSON.stringify(window.Mindmap.state().cur.edges || [])"));   // 放回原样用
+    const after = JSON.parse(await ev(`(() => {
+      const m = window.Mindmap.state().cur;
+      m.edges = [];                                  // 等价于用户把所有线删光之后重开那张图（纯数据层，不改产品行为）
+      return ${cnt};
+    })()`));
+    /* 这里只查数据层、不动 DOM；画布侧的证据在下面"真鼠标点线 + 真 Delete 删掉最后一条线"那一段。 */
+    console.log("    孤岛（数据层）：删边前 边=" + before.edges + " → 删空后 边=" + after.edges);
+    check("删空所有边后，**树上每个节点都可见**（可见 " + after.seen + "/" + after.tree + "，无边 ≠ 被折叠）",
+      after.edges === 0 && after.seen === after.tree && after.tree > 1, JSON.stringify(after));
+    /* 复位：不靠撤销栈（前面几段攒了一堆历史，撤销到哪一步不可控）——见下方"单边图删掉最后一条线"两节点仍在，
+       产品状态在那一笔里已经自洽；这里把 edges 放回原样，后面的连线用例不受影响。 */
+    await ev(`(() => { const m = window.Mindmap.state().cur; m.edges = ${JSON.stringify(beforeIds)}; return true; })()`);
+    const back = JSON.parse(await ev("JSON.stringify({ edges: (window.Mindmap.state().cur.edges || []).length })"));
+    check("（复位）边放回原样（" + back.edges + " 条）", back.edges === before.edges, JSON.stringify(back));
+  }
+
   /* ---- 6) 第 1 步可见部分：四个磁吸点 + 拖拽虚线预览 + 松手建边（真浏览器 + 真鼠标） ---- */
   const magOf = async (id, side) => JSON.parse(await ev(`(() => {
     const st = window.Mindmap.state(), s = st.L.nodes.get("${id}");
@@ -440,6 +466,18 @@ const main = async () => {
   await sleep(250);
   const delKb = JSON.parse(await ev(`(() => JSON.stringify({ n: (window.Mindmap.state().cur.edges || []).length, dom: document.querySelectorAll('#mmStage .mm-edge').length }))()`));
   check("选中边后按 Delete → 这条线被删（内存=" + delKb.n + "，画布上 .mm-edge=" + delKb.dom + "）", delKb.n === 0 && delKb.dom === 0, JSON.stringify(delKb));
+  /* 删掉最后一条线之后：两个节点**都不许消失**（无边 ≠ 被折叠）。
+     旧口径（种子只从容器根出发）在这里的后果是画布上只剩容器根 —— 用户看到"点没了"。 */
+  const orb = JSON.parse(await ev(`(() => {
+    const M2 = window.Mindmap, m = M2.state().cur, vis = M2.visibleIds(m);
+    let tree = 0, seen = 0;
+    for (const t of M2.nodesOf(m)) (function w(n) { tree++; if (vis.has(n.id)) seen++; (n.children || []).forEach(w); })(t);
+    return JSON.stringify({ tree, seen, dom: document.querySelectorAll('#mmStage .mm-node').length,
+      edges: (m.edges || []).length, ids: [...document.querySelectorAll('#mmStage .mm-node')].map((x) => x.dataset.id).join(","),
+      pos: Object.keys(m.pos || {}).join(",") });
+  })()`));
+  check("真浏览器：删光所有线后孤岛仍在画布上（可见 " + orb.seen + "/" + orb.tree + "，DOM " + orb.dom + "，节点=" + orb.ids + "）",
+    orb.tree === 2 && orb.seen === 2 && orb.dom === 2 && orb.edges === 0, JSON.stringify(orb));
 
   /* ---- 8) 第②步：多容器图在真浏览器里也要**全部**画出来（draw 与 PNG 共用同一份 layout） ---- */
   await ev(`(() => {

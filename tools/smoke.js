@@ -719,6 +719,17 @@ new Promise((resolve) => {
         !!sC && Math.abs(gx - wantX) <= 2 && Math.abs(gy - wantY) <= 2,
         "鼠标点(舞台)=" + wantX.toFixed(1) + "," + wantY.toFixed(1) + " 新节点中心=" + gx.toFixed(1) + "," + gy.toFixed(1) +
         " 偏差=" + (gx - wantX).toFixed(1) + "," + (gy - wantY).toFixed(1) + "（#mmView top=98 / #mmBox top=52）");
+      /* 双击空白建的点**本来就没有边**：这是合法状态，不许为了"看得见"硬塞一条边。
+         没有边的节点必须可见（可见集合的种子 = 容器根 ∪ 没有出边的节点）。 */
+      {
+        const stD = M.state();
+        const touches = (stD.cur.edges || []).filter((e) => e && e.from && e.to && (e.from.node === idC || e.to.node === idC));
+        ok("双击空白建的点**没有边**（无边是合法状态，不许硬塞）", touches.length === 0, "碰到它的边=" + touches.length);
+        ok("双击空白建的点（无边）**仍然可见**（无边 ≠ 被折叠）",
+          M.visibleIds(stD.cur).has(idC), "可见集合=" + [...M.visibleIds(stD.cur)].sort().join(","));
+        ok("双击空白建的点（无边）真的画在了画布上",
+          !!B.doc.querySelector('#mmStage .mm-node[data-id="' + idC + '"]'));
+      }
       const tas = B.win.$("mmStage").querySelectorAll(".mm-edit");
       const lastTa = tas[tas.length - 1];
       ok("新建节点进编辑时是**全选**（打字即替换占位文字 —— 刻意的默认选择，与「已有节点用插入符」不同）",
@@ -1768,6 +1779,59 @@ new Promise((resolve) => {
         const inMig = (mig.match(/\bn\.fold\b/g) || []).length;
         return hits === 2 && inMig === 2;    // `if (n.fold)` + `delete n.fold`，两处都在迁移里
       })(), "命中数应为 2（migrateMap 里 if/delete 各一次）");
+    B.localStorage.setItem("mm_map_legacy-map", JSON.stringify(LEGACY));
+    M.open("legacy-map");
+  }
+
+  console.log("\nC21. 孤岛必须可见（可见集合的种子 = 容器根 ∪ **没有出边的节点**；无边 ≠ 被折叠）");
+  {
+    const V = (m) => M.visibleIds(m);               // 产品助手是唯一权威（C20 的 V 是块内局部）
+    /* 一张"边被删空、但节点还在"的图（v:3 = 迁移已完成，所以**不会**再从 children 把边补回来；
+       这正是用户删光所有线之后重开的情形）。旧种子只从容器根出发 → a1/a1x 都被当成"被折叠"藏掉。 */
+    const isl = {
+      id: "legacy-map", title: "孤岛", layout: "mind", line: "curve", theme: "fresh", v: 3,
+      nodes: [{ id: "r1", text: "中心主题", children: [{ id: "a1", text: "第一章", children: [{ id: "a1x", text: "重点" }] }] }],
+      edges: [], fold: {},
+      pos: { r1: { x: 0, y: 0 }, a1: { x: 220, y: -60 }, a1x: { x: 440, y: -60 } }, size: {},
+    };
+    B.localStorage.setItem("mm_map_legacy-map", JSON.stringify(isl));
+    M.open("legacy-map");
+    const visI = V(M.state().cur);
+    ok("① 删空所有边后，**每个节点都还看得见**（孤岛可见，不是只剩容器根）",
+      visI.size === 3 && visI.has("r1") && visI.has("a1") && visI.has("a1x"),
+      "可见=" + [...visI].sort().join(",") + "（应为 3 个）");
+    ok("① 删空所有边后，DOM 里也仍是三个节点",
+      B.doc.querySelectorAll("#mmStage .mm-node").length === 3,
+      "DOM=" + B.doc.querySelectorAll("#mmStage .mm-node").length);
+    /* ③ 折叠仍只藏"所有路都经过折叠点"的节点 —— 菱形那条不许被这次的种子扩张弄回归 */
+    const dia2 = {
+      id: "legacy-map", title: "菱形", layout: "mind", line: "curve", theme: "fresh", v: 3, fold: { r1: true },
+      nodes: [{ id: "r1", text: "中心主题", children: [
+        { id: "a1", text: "第一章", children: [{ id: "a1x", text: "重点" }] },
+        { id: "a2", text: "第二章", children: [] }] }],
+      edges: [
+        { id: "e1", from: { node: "r1", side: "e" }, to: { node: "a1", side: "w" }, dir: "fwd" },
+        { id: "e2", from: { node: "a1", side: "e" }, to: { node: "a1x", side: "w" }, dir: "fwd" },
+        { id: "e3", from: { node: "r1", side: "s" }, to: { node: "a2", side: "n" }, dir: "fwd" },
+        { id: "e4", from: { node: "a2", side: "e" }, to: { node: "a1x", side: "s" }, dir: "fwd" }],
+      pos: {}, size: {},
+    };
+    const visD2 = V(dia2);
+    ok("② 折叠容器根后，只有一条路的 a2 仍然藏得住（容器根自身可见、出边截断）",
+      visD2.has("r1") && !visD2.has("a2"), "可见=" + [...visD2].sort().join(","));
+    /* 反面：**没有入边**的叶子被折叠点截断后必须能藏住（种子只放 "没有出边的节点"，不是所有源节点，
+       否则每张有向无环图的所有叶子都会被迫可见，折叠功能整体失效）。 */
+    const dag = {
+      id: "legacy-map", title: "链", layout: "mind", line: "curve", theme: "fresh", v: 3, fold: { a1: true },
+      nodes: [{ id: "r1", text: "中心主题", children: [{ id: "a1", text: "第一章", children: [{ id: "a1x", text: "重点" }] }] }],
+      edges: [
+        { id: "d1", from: { node: "r1", side: "e" }, to: { node: "a1", side: "w" }, dir: "fwd" },
+        { id: "d2", from: { node: "a1", side: "e" }, to: { node: "a1x", side: "w" }, dir: "fwd" }],
+      pos: {}, size: {},
+    };
+    const visDag = V(dag);
+    ok("② 折叠 a1 后，只有一条路（a1→a1x）的 a1x 仍然藏得住（种子不许把叶子全放出来）",
+      visDag.has("r1") && visDag.has("a1") && !visDag.has("a1x"), "可见=" + [...visDag].sort().join(","));
     B.localStorage.setItem("mm_map_legacy-map", JSON.stringify(LEGACY));
     M.open("legacy-map");
   }

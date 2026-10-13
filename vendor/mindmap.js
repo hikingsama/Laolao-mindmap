@@ -328,11 +328,14 @@
   const liveIds = (m) => { const s = new Set(); for (const r of nodesOf(m)) walk(r, (n) => s.add(n.id)); return s; };
   /* 【独立版·平级】**"谁看得见"只有这一处权威**（像 nodesOf 一样导出）：layout / draw / outline /
      doFind / exportPng 全调它，任何一处都不许自己再算一遍"谁被折叠盖住"。
-     折叠 = **边的可达集合**：
-       · 起点 = 容器的根（渲染总得从某处开始 —— 这是渲染层的事实，不是模型里加"起点"语义）；
+     折叠 = **边的可达集合**（关系来源是**边**；`children` 只当迁移来源，老图的 children 在 migrateMap 里变成 fwd 边）：
+       · 遍历种子 s = **容器根 ∪ 一张边都没有的节点**。只从容器根出发等于在渲染层偷偷安了一个"起点"
+         （正是 INV-1 要拆的），代价是"边被删光/新建的点"这些孤岛被当成"被折叠"而消失 ——
+         **无边 ≠ 被折叠**：跟任何节点都没关系的点照样画出来（它本来就画得出来，只是没人连它）。
+         注意只放"**一条边都没有**"的节点（看的是是否有边，不看方向）：若按"没有出边的节点"放种子，
+         有向图里**每个叶子**都会被放出来，折叠父亲时孩子会凭空露出来 —— 折叠功能整体失效。
        · 被折叠的节点**自身可见**，但不再往外传（邻居要靠别的路才够得着）；
-       · 环用 visited 防死循环（INV-3：环合法）；多父的节点只要还有一条没被挡住的路就仍然可见；
-       · 关系来源是**边**；`children` 只当迁移来源（老图的 children 在 migrateMap 里变成 fwd 边）。
+       · 环用 visited 防死循环（INV-3：环合法）；多父的节点只要还有一条没被挡住的路就仍然可见。
      `all=true` = 不看折叠（播种时要用：折叠只是"暂时看不见"，位置照旧该固化）。 */
   const isFoldIn = (m, id) => !!(m && m.fold && m.fold[id]);
   function visibleIds(m, all) {
@@ -344,8 +347,10 @@
       adj.get(e.from.node).push(e.to.node);
       adj.get(e.to.node).push(e.from.node);
     }
-    const queue = nodesOf(m).map((r) => r.id);
-    for (const id of queue) out.add(id);
+    const queue = [];
+    /* 孤岛：**一条边都没有**的节点直接当遍历种子（先收它们，再收容器根；顺序无关，只是把两族种子一次放齐）。 */
+    for (const r of nodesOf(m)) walk(r, (n) => { if (!adj.has(n.id) && !out.has(n.id)) { out.add(n.id); queue.push(n.id); } });
+    for (const r of nodesOf(m)) { out.add(r.id); queue.push(r.id); }
     while (queue.length) {
       const id = queue.shift();
       if (!all && isFoldIn(m, id)) continue;               // 自身可见，但不往外传
@@ -1265,10 +1270,11 @@
     change(() => { cur.edges = cur.edges.filter((x) => x !== e); selEdge = null; });
     return true;
   }
-  /* 【独立版·平级】挂接节点时**同时连一条边** —— 第 4 步之后"可见 = 边的可达集合"，
-     没有边的节点在画布上就是不可见的。所以新建/挂接必须配套建边（这也是契约里
-     "Tab/Enter 要自动连线""老图上下级自动变线"的同一条：层级在边上）。
-     侧面给默认值（mind: e→w / down: s→n），用户可以右键改指向。调用点在 change 的 fn 内 → 与新建同一条撤销。 */
+  /* 【独立版·平级】挂接节点时**同时连一条边** —— 这里的每个调用点都来自"层级操作"
+     （Tab/Enter/新建子主题/新建同级/粘贴/大纲 Enter：新节点与被挂接的节点之间**本来就该有关系**），
+     契约要求这些入口自动出线（层级在边上）。
+     注意**不是**为了"让节点看得见"：没有边的节点本来就可见（见 visibleIds 的孤岛种子），
+     所以双击空白新建那种"自由点"**不**走这里。 */
   function attachEdge(pid, cid) {
     if (!cur || !pid || !cid) return null;
     const sd = (cur.layout === "down") ? { from: "s", to: "n" } : { from: "e", to: "w" };
@@ -1651,7 +1657,9 @@
       const at = birthPos(null, { x: Math.round(p.x - m.w / 2), y: Math.round(p.y - m.h / 2) });   // 一次 dblclick 只建一个
       change(() => {
         putLayerPos(k.id, at);                     // 坐标写进 change 的 fn 内（与 endNodeDrag 的 putPos 同构）
-        (topNode().children ||= []).push(k); attachEdge(topNode().id, k.id);
+        /* **不建边**：双击空白建的是"自由点"，本来就没有边 —— 这是合法状态。
+           （可见性修对之后，没有边的节点照样画得出来；为了"看得见"硬塞一条边等于凭空造关系。） */
+        (topNode().children ||= []).push(k);
       });
       sel = k.id; draw(); startEdit(k.id, true); editingNew = k.id;
     });
