@@ -33,6 +33,19 @@ node tools/smoke.js
 
 它会启一个浏览器环境仿真台，把 `vendor/mindmap.js` 真跑起来，逐条验证验收情况。
 
+### 可选：UI 级验收（需要真实浏览器）
+
+自测台没有真实布局/命中测试，以下几条要真浏览器才算数。装着 Edge（或 Chrome）时可以一条命令跑完：
+
+```bash
+node tools/verify-ui.mjs                 # 默认 http://127.0.0.1:8788/
+node tools/verify-ui.mjs --port 9000     # 换端口（或 --url http://… --edge <exe> 指定浏览器）
+```
+
+它是**开发工具**，不参与运行时：不被打包、不影响 `node server.js`，也不写仓库（临时浏览器 profile 建在系统临时目录、结束即删）。
+验的是：页面能开、双击空白建点中心落在鼠标点、收起按钮第 1 次点就生效、删整棵子树后导图层无孤儿、撤销"新建"后无孤儿。
+需要 Node ≥ 22（用到内置 WebSocket），且服务已在跑。
+
 ---
 
 ## 目录
@@ -45,7 +58,8 @@ node tools/smoke.js
 | `vendor/mindmap.js` | 导图本体（基线 sha256 `1d28e770…62b2`，改动见文件头"独立版改动记录"） |
 | `css/mindmap-standalone.css` | 独立版自己的样式（原来来自主站 app.css） |
 | `server.js` | 零依赖静态服务器，端口 8788 |
-| `tools/smoke.js` | 本地验收自测台 |
+| `tools/smoke.js` | 本地验收自测台（零依赖，仿真台里真跑 vendor/mindmap.js） |
+| `tools/verify-ui.mjs` | 可选：UI 级验收（开发工具，无头 Edge + CDP，不参与运行时） |
 | `HANDOFF.md` | 本轮交接：做了什么、验到哪、下一步 |
 
 ## 数据契约（第 10 条：定下即 API 契约）
