@@ -913,6 +913,20 @@
        判定挂在**节点盒**上，不把 .mm-rs 当命中目标（8px 的 CSS 目标不可靠，且它钉在 right:0;bottom:0 只覆盖一个方向）。 */
     const RZ = { edge: 16, corner: 22, slop: 7 };
     const CURSOR = { n: "ns-resize", s: "ns-resize", e: "ew-resize", w: "ew-resize", nw: "nwse-resize", se: "nwse-resize", ne: "nesw-resize", sw: "nesw-resize" };
+    /* 【独立版】方向光标必须加在**指针下的节点元素**上（用类，不用 #mmView 的行内 style）：
+       .mm-node{cursor:grab} 是 (0,1,0)，而写在 #mmView 上的行内值**赢不了后代自己的选择器**
+       —— 落在节点盒内（正是要缩放的区域）用户只会看到抓手。.mm-node.rz-x 是 (0,2,0)，压得过。
+       顺带把 #mmView 的行内值彻底去掉：它就是"内部区域仍读到上一次 nwse-resize"的来源。 */
+    const RZCLS = ["rz-n", "rz-s", "rz-e", "rz-w", "rz-nw", "rz-ne", "rz-sw", "rz-se"];
+    let rzEl = null;
+    function markZone(id, dir) {
+      const el = id ? document.querySelector(`#mmStage .mm-node[data-id="${id}"]`) : null;
+      if (rzEl && rzEl !== el) RZCLS.forEach((c) => rzEl.classList.remove(c));
+      if (!el) { rzEl = null; return; }
+      RZCLS.forEach((c) => el.classList.remove(c));
+      if (dir) el.classList.add("rz-" + dir);
+      rzEl = el;
+    }
     function zoneAt(cx, cy) {
       if (!L || !cur) return null;
       const r = vw.getBoundingClientRect(), px = cx - r.left, py = cy - r.top;
@@ -948,7 +962,7 @@
           drag = { moved: true, resize: { id: hz.id, dir: hz.dir, w0: s0.w, h0: s0.h, x0: s0.x, y0: s0.y,
             mx: e.clientX, my: e.clientY, snap: JSON.stringify(cur),
             ratio: s0.w / Math.max(1, s0.h), raf: 0 } };
-          vw.style.cursor = CURSOR[hz.dir];                 // 拖动过程中锁住方向光标，指针离开节点也不跳回
+          markZone(hz.id, hz.dir);                          // 拖动过程中锁住方向光标（加在节点元素上，离开也不跳回）
           try { vw.setPointerCapture(e.pointerId); } catch (err) {}
           return;
         }
@@ -984,8 +998,8 @@
         z.raf = requestAnimationFrame(() => { try { draw(); } catch (err) {} });   // 重画：连线端点跟着尺寸一起重锚
         return;
       }
-      /* 未在拖动：指针进入某方向命中区就换成对应光标（角 > 边；内部保持原光标） */
-      if (!drag) { const hz = zoneAt(e.clientX, e.clientY); vw.style.cursor = hz ? CURSOR[hz.dir] : ""; return; }
+      /* 未在拖动：指针进入某方向命中区就给**那个节点**加方向类（角 > 边；内部维持原光标） */
+      if (!drag) { const hz = zoneAt(e.clientX, e.clientY); markZone(hz && hz.id, hz && hz.dir); return; }
       if (!drag) return;
       const dx = e.clientX - drag.sx, dy = e.clientY - drag.sy;
       if (!drag.moved && Math.hypot(dx, dy) < 6) return;
@@ -1001,7 +1015,7 @@
       const d = drag; drag = null;
       if (d.resize) {
         /* 【独立版】松手才落盘：整段拖拽只进一条撤销历史（快照在按下时拍的） */
-        vw.style.cursor = "";                             // 解锁方向光标
+        markZone(null, null); vw.style.cursor = "";        // 解锁方向光标（并清掉旧版遗留在 #mmView 上的行内值）
         hist.push(d.resize.snap); if (hist.length > 120) hist.shift(); redo = [];
         try { storeLocal(cur); } catch (e) {}
         try { scheduleCloud(); } catch (e) {}

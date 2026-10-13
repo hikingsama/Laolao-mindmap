@@ -137,6 +137,12 @@ body {
   cursor: grab; user-select: none;
 }
 .mm-node.sel { outline: 2px solid var(--mm-ink); outline-offset: 1px; }
+/* 【独立版】八方向方向光标：必须写成 .mm-node.rz-x（(0,2,0)）才压得过 .mm-node{cursor:grab}（(0,1,0)）。
+   写在 #mmView 上的行内 style 是**赢不了**的 —— 落在节点盒内只会显示抓手。 */
+.mm-node.rz-n, .mm-node.rz-s { cursor: ns-resize; }
+.mm-node.rz-e, .mm-node.rz-w { cursor: ew-resize; }
+.mm-node.rz-nw, .mm-node.rz-se { cursor: nwse-resize; }
+.mm-node.rz-ne, .mm-node.rz-sw { cursor: nesw-resize; }
 .mm-node.hit { outline: 2px dashed #f2a20c; outline-offset: 1px; }
 /* 【独立版】缩放柄：只在选中的节点上出现，拖动改导图层 cur.size（按住 Shift 锁比例）。
    放在节点内侧右下角，因为 .mm-node 是 overflow:hidden，放到外侧会被裁掉。 */

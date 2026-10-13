@@ -486,8 +486,12 @@ new Promise((resolve) => {
       pairs.length === 8 && uniq.size === 4, "方向=" + pairs.length + " 不同值=" + uniq.size);
     ok("西/北方向拖动时左上角跟着走（写 cur.pos，否则是从中心缩）",
       jsTxt.includes("W || N") && /curPos\(\)\[z\.id\] = \{ x: W \?/.test(jsTxt));
-    ok("拖动中锁定方向光标、松手解锁",
-      jsTxt.includes("vw.style.cursor = CURSOR[hz.dir]") && jsTxt.includes("vw.style.cursor = \"\""));
+    ok("方向光标用**节点类** .mm-node.rz-x 压过 .mm-node{cursor:grab}（写在 #mmView 上赢不了）",
+      jsTxt.includes("el.classList.add(\"rz-\" + dir)") && /\.mm-node\.rz-e, \.mm-node\.rz-w \{ cursor: ew-resize/.test(cssTxt));
+    ok("不再把方向光标写在 #mmView 行内值上（那是“内部仍读到上一次 nwse-resize”的来源），松手清空",
+      !jsTxt.includes("vw.style.cursor = hz ?") && jsTxt.includes("vw.style.cursor = \"\""));
+    ok("拖动中锁定方向：加类在节点上、松手解锁（markZone(null,null)）",
+      jsTxt.includes("markZone(hz.id, hz.dir)") && jsTxt.includes("markZone(null, null)"));
   }
 
   console.log("\nC5. 交互入口未被破坏（源码形状守卫）");
