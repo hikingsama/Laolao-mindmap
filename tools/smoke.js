@@ -454,6 +454,21 @@ new Promise((resolve) => {
     }
   }
 
+  console.log("\nC4. 缩放手柄压得住 .mm-edit（源码形状断言，防回退）");
+  {
+    // Chief 在真实浏览器里实测到的缺陷：手柄中心点的 elementFromPoint 命中的是 .mm-edit，
+    // 因为 .mm-rs 没有 z-index 而 .mm-edit 是 z-index:5 → 真实鼠标点不到手柄。
+    const cssTxt = require("fs").readFileSync(require("path").join(__dirname, "..", "css", "mindmap-standalone.css"), "utf8");
+    const zOf = (sel) => {
+      const m = cssTxt.match(new RegExp("\\" + sel + "\\s*\\{([^}]*)\\}"));
+      const z = m && m[1].match(/z-index\s*:\s*(-?\d+)/);
+      return z ? Number(z[1]) : 0;
+    };
+    const zRs = zOf(".mm-rs"), zEdit = zOf(".mm-edit");
+    ok(".mm-rs 的 z-index 高于 .mm-edit（" + zRs + " > " + zEdit + "）—— 手柄点得到的前提",
+      zRs > zEdit, "rs=" + zRs + " edit=" + zEdit);
+  }
+
   console.log("\nD. 新建子节点 → 不盖住父节点");
   const st = M.state();
   const target = [...st.L.nodes.values()].find((s) => s.depth === 1);

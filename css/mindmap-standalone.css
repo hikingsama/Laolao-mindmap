@@ -141,7 +141,12 @@ body {
 /* 【独立版】缩放柄：只在选中的节点上出现，拖动改导图层 cur.size（按住 Shift 锁比例）。
    放在节点内侧右下角，因为 .mm-node 是 overflow:hidden，放到外侧会被裁掉。 */
 .mm-rs { position: absolute; right: 0; bottom: 0; width: 15px; height: 15px; background: var(--mm-ink);
-  border-top-left-radius: 6px; cursor: nwse-resize; touch-action: none; opacity: .85; }
+  border-top-left-radius: 6px; cursor: nwse-resize; touch-action: none; opacity: .85;
+  /* 必须高于 .mm-edit 的 z-index:5：否则手柄被 .mm-edit 压住、真实鼠标点不到
+     （实测：手柄中心点的 elementFromPoint 命中的是 .mm-edit）。
+     选 z-index 而不是给 .mm-edit 加 pointer-events:none —— 后者要么得引入"编辑态"状态类，
+     要么会在进入编辑时挡掉输入焦点，副作用面更大；这里只解决"谁在上"。 */
+  z-index: 6; }
 .mm-rs:hover { opacity: 1; }
 .mm-rs::after { content: ""; position: absolute; right: 3px; bottom: 3px; width: 5px; height: 5px;
   border-right: 2px solid #fff; border-bottom: 2px solid #fff; }
