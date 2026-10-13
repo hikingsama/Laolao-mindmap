@@ -629,7 +629,7 @@ new Promise((resolve) => {
     ok("折叠节点的后代没有被画进 DOM（原来照画，只是没有连线）", drawn.length === 0, drawn.join(","));
     ok("折叠后代的坐标仍保留在 cur.pos 里（展开时直接用回去、不重算）", desc.every((k) => !!st.cur.pos[k]));
     const js2 = require("fs").readFileSync(require("path").join(__dirname, "..", "vendor", "mindmap.js"), "utf8");
-    ok("prep 遇到 fold 就不再往下建 box（源码形状，防回退）", /if \(!isFold\(n\)\) \(n\.children \|\| \[\]\)\.forEach/.test(js2));
+    ok("prep 按 hiddenIds() 决定建不建 box（源码形状：可见性只认那一处权威，不再读节点字段判折叠）", /if \(!hid\.has\(n\.id\)\)/.test(js2) && /const hid = hiddenIds\(cur, all\)/.test(js2));
     delete tgt.fold;
     B.localStorage.setItem("mm_map_legacy-map", JSON.stringify(raw));
     M.open("legacy-map");
@@ -743,7 +743,11 @@ new Promise((resolve) => {
     const reset = () => {
       const r = JSON.parse(B.localStorage.getItem("mm_map_legacy-map"));
       (function w(n) { delete n.fold; (n.children || []).forEach(w); })(root0(r));
-      r.fold = {}; r.edges = [];     // 折叠状态现在在导图层：复位必须连它一起清，否则会跨子测试累积
+      /* 折叠状态在导图层：复位必须连它一起清，否则会跨子测试累积。
+         ⚠️ 第 4 步之后 `edges` 是**唯一的关系来源**：把它清空 = 除了容器根谁都不可见。
+         所以这里不清边；万一这份夹具没有边（老格式），把 v 退回 2 让 migrateMap 重新从 children 生成。 */
+      r.fold = {};
+      if (!Array.isArray(r.edges) || !r.edges.length) r.v = 2;
       B.localStorage.setItem("mm_map_legacy-map", JSON.stringify(r));
       M.open("legacy-map");
       tgt = root0(M.state().cur).children.find((c) => (c.children || []).length);
@@ -851,7 +855,7 @@ new Promise((resolve) => {
     ok("节点字段里的 fold 已被 delete（不留两份折叠真相）",
       !("fold" in c1.nodes[0].children[0]) && !("fold" in c1.nodes[0].children[1].children[0]),
       "a1.fold=" + c1.nodes[0].children[0].fold + " a2x.fold=" + c1.nodes[0].children[1].children[0].fold);
-    ok("迁移标记 v:2 已落盘（幂等的依据）", JSON.parse(B.localStorage.getItem("mm_map_legacy-map")).v === 2);
+    ok("迁移标记 v:3 已落盘（幂等的依据）", JSON.parse(B.localStorage.getItem("mm_map_legacy-map")).v === 3);
     const snap1 = JSON.stringify({ fold: c1.fold, v: c1.v, edges: c1.edges });
     M.open("legacy-map");
     ok("迁移幂等：再打开一次 cur.fold / v / edges 都不变",
@@ -1026,10 +1030,9 @@ new Promise((resolve) => {
     const srcCode = src9.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
     const setFoldSites = [
       { name: "addChild", pat: "setFold(r.n, false); (r.n.children ||= []).push(k)" },
-      { name: "paste-into-node", pat: "change(() => { setFold(r.n, false); (r.n.children ||= []).push(...fresh); })" },
+      { name: "paste-into-node", pat: "change(() => { setFold(r.n, false); (r.n.children ||= []).push(...fresh);" },
       { name: "toggleFold", pat: "change(() => { setFold(r.n, !isFold(r.n)); })" },
       { name: "foldLevel", pat: "setFold(n, lv > 0 && d >= lv)" },
-      { name: "doFind", pat: "for (const n of toOpen) setFold(n, false)" },
       { name: "moveSibling", pat: "setFold(prev, false); (prev.children ||= []).push(r.n)" },
       { name: "outlineFold", pat: "change(() => { setFold(r.n, !isFold(r.n)); }); outline(id)" },
     ];
@@ -1248,7 +1251,7 @@ new Promise((resolve) => {
     /* 导出串里的 v 跟着 cur.v（= 迁移标记 2）：原来写死 `v: 1` 却被 `...cur` 覆盖 —— 字面量是死代码，
        而且"写的是 1、导出的是 2"这种自相矛盾会把下一个读代码的人带沟里。 */
     ok("导出串的 v 与当前图一致（不再有被 ...cur 覆盖的死字面量）",
-      exportedObj.v === vBefore && exportedObj.v === 2, "导出 v=" + exportedObj.v + " cur.v=" + vBefore);
+      exportedObj.v === vBefore && exportedObj.v === 3, "导出 v=" + exportedObj.v + " cur.v=" + vBefore);
     /* 上面那条**在旧代码上也是绿的**（旧写法 `{v:1, ...cur}` 里 ...cur 已经把 v 覆盖成 2）——
        所以缺陷不是"导出错了"，而是"代码写着 1、导出 2"这种自相矛盾（下一个读代码的人会被带沟里）。
        行为断言抓不到它，只能拿源码形状钉：导出那行不许再有 v: 1 字面量。 */
@@ -1269,9 +1272,9 @@ new Promise((resolve) => {
       "pos 本地=" + Object.keys(rt.pos).length + " 导出=" + Object.keys(exportedObj.pos).length);
     ok("往返：布局/主题/线型也带过来了", rt.layout === exportedObj.layout && rt.theme === exportedObj.theme && rt.line === exportedObj.line);
     ok("往返：fold 一起搬回来（" + foldTgt.id + " 仍是折叠状态）", !!rt.fold[foldTgt.id], JSON.stringify(rt.fold));
-    ok("往返：edges 一起搬回来（1 条，端点与方向不变）",
-      Array.isArray(rt.edges) && rt.edges.length === 1 && rt.edges[0].from.node === eRT.from.node &&
-      rt.edges[0].to.node === eRT.to.node && rt.edges[0].dir === "fwd", JSON.stringify(rt.edges));
+    ok("往返：edges 一起搬回来（那条测试边在、端点与方向不变）",
+      Array.isArray(rt.edges) && rt.edges.some((e) => e.id === "edgeRT" && e.from.node === eRT.from.node &&
+        e.to.node === eRT.to.node && e.dir === "fwd"), JSON.stringify(rt.edges));
 
     /* ③ 复制导图：重发 id 时两个方向都要成立（新 id 有条目 + 没有旧 id 残留）。 */
     B.localStorage.setItem("mm_map_legacy-map", JSON.stringify(LEGACY));
@@ -1490,7 +1493,7 @@ new Promise((resolve) => {
        断言读 DOM 元素与原属性（仿真台现在也收 `d` 这类属性，走 getAttribute）。 */
     const edgeDom = () => {
       const line = B.doc.querySelector('#mmStage .mm-links path.mm-edge[data-id="' + e0.id + '"]');
-      const arrows = B.doc.querySelectorAll("#mmStage .mm-links path.mm-arrow");
+      const arrows = B.doc.querySelectorAll('#mmStage .mm-links path.mm-arrow[data-edge="' + e0.id + '"]');
       return {
         lines: B.doc.querySelectorAll('#mmStage .mm-links path.mm-edge[data-id="' + e0.id + '"]').length,
         to: arrows.filter((x) => x.dataset.end === "to").length,
@@ -1570,6 +1573,7 @@ new Promise((resolve) => {
     const sP = magPoint(oneId, "s");
     const inBand = { clientX: sP.x + magR17 + 8, clientY: sP.y };   // 出了磁吸点半径，但还压在**下边缘**上
     const sizeBefore = JSON.stringify(M.state().cur.size[oneId]);
+    const nBeforeResize = (M.state().cur.edges || []).length;    // 迁移后的老图本来就有边，按"之前多少条"比
     /* ⚠️ 事件挂在**当前 DOM 里的节点元素**上派发（它到 #mmView 的祖先链是活的）：
        直接 `bubble(B.win.$("mmView"), …)` 在这台仿真台里会打到一个**拿到过的旧对象**上，
        监听不在它身上 → 整条手势静默变成空操作（不报错、断言只会"尺寸没变"）。 */
@@ -1582,31 +1586,35 @@ new Promise((resolve) => {
     evAt("pointerup", inBand.clientX, inBand.clientY + 40);
     ok("磁吸点半径外、仍在边缘带内 → 走缩放（尺寸 " + sizeBefore + " → " + JSON.stringify(M.state().cur.size[oneId]) + "）",
       JSON.stringify(M.state().cur.size[oneId]) !== sizeBefore);
-    ok("那条缩放没有顺手建边（两条路互斥）", (M.state().cur.edges || []).length === 0,
+    ok("那条缩放没有顺手建边（两条路互斥）", (M.state().cur.edges || []).length === nBeforeResize,
       "edges=" + JSON.stringify((M.state().cur.edges || []).map((e) => e.from.node + "→" + e.to.node)));
 
     /* 第 3 步：点线选中（屏幕 10px 命中带）+ 节点优先 + 右键菜单（四种指向 + 删边）。
-       这一段自带一条现成的边（重新拖一条），免得依赖前面测试留下的状态。 */
-    reset17();
-    const stA = M.state().L.nodes.get(oneId);
-    const centerA = { x: Math.round(view2screen().ox + (stA.x + stA.w / 2) * view2screen().k),
-                      y: Math.round(view2screen().oy + (stA.y + stA.h / 2) * view2screen().k) };
-    const pA = magPoint(oneId, "e"), pB = magPoint(a.id, "w");
-    bubble(B.doc.querySelector('#mmStage .mm-node[data-id="' + oneId + '"]') || B.win.$("mmStage"), "pointerdown", { clientX: pA.x, clientY: pA.y });
-    bubble(B.doc.querySelector('#mmStage .mm-node[data-id="' + oneId + '"]') || B.win.$("mmStage"), "pointerup", { clientX: pB.x, clientY: pB.y });
-    const e3 = (cur17().edges || [])[0];
-    ok("（第 3 步前提）重新拖出一条边", !!e3, JSON.stringify(cur17().edges));
+       用一张**只有一条边**的干净图：老图迁移出来的树边会和测试边压在同一条线上抢命中
+       （`edgeAt` 取最近的那条），一个点上压几条线时"选中的是哪条"就说不清了。 */
+    const one3 = { id: "legacy-map", title: "一条边", layout: "mind", line: "curve", theme: "fresh", v: 3, fold: {},
+      nodes: [{ id: "P", text: "左主题", children: [] }, { id: "Q", text: "右主题", children: [] }],
+      edges: [{ id: "eX", from: { node: "P", side: "e" }, to: { node: "Q", side: "w" }, dir: "fwd" }],
+      pos: { P: { x: 0, y: 0 }, Q: { x: 460, y: 0 } }, size: {} };
+    B.localStorage.setItem("mm_map_legacy-map", JSON.stringify(one3));
+    M.open("legacy-map");
+    const e3 = { id: "eX" };
+    ok("（第 3 步前提）图里有且只有一条边（" + (cur17().edges || []).length + " 条）", (cur17().edges || []).length === 1);
     const stage17 = () => B.win.$("mmStage");
     const evOn = (host, type, x, y) => bubble(host, type, { target: host, clientX: x, clientY: y, pointerId: 6 });
+    const pA = magPoint("P", "e"), pB = magPoint("Q", "w");
     const midP = { x: Math.round((pA.x + pB.x) / 2), y: Math.round((pA.y + pB.y) / 2) };   // 线中点（在 10px 命中带内）
+    const stA = M.state().L.nodes.get("P");
+    const centerA = { x: Math.round(view2screen().ox + (stA.x + stA.w / 2) * view2screen().k),
+                      y: Math.round(view2screen().oy + (stA.y + stA.h / 2) * view2screen().k) };
     ok("点之前：没有边处于选中态", B.doc.querySelectorAll("#mmStage .mm-edge.sel").length === 0);
     evOn(stage17(), "pointerdown", midP.x, midP.y);
     evOn(stage17(), "pointerup", midP.x, midP.y);
     ok("点在线（10px 命中带内）→ 这条边被选中（.mm-edge.sel = " + B.doc.querySelectorAll("#mmStage .mm-edge.sel").length + "）",
       B.doc.querySelectorAll("#mmStage .mm-edge.sel").length === 1);
     /* 三档视觉：常态 2px 灰 → hover 3px 蓝 → 选中 4px 蓝（选中必须比 hover 更明显）；命中带仍是屏幕 10px */
-    const edgeProps = () => {
-      const p = B.doc.querySelector("#mmStage .mm-links path.mm-edge");
+    const edgeProps = (id) => {
+      const p = B.doc.querySelector('#mmStage .mm-links path.mm-edge[data-id="' + id + '"]');
       return p ? { w: p.getAttribute("stroke-width"), c: p.getAttribute("stroke"),
         sel: p.classList.contains("sel"), hot: p.classList.contains("hot") } : null;
     };
@@ -1616,16 +1624,16 @@ new Promise((resolve) => {
     ok("点别处 → 取消选中（.mm-edge.sel = " + B.doc.querySelectorAll("#mmStage .mm-edge.sel").length + "）",
       B.doc.querySelectorAll("#mmStage .mm-edge.sel").length === 0);
     evOn(stage17(), "pointermove", midP.x, midP.y + 16);        // 离中线 16px（>10px 命中带）
-    const farPorps = edgeProps();
+    const farPorps = edgeProps(e3.id);
     ok("指针离线 16px（>10px 命中带）→ 不亮 hover（命中带仍是 10px，没被改小/改大）",
       !!farPorps && !farPorps.hot && farPorps.w === "2" && farPorps.c === "#5b6b7c", JSON.stringify(farPorps));
     evOn(stage17(), "pointermove", midP.x, midP.y + 6);         // 离中线 6px（<10px）
-    const hotProps = edgeProps();
+    const hotProps = edgeProps(e3.id);
     ok("指针离线 6px（命中带内）→ hover 档：3px 蓝（" + JSON.stringify(hotProps) + "）",
       !!hotProps && hotProps.hot && !hotProps.sel && hotProps.w === "3" && hotProps.c === "#2f7cf6", JSON.stringify(hotProps));
     evOn(stage17(), "pointerdown", midP.x, midP.y);             // 点它 = 选中
     evOn(B.doc.querySelector('.mm-node[data-id="' + oneId + '"]') || stage17(), "pointerup", midP.x, midP.y);
-    const selProps = edgeProps();
+    const selProps = edgeProps(e3.id);
     ok("选中档比 hover 更明显：4px 蓝且 sel 优先（" + JSON.stringify(selProps) + "）",
       !!selProps && selProps.sel && !selProps.hot && selProps.w === "4" && selProps.c === "#2f7cf6", JSON.stringify(selProps));
     ok("（源码形状）命中带常量仍是 10（EDGE_HIT = 10），视觉档不参与命中",
@@ -1633,10 +1641,10 @@ new Promise((resolve) => {
     /* 节点优先于边：按在节点**中心**（离任何磁吸点都远）不该选中边。
        注意 pointerup 要用**现取**的节点元素：上一步"取消选边"的 draw() 已经把 DOM 重建过了，
        抓着的旧元素已经脱离文档（真实浏览器里松手命中的也是当前 DOM 的元素）。 */
-    evOn(B.doc.querySelector('#mmStage .mm-node[data-id="' + oneId + '"]') || stage17(), "pointerdown", centerA.x, centerA.y);
-    evOn(B.doc.querySelector('#mmStage .mm-node[data-id="' + oneId + '"]') || stage17(), "pointerup", centerA.x, centerA.y);
+    evOn(B.doc.querySelector('#mmStage .mm-node[data-id="P"]') || stage17(), "pointerdown", centerA.x, centerA.y);
+    evOn(B.doc.querySelector('#mmStage .mm-node[data-id="P"]') || stage17(), "pointerup", centerA.x, centerA.y);
     ok("节点优先于边：按在节点身上不选边，选中的是那个节点",
-      B.doc.querySelectorAll("#mmStage .mm-edge.sel").length === 0 && M.state().sel === oneId,
+      B.doc.querySelectorAll("#mmStage .mm-edge.sel").length === 0 && M.state().sel === "P",
       "sel=" + M.state().sel + " 选中边=" + B.doc.querySelectorAll("#mmStage .mm-edge.sel").length);
     /* 右键：**浮层菜单**（跟着指针出现，不是弹窗），四项 + 删除，且写成人话 */
     evOn(stage17(), "contextmenu", midP.x, midP.y);
@@ -1658,8 +1666,8 @@ new Promise((resolve) => {
     evOn(stage17(), "contextmenu", midP.x, midP.y);              // 再打开一次，继续验指向与删除
     const revBtn17b = B.doc.querySelector('#mmEdgeMenu [data-dir="rev"]');
     if (revBtn17b) bubble(revBtn17b, "click", { target: revBtn17b });
-    let ed3 = { to: B.doc.querySelectorAll("#mmStage .mm-links path.mm-arrow").filter((x) => x.dataset.end === "to").length,
-                from: B.doc.querySelectorAll("#mmStage .mm-links path.mm-arrow").filter((x) => x.dataset.end === "from").length };
+    let ed3 = { to: B.doc.querySelectorAll('#mmStage .mm-links path.mm-arrow[data-edge="' + e3.id + '"]').filter((x) => x.dataset.end === "to").length,
+                from: B.doc.querySelectorAll('#mmStage .mm-links path.mm-arrow[data-edge="' + e3.id + '"]').filter((x) => x.dataset.end === "from").length };
     ok("点「← 指向」→ 立即重画：箭头改到起点（to=" + ed3.to + " from=" + ed3.from + "），菜单顺手收掉",
       ed3.to === 0 && ed3.from === 1 && B.win.$("mmEdgeMenu").classList.contains("hidden"), JSON.stringify(ed3));
     const disk3 = JSON.parse(B.localStorage.getItem("mm_map_legacy-map"));
@@ -1680,6 +1688,86 @@ new Promise((resolve) => {
       B.doc.querySelectorAll("#mmStage .mm-edge").length === 0,
       "内存=" + (cur17().edges || []).length + " DOM=" + B.doc.querySelectorAll("#mmStage .mm-edge").length);
 
+    B.localStorage.setItem("mm_map_legacy-map", JSON.stringify(LEGACY));
+    M.open("legacy-map");
+  }
+
+  console.log("\nC20. 折叠 = **边的可达集合**（可见集合一处权威；环/多父按 INV-3；不读 children 判折叠）");
+  {
+    /* 零件：一张"边与 children 不同构"的图。
+       children：r1 → a1 → a1x（还带 a2）
+       edges   ：r1→a1、a1→a1x、r1→a2、**a2→a1x**（a1x 有两个父）
+       折叠 a1：按 children 算 → a1x 被藏；按**边的可达集合**算 → a1x 还能从 a2 走到，应该**仍然可见**。 */
+    const dia = {
+      id: "legacy-map", title: "菱形", layout: "mind", line: "curve", theme: "fresh", v: 2, fold: { a1: true },
+      nodes: [{ id: "r1", text: "中心主题", children: [
+        { id: "a1", text: "第一章", children: [{ id: "a1x", text: "重点" }] },
+        { id: "a2", text: "第二章", children: [] }] }],
+      edges: [
+        { id: "e1", from: { node: "r1", side: "e" }, to: { node: "a1", side: "w" }, dir: "fwd" },
+        { id: "e2", from: { node: "a1", side: "e" }, to: { node: "a1x", side: "w" }, dir: "fwd" },
+        { id: "e3", from: { node: "r1", side: "s" }, to: { node: "a2", side: "n" }, dir: "fwd" },
+        { id: "e4", from: { node: "a2", side: "e" }, to: { node: "a1x", side: "s" }, dir: "fwd" }],
+      pos: { r1: { x: 0, y: 0 }, a1: { x: 220, y: -60 }, a1x: { x: 440, y: -60 }, a2: { x: 220, y: 60 } }, size: {},
+    };
+    B.localStorage.setItem("mm_map_legacy-map", JSON.stringify(dia));
+    M.open("legacy-map");
+    ok("（前置）vendor 导出了可见集合的唯一权威 visibleIds / hiddenIds（像 nodesOf 那样）",
+      typeof M.visibleIds === "function" && typeof M.hiddenIds === "function",
+      "visibleIds=" + typeof M.visibleIds + " hiddenIds=" + typeof M.hiddenIds);
+    const V = (m) => (typeof M.visibleIds === "function" ? M.visibleIds(m) : new Set());
+    const vis20 = V(M.state().cur);
+    ok("折叠 = 边的可达集合：被折叠节点自身**可见**（a1）", vis20.has("a1"));
+    ok("多父绕路：a1x 还有另一条路（a2→a1x）→ 折叠 a1 **不该**藏它",
+      vis20.has("a1x"), "可见=" + [...vis20].sort().join(","));
+    ok("被折叠节点真的进入了画布（自身可见）", !!B.doc.querySelector('#mmStage .mm-node[data-id="a1"]'));
+    ok("绕得到的节点也真的画出来了（a1x 在 DOM 里）", !!B.doc.querySelector('#mmStage .mm-node[data-id="a1x"]'));
+
+    /* 环：A—B—C—A，折叠 B → 谁都藏不住（环给了绕过去的路），而且不许死循环 */
+    const cyc = {
+      id: "legacy-map", title: "环", layout: "mind", line: "curve", theme: "fresh", v: 2, fold: { B: true },
+      nodes: [{ id: "A", text: "A", children: [{ id: "B", text: "B", children: [{ id: "C", text: "C", children: [] }] }] }],
+      edges: [
+        { id: "c1", from: { node: "A", side: "e" }, to: { node: "B", side: "w" }, dir: "fwd" },
+        { id: "c2", from: { node: "B", side: "e" }, to: { node: "C", side: "w" }, dir: "fwd" },
+        { id: "c3", from: { node: "C", side: "s" }, to: { node: "A", side: "s" }, dir: "fwd" }],
+      pos: { A: { x: 0, y: 0 }, B: { x: 220, y: 0 }, C: { x: 440, y: 0 } }, size: {},
+    };
+    const t0 = Date.now();
+    B.localStorage.setItem("mm_map_legacy-map", JSON.stringify(cyc));
+    M.open("legacy-map");
+    const visCyc = V(M.state().cur);
+    ok("环里折叠不死循环（" + (Date.now() - t0) + "ms 内算完）且三个都在（环给了绕路）",
+      visCyc.size === 3 && visCyc.has("A") && visCyc.has("B") && visCyc.has("C"), "可见=" + [...visCyc].sort().join(","));
+    ok("环里折叠 B 之后，B 自身仍可见、C 也没被吞掉（DOM 三个节点都在）",
+      B.doc.querySelectorAll("#mmStage .mm-node").length === 3,
+      "DOM=" + B.doc.querySelectorAll("#mmStage .mm-node").length);
+
+    /* 老图：children → 边（迁移的时候自动变线），折叠行为与"新图"一致 */
+    B.localStorage.setItem("mm_map_legacy-map", JSON.stringify(LEGACY));
+    M.open("legacy-map");
+    const old20 = M.state().cur;
+    ok("老图（只有 children）打开后拿到了**边**（children → fwd 边，层级在边上）",
+      Array.isArray(old20.edges) && old20.edges.length >= 7, "边数=" + (old20.edges || []).length);
+    /* 同一张图：老图（children 迁移成边）与"新图"（本来就只有边）折叠后可见集合一致 */
+    const new20 = JSON.parse(JSON.stringify(old20));
+    new20.nodes = [new20.nodes[0]]; new20.fold = { a1: true }; old20.fold = { a1: true };
+    M.state().cur.fold.a1 = true;
+    const visOld = V(M.state().cur);
+    const visNew = V(new20);
+    ok("老图与新图折叠行为一致（可见集合相同：" + [...visOld].sort().join(",") + "）",
+      [...visOld].sort().join(",") === [...visNew].sort().join(","),
+      "老=" + [...visOld].sort().join(",") + " 新=" + [...visNew].sort().join(","));
+    ok("源码形状：折叠判定与渲染都不再读节点字段（`n.fold` 只出现在 migrateMap 那一句里）",
+      (() => {
+        const s = require("fs").readFileSync(require("path").join(__dirname, "..", "vendor", "mindmap.js"), "utf8")
+          .replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+        const hits = (s.match(/\bn\.fold\b/g) || []).length;
+        const m0 = s.indexOf("function migrateMap");
+        const mig = m0 < 0 ? "" : s.slice(m0, s.indexOf("\n  }", m0));
+        const inMig = (mig.match(/\bn\.fold\b/g) || []).length;
+        return hits === 2 && inMig === 2;    // `if (n.fold)` + `delete n.fold`，两处都在迁移里
+      })(), "命中数应为 2（migrateMap 里 if/delete 各一次）");
     B.localStorage.setItem("mm_map_legacy-map", JSON.stringify(LEGACY));
     M.open("legacy-map");
   }

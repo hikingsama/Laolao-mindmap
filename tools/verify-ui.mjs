@@ -286,7 +286,7 @@ const main = async () => {
     const a = list.find((s) => s.depth === 1) || list[0], b = list.find((s) => s.n.id !== a.n.id && Math.abs(s.y - a.y) < 40) || list.find((s) => s.n.id !== a.n.id);
     return JSON.stringify({ a: a.n.id, b: b.n.id });
   })()`));
-  const mA = await magOf(twoNodes.a, "e"), mB = await magOf(twoNodes.b, "w");
+  const mA = await magOf(twoNodes.a, "n"), mB = await magOf(twoNodes.b, "s");   // 与迁移出的树边（e→w）不同的端点对
   await mouse("mouseMoved", mA.x, mA.y, 0, 0);        // 悬停到磁吸点附近
   await sleep(250);
   const magVis = JSON.parse(await ev(`(() => {
@@ -311,8 +311,8 @@ const main = async () => {
   check("真实鼠标从一个磁吸点拖到另一个磁吸点 → 建出一条边（" + edgesBefore + " → " + afterEdge.n + "）",
     afterEdge.n === edgesBefore + 1, JSON.stringify(afterEdge));
   check("边的端点就是那两个磁吸点（from=" + JSON.stringify(afterEdge.last && afterEdge.last.from) + " to=" + JSON.stringify(afterEdge.last && afterEdge.last.to) + "）",
-    !!afterEdge.last && afterEdge.last.from.node === twoNodes.a && afterEdge.last.from.side === "e" &&
-    afterEdge.last.to.node === twoNodes.b && afterEdge.last.to.side === "w", JSON.stringify(afterEdge.last));
+    !!afterEdge.last && afterEdge.last.from.node === twoNodes.a && afterEdge.last.from.side === "n" &&
+    afterEdge.last.to.node === twoNodes.b && afterEdge.last.to.side === "s", JSON.stringify(afterEdge.last));
   check("松手后预览线自己收掉（不留残影）", afterEdge.prev === 0, "path=" + afterEdge.prev);
   /* 端点对唯一**含反向**：从 B.w 拖回 A.e 不许再建一条（真鼠标 + 真提示） */
   await mouse("mousePressed", mB.x, mB.y, 1, 1);
@@ -324,8 +324,9 @@ const main = async () => {
     revEdge.n === edgesBefore + 1 && /已经有一条线/.test(revEdge.banner), JSON.stringify(revEdge));
   /* 三档视觉 + 命中带（真浏览器算出的 stroke-width / class）：2px 灰 → hover 3px 蓝 → 选中 4px 蓝 */
   const midEarly = { x: Math.round((mA.x + mB.x) / 2), y: Math.round((mA.y + mB.y) / 2) };
+  const myEdge = String((afterEdge.last && afterEdge.last.id) || "");
   const edgeStyle = async () => JSON.parse(await ev(`(() => {
-    const p = document.querySelector('#mmStage .mm-links path.mm-edge');
+    const p = document.querySelector('#mmStage .mm-links path.mm-edge[data-id="${myEdge}"]');
     return JSON.stringify({ w: p ? +p.getAttribute('stroke-width') : null, c: p ? p.getAttribute('stroke') : null,
       hot: !!p && p.classList.contains('hot'), sel: !!p && p.classList.contains('sel') });
   })()`));
@@ -346,9 +347,9 @@ const main = async () => {
     stSel.sel === true && stSel.hot === false && stSel.w === 4, JSON.stringify(stSel));
   /* 第 2 步：边要真的被画出来（默认单指向、箭头在目标端） */
   const edgeDraw = JSON.parse(await ev(`(() => {
-    const line = document.querySelector('#mmStage .mm-links path.mm-edge[data-id="' + ((${JSON.stringify(afterEdge.last && afterEdge.last.id)}) || "") + '"]');
-    const arrows = [...document.querySelectorAll('#mmStage .mm-links path.mm-arrow')];
-    return JSON.stringify({ lines: document.querySelectorAll('#mmStage .mm-links path.mm-edge').length,
+    const line = document.querySelector('#mmStage .mm-links path.mm-edge[data-id="${myEdge}"]');
+    const arrows = [...document.querySelectorAll('#mmStage .mm-links path.mm-arrow[data-edge="${myEdge}"]')];
+    return JSON.stringify({ lines: document.querySelectorAll('#mmStage .mm-links path.mm-edge[data-id="${myEdge}"]').length,
       to: arrows.filter((x) => x.dataset.end === "to").length, from: arrows.filter((x) => x.dataset.end === "from").length,
       d: line ? line.getAttribute("d") : null, arrowD: arrows[0] ? arrows[0].getAttribute("d") : null });
   })()`));
@@ -371,7 +372,21 @@ const main = async () => {
     zoomed.w > boxBefore.w * 1.05 && zoomed.d >= 6 && zoomed.d <= 13, JSON.stringify(zoomed));
 
   /* ---- 7) 第 3 步：点线选中（屏幕命中带）+ 右键菜单（四种指向 / 删边） ---- */
-  const mA2 = await magOf(twoNodes.a, "e"), mB2 = await magOf(twoNodes.b, "w");
+  /* 第 3 步的这几条（选线 / 右键菜单 / Esc / Delete）用一张**只有一条边**的干净图：
+     老图迁移出来的树边会和测试边压在同一条线上，`edgeAt` 取最近的那条，"点中的是哪条"就说不清了。 */
+  await ev(`(() => {
+    const m = { id: "ui-edge", title: "一条边", layout: "mind", line: "curve", theme: "fresh", v: 3, fold: {},
+      nodes: [{ id: "PA", text: "左主题", children: [] }, { id: "PB", text: "右主题", children: [] }],
+      edges: [{ id: "EX", from: { node: "PA", side: "e" }, to: { node: "PB", side: "w" }, dir: "fwd" }],
+      pos: { PA: { x: 0, y: 0 }, PB: { x: 460, y: 0 } }, size: {} };
+    localStorage.setItem("mm_map_ui-edge", JSON.stringify(m));
+    const idx = JSON.parse(localStorage.getItem("mm_index_v1") || "[]");
+    if (!idx.some((x) => x.id === "ui-edge")) { idx.push({ id: "ui-edge", title: "一条边", updated: Date.now(), nodes: 2, version: 3, local: true, dirty: false }); localStorage.setItem("mm_index_v1", JSON.stringify(idx)); }
+    return "ok";
+  })()`);
+  await ev("window.Mindmap.open('ui-edge')");
+  await sleep(400);
+  const mA2 = await magOf("PA", "e"), mB2 = await magOf("PB", "w");
   const midE = { x: Math.round((mA2.x + mB2.x) / 2), y: Math.round((mA2.y + mB2.y) / 2) };
   await clickAt(midE.x, midE.y);
   await sleep(200);
@@ -402,9 +417,9 @@ const main = async () => {
   await clickSel('#mmEdgeMenu [data-dir="rev"]');
   await sleep(250);
   const afterRev = JSON.parse(await ev(`(() => {
-    const a = [...document.querySelectorAll('#mmStage .mm-links path.mm-arrow')], cm = document.getElementById('mmEdgeMenu');
+    const a = [...document.querySelectorAll('#mmStage .mm-links path.mm-arrow[data-edge="EX"]')], cm = document.getElementById('mmEdgeMenu');
     return JSON.stringify({ to: a.filter((x) => x.dataset.end === "to").length, from: a.filter((x) => x.dataset.end === "from").length,
-      hidden: !cm || cm.classList.contains('hidden'), dir: (window.Mindmap.state().cur.edges[0] || {}).dir });
+      hidden: !cm || cm.classList.contains('hidden'), dir: ((window.Mindmap.state().cur.edges || []).find((e) => e.id === "EX") || {}).dir });
   })()`));
   check("点「← 指向」→ 箭头立刻改到起点、浮层顺手收掉（dir=" + afterRev.dir + "，to=" + afterRev.to + " from=" + afterRev.from + "，收起=" + afterRev.hidden + "）",
     afterRev.dir === "rev" && afterRev.to === 0 && afterRev.from === 1 && afterRev.hidden === true, JSON.stringify(afterRev));

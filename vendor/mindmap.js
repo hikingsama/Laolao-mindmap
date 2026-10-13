@@ -213,7 +213,7 @@
     // +6：边框和字体渲染的误差，免得最后一个字被挤到下一行
     return { w: Math.ceil(Math.max(depth === 0 ? 90 : 34, wr.w + extra) + padX * 2 + 6), h: wr.lines.length * lineH(depth) + padY * 2 + 2, lines: wr.lines, font, padX, padY };
   }
-  function layoutAuto() {
+  function layoutAuto(all) {
     const th = THEMES[cur.theme] || THEMES.fresh, nodes = new Map(), lay = cur.layout || "mind";
     /* 【独立版·平级】**每个容器都是一棵树**：布局从全部容器开始摆，不再只看第一个。
        这里只改"从哪几个根开始"—— span / placeH / placeV 的算法本身一字不动
@@ -222,42 +222,50 @@
     if (!roots.length) return { nodes, th, bounds: { x0: 0, y0: 0, x1: 0, y1: 0 } };
     const HG = lay === "down" ? 26 : 46, VG = lay === "down" ? 56 : 14;
     // 1) 量大小、记颜色（每个容器各量一棵，容器根一律是 depth 0）
+    /* 【独立版·平级】可见性来自 **hiddenIds(cur)**（"谁被折叠盖住"的唯一权威）：
+       · 不可见的节点**不进 L.nodes**（于是 draw / span / nudgeFree / bounds 全都只看得见可见节点）；
+       · 但**仍然往下递归**：多父的节点可能被折叠挡了一条路、又靠另一条路绕得到（a2→a1x），
+         不递归就摸不到它 —— 这也正是不能用 `children` 判折叠的原因（它判的只是叶子关系）。
+       · cur.pos / cur.size 里被藏起来的条目故意保留：那是"用户摆过的位置"，展开时直接用回去。 */
+    const hid = hiddenIds(cur, all);
     function prep(n, depth, color, parent) {
-      const m = measure(n, depth);
-      const c = n.color || (depth === 0 ? th.root : color);
-      /* 【独立版】尺寸在这里合并（measure 之后、nodes.set 之前）：让 span() 的缓存从一开始就按最终尺寸算 */
-      const z = curSize()[n.id];
-      const pinned = !!(z && Number.isFinite(z.w) && Number.isFinite(z.h) && z.w > 0 && z.h > 0);
-      const cs = clampSize(pinned ? z.w : m.w, pinned ? z.h : m.h, m.w, m.h);
-      if (!pinned || cs.w !== z.w || cs.h !== z.h) { curSize()[n.id] = cs; sizeDirty = true; }
-      nodes.set(n.id, { n, depth, ...m, w: cs.w, h: cs.h, measW: m.w, measH: m.h, color: c, parent: parent ? parent.id : null, kids: isFold(n) ? [] : n.children || [] });
-      /* 【独立版】折叠就**不再往下建 box**：折叠后代不进 L.nodes，于是 draw / span / nudgeFree / bounds
-         全都只看得见可见节点 —— 修掉"收起后连线没了、子节点还在"（原来只有连线消失，后代照样画）。
-         cur.pos / cur.size 里这些后代的条目**故意保留**：它们是"用户摆过的位置"，展开时直接用回去。 */
-      if (!isFold(n)) (n.children || []).forEach((k, i) => prep(k, depth + 1, depth === 0 ? (k.color || th.colors[i % th.colors.length]) : c, n));
+      if (!hid.has(n.id)) {
+        const m = measure(n, depth);
+        const c = n.color || (depth === 0 ? th.root : color);
+        /* 【独立版】尺寸在这里合并（measure 之后、nodes.set 之前）：让 span() 的缓存从一开始就按最终尺寸算 */
+        const z = curSize()[n.id];
+        const pinned = !!(z && Number.isFinite(z.w) && Number.isFinite(z.h) && z.w > 0 && z.h > 0);
+        const cs = clampSize(pinned ? z.w : m.w, pinned ? z.h : m.h, m.w, m.h);
+        if (!pinned || cs.w !== z.w || cs.h !== z.h) { curSize()[n.id] = cs; sizeDirty = true; }
+        nodes.set(n.id, { n, depth, ...m, w: cs.w, h: cs.h, measW: m.w, measH: m.h, color: c, parent: parent ? parent.id : null, kids: n.children || [] });
+      }
+      (n.children || []).forEach((k, i) => prep(k, depth + 1, depth === 0 ? (k.color || th.colors[i % th.colors.length]) : color, n));
     }
     for (const r of roots) prep(r, 0, th.root, null);
     const S = (id) => nodes.get(id);
     // 2) 子树大小
+    /* 【独立版·平级】只把**有盒子**的孩子算进 span/摆位：被折叠盖住的后代不进 L.nodes（`S(id)` 为 undefined），
+       它们不占位置；展开时它们会重新参与（L 每帧重算）。 */
+    const liveKids = (s) => s.kids.filter((k) => S(k.id));
     const span = (n) => { const s = S(n.id); if (s.span != null) return s.span;
-      const ks = s.kids; const own = lay === "down" ? s.w : s.h;
+      const ks = liveKids(s); const own = lay === "down" ? s.w : s.h;
       s.span = !ks.length ? own : Math.max(own, ks.reduce((a, k) => a + span(k), 0) + VG * (ks.length - 1) * (lay === "down" ? 0 : 1) + (lay === "down" ? HG * (ks.length - 1) : 0));
       return s.span; };
     // 横向：x 往 dir 方向长，y 在 [top, top+span] 内居中
     function placeH(n, x, top, dir) {
       const s = S(n.id); span(n);
       s.side = dir; s.x = dir > 0 ? x : x - s.w; s.y = top + s.span / 2 - s.h / 2;
-      const tot = s.kids.reduce((a, k) => a + span(k), 0) + VG * Math.max(0, s.kids.length - 1);
+      const tot = liveKids(s).reduce((a, k) => a + span(k), 0) + VG * Math.max(0, liveKids(s).length - 1);
       let y = top + (s.span - tot) / 2;
-      for (const k of s.kids) { placeH(k, dir > 0 ? s.x + s.w + HG : s.x - HG, y, dir); y += span(k) + VG; }
+      for (const k of liveKids(s)) { placeH(k, dir > 0 ? s.x + s.w + HG : s.x - HG, y, dir); y += span(k) + VG; }
     }
     function placeV(n, left, y) {
       const s = S(n.id); span(n);
       s.side = 0; s.x = left + s.span / 2 - s.w / 2; s.y = y;
-      const tot = s.kids.reduce((a, k) => a + span(k), 0) + HG * Math.max(0, s.kids.length - 1);
+      const tot = liveKids(s).reduce((a, k) => a + span(k), 0) + HG * Math.max(0, liveKids(s).length - 1);
       let x = left + (s.span - tot) / 2;
-      const rowH = Math.max(...s.kids.map((k) => S(k.id).h), 0);
-      for (const k of s.kids) { placeV(k, x, y + s.h + VG + (rowH - S(k.id).h) * 0); x += span(k) + HG; }
+      const rowH = Math.max(...liveKids(s).map((k) => S(k.id).h), 0);
+      for (const k of liveKids(s)) { placeV(k, x, y + s.h + VG + (rowH - S(k.id).h) * 0); x += span(k) + HG; }
     }
     /* 3) 摆位置：**每个容器各摆一棵**，然后纵向叠放（容器之间留一条空）。
        `mind` 那套"左右按高度分两半"每个容器内部照旧。 */
@@ -267,7 +275,7 @@
       else if (lay === "right") placeH(root, 0, 0, 1);
       else {
         // 左右分布：按高度把一级主题分成两边（右边先放、尽量各一半）；可以手动指定 side
-        const ks = rs.kids, total = ks.reduce((a, k) => a + span(k), 0);
+        const ks = liveKids(rs), total = ks.reduce((a, k) => a + span(k), 0);
         const right = [], left = []; let acc = 0;
         ks.forEach((k) => { const want = k.side === "l" ? left : k.side === "r" ? right : (acc + span(k) / 2 <= total / 2 + 1 || !right.length ? right : left); want.push(k); if (want === right) acc += span(k); });
         rs.side = 0; rs.x = -rs.w / 2; rs.y = -rs.h / 2;
@@ -318,6 +326,61 @@
   const isTopNode = (v) => { const id = v && typeof v === "object" ? v.id : v; return !!id && nodesArr().some((r) => r.id === id); };
   /* 全部容器里的节点 id 集合（pruneLayer / applyLayer / 断言共用同一处，别各写一份遍历）。 */
   const liveIds = (m) => { const s = new Set(); for (const r of nodesOf(m)) walk(r, (n) => s.add(n.id)); return s; };
+  /* 【独立版·平级】**"谁看得见"只有这一处权威**（像 nodesOf 一样导出）：layout / draw / outline /
+     doFind / exportPng 全调它，任何一处都不许自己再算一遍"谁被折叠盖住"。
+     折叠 = **边的可达集合**：
+       · 起点 = 容器的根（渲染总得从某处开始 —— 这是渲染层的事实，不是模型里加"起点"语义）；
+       · 被折叠的节点**自身可见**，但不再往外传（邻居要靠别的路才够得着）；
+       · 环用 visited 防死循环（INV-3：环合法）；多父的节点只要还有一条没被挡住的路就仍然可见；
+       · 关系来源是**边**；`children` 只当迁移来源（老图的 children 在 migrateMap 里变成 fwd 边）。
+     `all=true` = 不看折叠（播种时要用：折叠只是"暂时看不见"，位置照旧该固化）。 */
+  const isFoldIn = (m, id) => !!(m && m.fold && m.fold[id]);
+  function visibleIds(m, all) {
+    const out = new Set(), adj = new Map();
+    for (const e of (m && Array.isArray(m.edges) ? m.edges : [])) {
+      if (!e || !e.from || !e.to) continue;
+      if (!adj.has(e.from.node)) adj.set(e.from.node, []);
+      if (!adj.has(e.to.node)) adj.set(e.to.node, []);
+      adj.get(e.from.node).push(e.to.node);
+      adj.get(e.to.node).push(e.from.node);
+    }
+    const queue = nodesOf(m).map((r) => r.id);
+    for (const id of queue) out.add(id);
+    while (queue.length) {
+      const id = queue.shift();
+      if (!all && isFoldIn(m, id)) continue;               // 自身可见，但不往外传
+      for (const nb of adj.get(id) || []) if (!out.has(nb)) { out.add(nb); queue.push(nb); }
+    }
+    return out;
+  }
+  function hiddenIds(m, all) {
+    const vis = visibleIds(m, all), hid = new Set();
+    for (const r of nodesOf(m)) walk(r, (n) => { if (!vis.has(n.id)) hid.add(n.id); });
+    return hid;
+  }
+  /* 要"看见某个节点"需要先展开哪些折叠节点：从容器根按边找一条路，收集路上的折叠点。
+     搜索命中了被折叠盖住的节点时用它（把路展开），而不是靠 children 的父子链去猜。 */
+  function foldPathTo(m, id) {
+    const prev = new Map(), seen = new Set(nodesOf(m).map((r) => r.id)), q = [...seen];
+    const nbOf = (e, from) => {
+      const a = e && e.from && e.from.node, b = e && e.to && e.to.node;
+      return a === from ? b : b === from ? a : null;
+    };
+    while (q.length) {
+      const cur2 = q.shift();
+      if (cur2 === id) {
+        const out = []; let x = id;
+        while (prev.has(x)) { const p = prev.get(x); if (isFoldIn(m, p)) out.push(p); x = p; }
+        return out;
+      }
+      for (const e of (m && Array.isArray(m.edges) ? m.edges : [])) {
+        const nb = nbOf(e, cur2);
+        if (!nb || seen.has(nb)) continue;
+        seen.add(nb); prev.set(nb, cur2); q.push(nb);
+      }
+    }
+    return [];
+  }
   /* 【独立版·平级】折叠状态在**导图层** `cur.fold = { 节点id: true }`（与 pos/size 同层，绝不写节点字段）。
      所有读写走这两个入口：节点字段里**不再有** fold（迁移时 delete n.fold）。 */
   const isFold = (n) => !!(n && cur && cur.fold && cur.fold[n.id]);
@@ -338,7 +401,19 @@
     for (const r of m.nodes) fill(r);
     if (idFilled) changed = true;
     for (const r of m.nodes) walk(r, (n) => { if (n.fold) { m.fold[n.id] = true; delete n.fold; changed = true; } });
-    if (m.v !== 2) { m.v = 2; changed = true; }
+    /* 【独立版·平级】**children → 边**：老图的上下级自动变线（层级从此在边上，渲染与折叠都按边算）。
+       只做一次，靠 v:3 幂等 —— 用户删光边之后重开不会再被重建。
+       侧面：mind 默认 e→w（左分支 w→e）；down 用 s→n。拿不到布局信息时按默认走。 */
+    if (m.v !== 3 && !(Array.isArray(m.edges) && m.edges.length)) {
+      for (const r of m.nodes) walk(r, (n) => {
+        for (const k of n.children || []) {
+          const sd = (m.layout === "down") ? { from: "s", to: "n" } : (k.side === "l" ? { from: "w", to: "e" } : { from: "e", to: "w" });
+          m.edges.push({ id: eid(), from: { node: n.id, side: sd.from }, to: { node: k.id, side: sd.to }, dir: "fwd" });
+          changed = true;
+        }
+      });
+    }
+    if (m.v !== 3) { m.v = 3; changed = true; }
     return changed;
   }
   /* 【独立版】导图层表的**两个清单**（契约 §2.4）：各自只有一处定义，断言直接读同一处（见导出）。
@@ -497,7 +572,7 @@
   function seedPos() {
     const p = curPos();
     if (Object.keys(p).length) return false;
-    const lay = layoutAuto(), rs = lay.nodes.get(topNode().id);
+    const lay = layoutAuto(true), rs = lay.nodes.get(topNode().id);   // all=true：折叠只是"暂时看不见"，位置照旧固化
     const ox = rs && rs.x != null ? rs.x : 0, oy = rs && rs.y != null ? rs.y : 0;
     for (const [id, s] of lay.nodes) if (s.x != null && s.y != null) p[id] = { x: Math.round(s.x - ox), y: Math.round(s.y - oy) };
     try { storeLocal(cur); } catch (e) {}     // 立刻落盘：之后打开就是"已固化"的图
@@ -641,9 +716,9 @@
   const EDGE_COLOR = "#5b6b7c", EDGE_HOT = "#2f7cf6", ARROW = 10;
   /* 边的三档视觉：常态 2px 灰 / hover 3px 蓝 / 选中 4px 蓝 + 外圈光晕（选中必须比 hover 更明显）。
      命中带跟这个无关 —— 命中一律按屏幕 10px 几何算（EDGE_HIT），线本身多细都点得中。 */
-  function edgeArrow(p, q, end, hot) {
+  function edgeArrow(p, q, end, hot, eid) {
     const deg = Math.atan2(p.y - q.y, p.x - q.x) * 180 / Math.PI;
-    return `<path class="mm-arrow${hot ? " hot" : ""}" data-end="${end}" d="M0,0 L${-ARROW},${ARROW * 0.45} L${-ARROW},${-ARROW * 0.45} Z" fill="${hot ? EDGE_HOT : EDGE_COLOR}" transform="translate(${p.x},${p.y}) rotate(${deg})"/>`;
+    return `<path class="mm-arrow${hot ? " hot" : ""}" data-end="${end}" data-edge="${eid}" d="M0,0 L${-ARROW},${ARROW * 0.45} L${-ARROW},${-ARROW * 0.45} Z" fill="${hot ? EDGE_HOT : EDGE_COLOR}" transform="translate(${p.x},${p.y}) rotate(${deg})"/>`;
   }
   function edgeSvg() {
     if (!cur || !Array.isArray(cur.edges)) return [];
@@ -657,8 +732,8 @@
       const cls = "mm-edge" + (sel2 ? " sel" : hot ? " hot" : "");
       const col = sel2 || hot ? EDGE_HOT : EDGE_COLOR, wd = sel2 ? 4 : hot ? 3 : 2;
       out.push(`<path class="${cls}" data-id="${e.id}" d="M${p1.x},${p1.y} L${p2.x},${p2.y}" stroke="${col}" stroke-width="${wd}" fill="none" stroke-linecap="round" opacity="${sel2 || hot ? 1 : .9}"/>`);
-      if (dir === "fwd" || dir === "both") out.push(edgeArrow(p2, p1, "to", sel2 || hot));
-      if (dir === "rev" || dir === "both") out.push(edgeArrow(p1, p2, "from", sel2 || hot));
+      if (dir === "fwd" || dir === "both") out.push(edgeArrow(p2, p1, "to", sel2 || hot, e.id));
+      if (dir === "rev" || dir === "both") out.push(edgeArrow(p1, p2, "from", sel2 || hot, e.id));
     }
     return out;
   }
@@ -772,7 +847,7 @@
     const at = birthPos({ x: ps ? ps.x : 0, y: ps ? ps.y : 0, w: ps ? ps.w : estSize(r.n.text, 1).w, h: ps ? ps.h : estSize(r.n.text, 1).h });
     change(() => {
       putLayerPos(k.id, at);                       // 坐标写进 change 的 fn 内：撤销"新建"才回得干净（不再留孤儿）
-      setFold(r.n, false); (r.n.children ||= []).push(k);
+      setFold(r.n, false); (r.n.children ||= []).push(k); attachEdge(r.n.id, k.id);
     });
     sel = k.id; draw(); reveal(k.id); startEdit(k.id, true); editingNew = k.id;
   }
@@ -783,7 +858,7 @@
     const at = birthPos({ x: ps ? ps.x : 0, y: ps ? ps.y : 0, w: ps ? ps.w : 150, h: ps ? ps.h : 32 });   // 【独立版】出生位置立刻固化
     change(() => {
       putLayerPos(k.id, at);                       // 坐标写进 change 的 fn 内（与 endNodeDrag 的 putPos 同构）
-      const i = r.p.children.indexOf(r.n); r.p.children.splice(before ? i : i + 1, 0, k);
+      const i = r.p.children.indexOf(r.n); r.p.children.splice(before ? i : i + 1, 0, k); attachEdge(r.p.id, k.id);
     });
     sel = k.id; draw(); reveal(k.id); startEdit(k.id, true); editingNew = k.id;
   }
@@ -794,7 +869,7 @@
     const at = birthPos({ x: ps ? ps.x : 0, y: ps ? ps.y : 0, w: ps ? ps.w : 150, h: ps ? ps.h : 32 });   // 【独立版】出生位置立刻固化
     change(() => {
       putLayerPos(k.id, at);                       // 坐标写进 change 的 fn 内（与 endNodeDrag 的 putPos 同构）
-      const i = r.p.children.indexOf(r.n); r.p.children.splice(i, 1, k); k.children.push(r.n);
+      const i = r.p.children.indexOf(r.n); r.p.children.splice(i, 1, k); k.children.push(r.n); attachEdge(r.p.id, k.id); attachEdge(k.id, r.n.id);
     });
     sel = k.id; draw(); startEdit(k.id, true);
   }
@@ -850,7 +925,7 @@
     else if (clip) items = [clone(clip)];
     if (!items || !items.length) return;
     const fresh = items.map((n) => { walk(n, (x) => { x.id = nid(); }); return fill(n); });
-    change(() => { setFold(r.n, false); (r.n.children ||= []).push(...fresh); });
+    change(() => { setFold(r.n, false); (r.n.children ||= []).push(...fresh); for (const fc of fresh) attachEdge(r.n.id, fc.id); });
     select(fresh[0].id, true);
   }
 
@@ -1068,9 +1143,10 @@
        原来只列第一个容器，多容器下第二个容器在大纲里根本看不到。 */
     const rows = [];
     const roots18 = nodesArr();
+    const hidO = hiddenIds(cur);          // 可见性唯一权威（大纲与渲染/导出读同一处）
     for (let ri = 0; ri < roots18.length; ri++) {
       if (ri) rows.push(`<div class="mo-sep">— 另一个容器 —</div>`);
-      (function w(n, d) { if (!n) return; rows.push(`<div class="mo-row" style="--d:${d}" data-id="${n.id}">${(n.children || []).length ? `<button class="mo-tog" data-mm="ofold" data-id="${n.id}">${isFold(n) ? "▸" : "▾"}</button>` : `<span class="mo-dot">•</span>`}<input class="mo-in${d === 0 ? " root" : ""}" data-id="${n.id}" value="${E(n.text.replace(/\n/g, " "))}" maxlength="500"></div>`); if (!isFold(n)) for (const c of n.children || []) w(c, d + 1); })(roots18[ri], 0);
+      (function w(n, d) { if (!n) return; if (!hidO.has(n.id)) rows.push(`<div class="mo-row" style="--d:${d}" data-id="${n.id}">${(n.children || []).length ? `<button class="mo-tog" data-mm="ofold" data-id="${n.id}">${isFold(n) ? "▸" : "▾"}</button>` : `<span class="mo-dot">•</span>`}<input class="mo-in${d === 0 ? " root" : ""}" data-id="${n.id}" value="${E(n.text.replace(/\n/g, " "))}" maxlength="500"></div>`); for (const c of n.children || []) w(c, d + 1); })(roots18[ri], 0);
     }
     box.innerHTML = `<div class="mo-tip">Enter 新建一行 · Tab 缩进 · Shift+Tab 退回 · 空行按退格删除 · ↑↓ 换行</div>` + rows.join("");
     const f = focusId && box.querySelector(`.mo-in[data-id="${focusId}"]`); if (f) { f.focus(); f.setSelectionRange(f.value.length, f.value.length); }
@@ -1189,6 +1265,17 @@
     change(() => { cur.edges = cur.edges.filter((x) => x !== e); selEdge = null; });
     return true;
   }
+  /* 【独立版·平级】挂接节点时**同时连一条边** —— 第 4 步之后"可见 = 边的可达集合"，
+     没有边的节点在画布上就是不可见的。所以新建/挂接必须配套建边（这也是契约里
+     "Tab/Enter 要自动连线""老图上下级自动变线"的同一条：层级在边上）。
+     侧面给默认值（mind: e→w / down: s→n），用户可以右键改指向。调用点在 change 的 fn 内 → 与新建同一条撤销。 */
+  function attachEdge(pid, cid) {
+    if (!cur || !pid || !cid) return null;
+    const sd = (cur.layout === "down") ? { from: "s", to: "n" } : { from: "e", to: "w" };
+    const e = { id: eid(), from: { node: pid, side: sd.from }, to: { node: cid, side: sd.to }, dir: "fwd" };
+    (cur.edges ||= []).push(e);
+    return e;
+  }
   async function duplicate(id) {    const m = id === (cur && cur.id) ? clone(cur) : lsGet(mapKey(id), null);
     let src = m;
     // [独立版] 云同步已停用：不再从账号取导图（原 mm_get 分支见 git 历史）
@@ -1264,9 +1351,9 @@
     /* 搜到的在收起的分支里：沿路展开它的上级。**必须走 change** —— 写在 change 外的话，
        这次展开既不进撤销栈、也不落盘（doFind 末尾那两句 draw/storeLocal 拿不到它）。
        先收集"确实要展开的"，避免一次什么都没改的空 change 白占一格撤销。 */
-    const toOpen = [];
-    for (const id of found) { let r = findNode(id); while (r && r.p) { if (isFold(r.p)) toOpen.push(r.p); r = findNode(r.p.id); } }
-    if (toOpen.length) change(() => { for (const n of toOpen) setFold(n, false); });
+    const toOpen = new Set();
+    for (const id of found) for (const f of foldPathTo(cur, id)) toOpen.add(f);   // 按**边**找路，不靠 children 父子链
+    if (toOpen.size) change(() => { for (const fid of toOpen) delete cur.fold[fid]; });
     fi = 0; $("mmFindN").textContent = q ? (found.length ? `1 / ${found.length}` : "没找到") : "";
     draw(); if (found.length) select(found[0], true);
   }
@@ -1564,7 +1651,7 @@
       const at = birthPos(null, { x: Math.round(p.x - m.w / 2), y: Math.round(p.y - m.h / 2) });   // 一次 dblclick 只建一个
       change(() => {
         putLayerPos(k.id, at);                     // 坐标写进 change 的 fn 内（与 endNodeDrag 的 putPos 同构）
-        (topNode().children ||= []).push(k);
+        (topNode().children ||= []).push(k); attachEdge(topNode().id, k.id);
       });
       sel = k.id; draw(); startEdit(k.id, true); editingNew = k.id;
     });
@@ -1664,7 +1751,7 @@
     if (e.key === "Enter" && !e.isComposing) {
       e.preventDefault();
       const k = { id: nid(), text: "", children: [] };
-      change(() => { if (!r.p || (r.n.children.length && !isFold(r.n))) r.n.children.unshift(k); else r.p.children.splice(r.p.children.indexOf(r.n) + 1, 0, k); });
+      change(() => { if (!r.p || (r.n.children.length && !isFold(r.n))) { r.n.children.unshift(k); attachEdge(r.n.id, k.id); } else { r.p.children.splice(r.p.children.indexOf(r.n) + 1, 0, k); attachEdge(r.p.id, k.id); } });
       sel = k.id; outline(k.id);
     } else if (e.key === "Tab") {
       e.preventDefault();
@@ -1822,5 +1909,7 @@
     /* 【独立版】数据形状的唯一权威与"全部容器"的遍历入口：tools/ 下的脚本（含 verify-ui.mjs 的
        页内片段）一律调它们，不许自己抄 `Array.isArray(...nodes) ? ... : [.root]`。 */
     nodesOf, liveIds,
+    /* 【独立版·平级】"谁看得见"的唯一权威（同 nodesOf 的地位）：tools 与渲染都读这一处。 */
+    visibleIds, hiddenIds,
   };
 })();
