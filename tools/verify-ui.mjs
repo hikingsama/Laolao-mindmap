@@ -356,24 +356,45 @@ const main = async () => {
   })()`);
   await sleep(250);
   const menu = JSON.parse(await ev(`(() => {
-    const d = document.getElementById('mmDlg'), body = document.getElementById('mmDlgBody');
+    const cm = document.getElementById('mmEdgeMenu'), body = cm || document.getElementById('mmDlgBody');
     const items = [...body.querySelectorAll('[data-dir]')].map((x) => x.getAttribute('data-dir'));
-    return JSON.stringify({ open: !!(d && d.open), items, hasDel: !!body.querySelector('[data-mm="edel"]'),
+    const r = cm ? cm.getBoundingClientRect() : null;
+    return JSON.stringify({ popup: !!cm && !cm.classList.contains('hidden'), dlgOpen: document.getElementById('mmDlg').open,
+      items, hasDel: !!body.querySelector('[data-mm="edel"]'), x: r ? Math.round(r.left) : null, y: r ? Math.round(r.top) : null,
       text: body.textContent.replace(/\\s+/g, ' ').slice(0, 120) });
   })()`));
-  check("真实右键线 → 弹出菜单（open=" + menu.open + "，四项=" + JSON.stringify(menu.items) + "，有删除=" + menu.hasDel + "）",
-    menu.open === true && menu.items.length === 4 && ["none", "fwd", "rev", "both"].every((v) => menu.items.indexOf(v) >= 0) && menu.hasDel === true,
+  check("真实右键线 → 弹出**浮层**菜单（浮层可见=" + menu.popup + "，弹窗没开=" + !menu.dlgOpen + "，位置 " + menu.x + "," + menu.y + "）",
+    menu.popup === true && menu.dlgOpen === false, JSON.stringify(menu));
+  check("菜单四项 + 删除都在：" + JSON.stringify(menu.items),
+    menu.items.length === 4 && ["none", "fwd", "rev", "both"].every((v) => menu.items.indexOf(v) >= 0) && menu.hasDel === true,
     JSON.stringify(menu));
   check("菜单是人话（不是枚举值）：" + menu.text, /指向/.test(menu.text) && /没有箭头/.test(menu.text), menu.text);
-  await clickSel('#mmDlgBody [data-dir="rev"]');
+  await clickSel('#mmEdgeMenu [data-dir="rev"]');
   await sleep(250);
   const afterRev = JSON.parse(await ev(`(() => {
-    const a = [...document.querySelectorAll('#mmStage .mm-links path.mm-arrow')];
+    const a = [...document.querySelectorAll('#mmStage .mm-links path.mm-arrow')], cm = document.getElementById('mmEdgeMenu');
     return JSON.stringify({ to: a.filter((x) => x.dataset.end === "to").length, from: a.filter((x) => x.dataset.end === "from").length,
-      open: document.getElementById('mmDlg').open, dir: (window.Mindmap.state().cur.edges[0] || {}).dir });
+      hidden: !cm || cm.classList.contains('hidden'), dir: (window.Mindmap.state().cur.edges[0] || {}).dir });
   })()`));
-  check("点「← 指向」→ 箭头立刻改到起点、弹窗关掉（dir=" + afterRev.dir + "，to=" + afterRev.to + " from=" + afterRev.from + "）",
-    afterRev.dir === "rev" && afterRev.to === 0 && afterRev.from === 1 && afterRev.open === false, JSON.stringify(afterRev));
+  check("点「← 指向」→ 箭头立刻改到起点、浮层顺手收掉（dir=" + afterRev.dir + "，to=" + afterRev.to + " from=" + afterRev.from + "，收起=" + afterRev.hidden + "）",
+    afterRev.dir === "rev" && afterRev.to === 0 && afterRev.from === 1 && afterRev.hidden === true, JSON.stringify(afterRev));
+  /* Esc 收菜单 / Delete 删选中的线（真键盘事件） */
+  await ev(`(() => { const el = document.elementFromPoint(${midE.x}, ${midE.y}) || document.getElementById('mmView');
+    el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: ${midE.x}, clientY: ${midE.y}, button: 2 })); return true; })()`);
+  await sleep(200);
+  await send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+  await send("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+  await sleep(200);
+  const escHid = JSON.parse(await ev(`(() => { const cm = document.getElementById('mmEdgeMenu');
+    return JSON.stringify({ hidden: !cm || cm.classList.contains('hidden'), edges: (window.Mindmap.state().cur.edges || []).length }); })()`));
+  check("真实按 Esc → 浮层收起、那条线还在（edges=" + escHid.edges + "）", escHid.hidden === true && escHid.edges === 1, JSON.stringify(escHid));
+  await clickAt(midE.x, midE.y);                       // 先点线选中它
+  await sleep(200);
+  await send("Input.dispatchKeyEvent", { type: "keyDown", key: "Delete", code: "Delete", windowsVirtualKeyCode: 46 });
+  await send("Input.dispatchKeyEvent", { type: "keyUp", key: "Delete", code: "Delete", windowsVirtualKeyCode: 46 });
+  await sleep(250);
+  const delKb = JSON.parse(await ev(`(() => JSON.stringify({ n: (window.Mindmap.state().cur.edges || []).length, dom: document.querySelectorAll('#mmStage .mm-edge').length }))()`));
+  check("选中边后按 Delete → 这条线被删（内存=" + delKb.n + "，画布上 .mm-edge=" + delKb.dom + "）", delKb.n === 0 && delKb.dom === 0, JSON.stringify(delKb));
 
   /* ---- 8) 第②步：多容器图在真浏览器里也要**全部**画出来（draw 与 PNG 共用同一份 layout） ---- */
   await ev(`(() => {

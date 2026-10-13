@@ -395,7 +395,9 @@ new Promise((resolve) => {
   }
   /* 取一个"确实落在该节点上、又不被别的节点盒盖住、且离本节点边 ≥ 12px"的屏幕点。
      两个必要性：① 真实浏览器里指针命中的是**最上层**那个节点，所以压在别人身上的点不能用来点它；
-     ② 贴着边会被八方向命中区当成缩放（命中区边=16px），断言就会跑到 resize 分支上去。 */
+     ② 贴着边会被八方向命中区当成缩放（命中区边=16px），断言就会跑到 resize 分支上去。
+     ③ 【新增】离任何一个磁吸点 < 22px 的点也要跳过：磁吸点**优先于**节点与缩放，
+        落在磁吸点上的"点节点"会变成"从磁吸点拉线"（这条是加了连线功能之后才成立的）。 */
   function pointOn(id) {
     const st = M.state(), s = st.L && st.L.nodes.get(id), v = view2screen();
     if (!s || s.x == null || !v) return null;
@@ -406,7 +408,15 @@ new Promise((resolve) => {
         const bx = v.ox + t.x * v.k, by = v.oy + t.y * v.k, bw = t.w * v.k + 8, bh = t.h * v.k + 8;
         return x >= bx - 8 && x <= bx + bw && y >= by - 8 && y <= by + bh;
       });
-      if (!covered) return { x: Math.round(x), y: Math.round(y) };
+      if (covered) continue;
+      /* 离任何节点的四个磁吸点太近 → 换一个候选点（磁吸点优先于节点/缩放） */
+      const nearMag = [...st.L.nodes.values()].some((t) => t.x == null || t.n.id === undefined ? false : ["n", "e", "s", "w"].some((sd) => {
+        const p = sd === "n" ? { x: t.x + t.w / 2, y: t.y } : sd === "s" ? { x: t.x + t.w / 2, y: t.y + t.h }
+          : sd === "w" ? { x: t.x, y: t.y + t.h / 2 } : { x: t.x + t.w, y: t.y + t.h / 2 };
+        return Math.hypot(x - (v.ox + p.x * v.k), y - (v.oy + p.y * v.k)) < 22;
+      }));
+      if (nearMag) continue;
+      return { x: Math.round(x), y: Math.round(y) };
     }
     return null;
   }
@@ -1586,27 +1596,44 @@ new Promise((resolve) => {
     ok("节点优先于边：按在节点身上不选边，选中的是那个节点",
       B.doc.querySelectorAll("#mmStage .mm-edge.sel").length === 0 && M.state().sel === oneId,
       "sel=" + M.state().sel + " 选中边=" + B.doc.querySelectorAll("#mmStage .mm-edge.sel").length);
-    /* 右键：菜单四项 + 删除，且写成人话 */
+    /* 右键：**浮层菜单**（跟着指针出现，不是弹窗），四项 + 删除，且写成人话 */
     evOn(stage17(), "contextmenu", midP.x, midP.y);
-    const menuHtml = String(B.win.$("mmDlgBody").innerHTML || "");
-    ok("右键线 → 弹出这条线的菜单（四种指向 + 删除这条线）",
+    const menuEl17 = B.win.$("mmEdgeMenu");
+    const menuHtml = String((menuEl17 && menuEl17.innerHTML) || "");
+    ok("右键线 → 弹出**浮层**菜单（不是弹窗：#mmEdgeMenu 可见、#mmDlg 没开）",
+      !!menuEl17 && !menuEl17.classList.contains("hidden") && !B.win.$("mmDlg").open,
+      "有菜单=" + !!menuEl17 + " 隐藏=" + (menuEl17 && menuEl17.classList.contains("hidden")));
+    ok("菜单四项 + 删除这条线都在",
       /data-mm="edir"[^>]*data-dir="none"/.test(menuHtml) && /data-dir="fwd"/.test(menuHtml) && /data-dir="rev"/.test(menuHtml) &&
       /data-dir="both"/.test(menuHtml) && /data-mm="edel"/.test(menuHtml), menuHtml.slice(0, 180));
     ok("菜单写成人话（→ 指向「…」/ ← 指向「…」，当前那一项打勾）",
       /→ 指向「/.test(menuHtml) && /← 指向「/.test(menuHtml) && /✓ /.test(menuHtml));
-    const revBtn17 = B.doc.querySelector('#mmDlgBody [data-dir="rev"]');
+    ok("菜单挂在 #mmBox 里（文档级点击委派的门禁要求）", !!B.win.$("mmBox").querySelector("#mmEdgeMenu"));
+    const revBtn17 = B.doc.querySelector('#mmEdgeMenu [data-dir="rev"]');
     ok("菜单里找得到「← 指向」那一项", !!revBtn17);
-    if (revBtn17) bubble(revBtn17, "click", { target: revBtn17 });
+    evOn(stage17(), "pointerdown", midP.x, midP.y);              // 在画布上按一下 = 收起浮层（点别处关掉）
+    ok("在画布上按下 → 浮层收起", B.win.$("mmEdgeMenu").classList.contains("hidden"));
+    evOn(stage17(), "contextmenu", midP.x, midP.y);              // 再打开一次，继续验指向与删除
+    const revBtn17b = B.doc.querySelector('#mmEdgeMenu [data-dir="rev"]');
+    if (revBtn17b) bubble(revBtn17b, "click", { target: revBtn17b });
     let ed3 = { to: B.doc.querySelectorAll("#mmStage .mm-links path.mm-arrow").filter((x) => x.dataset.end === "to").length,
                 from: B.doc.querySelectorAll("#mmStage .mm-links path.mm-arrow").filter((x) => x.dataset.end === "from").length };
-    ok("点「← 指向」→ 立即重画：箭头改到起点（to=" + ed3.to + " from=" + ed3.from + "）", ed3.to === 0 && ed3.from === 1, JSON.stringify(ed3));
+    ok("点「← 指向」→ 立即重画：箭头改到起点（to=" + ed3.to + " from=" + ed3.from + "），菜单顺手收掉",
+      ed3.to === 0 && ed3.from === 1 && B.win.$("mmEdgeMenu").classList.contains("hidden"), JSON.stringify(ed3));
     const disk3 = JSON.parse(B.localStorage.getItem("mm_map_legacy-map"));
     ok("指向改完已落盘（磁盘上也是 rev）", disk3.edges[0].dir === "rev", JSON.stringify(disk3.edges));
+    /* Esc 与 Delete 键 */
+    evOn(stage17(), "pointerdown", midP.x, midP.y);
+    evOn(stage17(), "pointerup", midP.x, midP.y);
+    const kb = (key) => bubble(B.doc, "keydown", { target: B.doc.body, key, preventDefault() {} });
+    ok("前提：这条线处于选中态", B.doc.querySelectorAll("#mmStage .mm-edge.sel").length === 1);
+    const handle17 = B.win.$("mmEdgeMenu");
     evOn(stage17(), "contextmenu", midP.x, midP.y);
-    const delBtn17 = B.doc.querySelector('#mmDlgBody [data-mm="edel"]');
-    ok("菜单里找得到「删除这条线」", !!delBtn17);
-    if (delBtn17) bubble(delBtn17, "click", { target: delBtn17 });
-    ok("点「删除这条线」→ 内存与磁盘上都没了，画布上也不再有 .mm-edge",
+    kb("Escape");
+    ok("Esc → 收起浮层菜单（不动那条线）",
+      B.win.$("mmEdgeMenu").classList.contains("hidden") && (cur17().edges || []).length === 1);
+    kb("Delete");
+    ok("选中边后按 Delete → 这条线被删（内存/磁盘/DOM 三处都没了）",
       (cur17().edges || []).length === 0 && JSON.parse(B.localStorage.getItem("mm_map_legacy-map")).edges.length === 0 &&
       B.doc.querySelectorAll("#mmStage .mm-edge").length === 0,
       "内存=" + (cur17().edges || []).length + " DOM=" + B.doc.querySelectorAll("#mmStage .mm-edge").length);
@@ -1623,8 +1650,9 @@ new Promise((resolve) => {
   if (nodeEl) {
     const pt = pointOn(target.n.id) || { x: 100, y: 100 };
     // 注意：仿真台的 fire() 会按"当前冒泡到哪个祖先"覆写 e.target，所以 target 必须显式传（真实浏览器里 target 就是按下的那个元素）
+    // 而且 pointerup 要用**现取**的元素：pointerdown 里可能因为 endEdit()/取消选边触发 draw()，把 DOM 重建掉。
     bubble(nodeEl, "pointerdown", { target: nodeEl, clientX: pt.x, clientY: pt.y });
-    bubble(nodeEl, "pointerup", { target: nodeEl, clientX: pt.x, clientY: pt.y });
+    bubble(B.doc.querySelector('.mm-node[data-id="' + target.n.id + '"]') || nodeEl, "pointerup", { target: nodeEl, clientX: pt.x, clientY: pt.y });
     ok("点击后该节点被选中", M.state().sel === target.n.id,
       "sel=" + M.state().sel + " 点=" + JSON.stringify(pt) + " 编辑框=" + !!B.win.$("mmStage").querySelector(".mm-edit"));
     const childBtn = B.doc.querySelector('[data-mm="child"]');

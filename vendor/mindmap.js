@@ -1151,20 +1151,41 @@
       <button type="button" data-mm="delmap" data-id="${id}" class="danger">🗑 删除</button></div>
       <div class="nd-actions"><span class="spacer"></span><button type="button" class="small" data-mm="dclose">取消</button></div></form>`);
   }
-  /* 【独立版·平级】一条边的菜单：四种指向 + 删除。写成"→ 指向「第二章」"这种话，
+  /* 【独立版·平级】一条边的菜单内容：四种指向 + 删除。写成"→ 指向「第二章」"这种话，
      用户不用理解 fwd/rev/none/both；当前那一项打勾。 */
-  function edgeMenu(e) {
+  function edgeMenuHtml(e) {
     const a = findNode(e.from.node), b = findNode(e.to.node);
     const na = a ? a.n.text.split("\n")[0].slice(0, 14) : "?", nb = b ? b.n.text.split("\n")[0].slice(0, 14) : "?";
     const now = e.dir || "fwd";
     const item = (v, label) => `<button type="button" data-mm="edir" data-id="${e.id}" data-dir="${v}">${now === v ? "✓ " : ""}${label}</button>`;
-    dlg(`<form method="dialog"><h3>这条线指向谁</h3><div class="mm-menu">
-      ${item("none", "— 没有箭头")}
-      ${item("fwd", "→ 指向「" + E(nb) + "」")}
-      ${item("rev", "← 指向「" + E(na) + "」")}
-      ${item("both", "↔ 两头都有箭头")}
-      <button type="button" data-mm="edel" data-id="${e.id}" class="danger">🗑 删除这条线</button></div>
-      <div class="nd-actions"><span class="spacer"></span><button type="button" class="small" data-mm="dclose">取消</button></div></form>`);
+    return item("none", "— 没有箭头") + item("fwd", "→ 指向「" + E(nb) + "」") + item("rev", "← 指向「" + E(na) + "」") +
+      item("both", "↔ 两头都有箭头") + `<button type="button" data-mm="edel" data-id="${e.id}" class="danger">🗑 删除这条线</button>`;
+  }
+  /* 浮层菜单：**跟着指针出现**（不是弹窗），点空白/Esc/滚轮就收掉。
+     挂在 #mmBox 里 —— 文档级 click 委派的门禁是 closest("#mmBox, #mmDlg, .mm-head")。 */
+  function hideEdgeMenu() { const m = $("mmEdgeMenu"); if (m) m.classList.add("hidden"); }
+  function showEdgeMenu(e, cx, cy) {
+    const box = $("mmBox"); if (!box) return;
+    let m = $("mmEdgeMenu");
+    if (!m) {                                            // 懒创建：不用改外壳模板，重渲染后会自动补回来
+      m = document.createElement("div"); m.id = "mmEdgeMenu"; m.className = "mm-ctx hidden";
+      box.appendChild(m);
+      /* 不要 stopPropagation：菜单项要靠**文档级 click 委派**（data-mm="edir"/"edel"）才生效。
+         它挂在 #mmBox 里、不在 #mmView 的祖先链上，所以画布的 pointerdown 也看不到它。 */
+    }
+    m.innerHTML = edgeMenuHtml(e);
+    m.classList.remove("hidden");
+    const r = box.getBoundingClientRect(), mw = m.offsetWidth || 190, mh = m.offsetHeight || 180;
+    const x = Math.max(4, Math.min(cx - r.left, (r.width || 0) - mw - 4));
+    const y = Math.max(4, Math.min(cy - r.top, (r.height || 0) - mh - 4));   // 别让菜单跑出可视区
+    m.style.left = x + "px"; m.style.top = y + "px";
+  }
+  /* 选中的那条边（selEdge 可能指向已被删掉的边 → 找不到就返回 null） */
+  const selEdgeObj = () => (cur && Array.isArray(cur.edges) ? cur.edges.find((e) => e.id === selEdge) || null : null);
+  function delSelEdge() {
+    const e = selEdgeObj(); if (!e) return false;
+    change(() => { cur.edges = cur.edges.filter((x) => x !== e); selEdge = null; });
+    return true;
   }
   async function duplicate(id) {    const m = id === (cur && cur.id) ? clone(cur) : lsGet(mapKey(id), null);
     let src = m;
@@ -1353,6 +1374,7 @@
          真实浏览器实测的"第一次点按钮没用、要点第二次"就是这个形态。
          按下记下来 → 松手没怎么动才算一次点击（拖开 = 取消），折叠在这一步完成。 */
       const fb = e.target.closest("[data-mm=fold]");
+      hideEdgeMenu();               // 在画布上按下 = 收起浮层菜单（菜单自己的点击不经过这里）
       foldDown = null;              // 每次按下都从干净状态开始：万一上一次按下没等到 pointerup（指针跑到窗口外），陈旧值不会误折
       /* 【独立版】foldSwallow 也是"上一次手势"的残留：指针路径设了它，而紧随的 click 如果没被委派
          路由到那个按钮（click 的 target 解析成 .mm-node 时 closest("[data-mm]") 是 null，早退），
@@ -1381,8 +1403,7 @@
       }
       /* 【独立版】八方向缩放：命中按屏幕几何算（zoneAt），不再依赖 .mm-rs 元素 */
       if (cur) {
-        const hz = zoneAt(e.clientX, e.clientY), s0 = hz && L && L.nodes.get(hz.id);
-        if (hz && s0) {
+        const hz = zoneAt(e.clientX, e.clientY), s0 = hz && L && L.nodes.get(hz.id);        if (hz && s0) {
           if (sel !== hz.id) select(hz.id);
           pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
           drag = { moved: true, resize: { id: hz.id, dir: hz.dir, w0: s0.w, h0: s0.h, x0: s0.x, y0: s0.y,
@@ -1508,7 +1529,7 @@
       if (!eh) return;
       e.preventDefault();
       selEdge = eh.id; draw();
-      edgeMenu(eh);
+      showEdgeMenu(eh, e.clientX, e.clientY);
     });
     vw.addEventListener("wheel", (e) => {
       e.preventDefault();
@@ -1586,6 +1607,13 @@
     }
     if (t.id === "mmTitleIn" || editing || mode === "outline") return;
     const ctrl = e.ctrlKey || e.metaKey, k = e.key;
+    /* 【独立版·平级】Esc：取消正在拖出的连线 / 收起浮层菜单；Delete/Backspace：删掉选中的那条线。 */
+    if (k === "Escape") {
+      if (link) { link = null; clearLinkPrev(); markLink(null, null); return; }
+      const em = $("mmEdgeMenu");
+      if (em && !em.classList.contains("hidden")) { hideEdgeMenu(); return; }
+    }
+    if ((k === "Delete" || k === "Backspace") && selEdgeObj()) { e.preventDefault(); delSelEdge(); return; }
     if (ctrl && k.toLowerCase() === "z") { e.preventDefault(); e.shiftKey ? redoIt() : undo(); return; }
     if (ctrl && k.toLowerCase() === "y") { e.preventDefault(); redoIt(); return; }
     if (ctrl && k.toLowerCase() === "f") { e.preventDefault(); openFind(); return; }
@@ -1675,12 +1703,12 @@
       case "edir": {                                            // 改这条线的指向（走 change：可撤销、落盘）
         const eg = (cur.edges || []).find((x) => x.id === id);
         if (eg) { const d2 = b.dataset.dir; change(() => { eg.dir = d2; }); selEdge = eg.id; }
-        closeDlg(); break;
+        hideEdgeMenu(); break;
       }
       case "edel": {                                            // 删这条线（一条边一条撤销）
         const eg = (cur.edges || []).find((x) => x.id === id);
         if (eg) change(() => { cur.edges = cur.edges.filter((x) => x !== eg); selEdge = null; });
-        closeDlg(); break;
+        hideEdgeMenu(); break;
       }
       case "fold": { const sw = pendFoldSwallow === id; if (!sw) toggleFold(id); break; }   // 指针路径已折过就跳过
       case "undo": undo(); break;
