@@ -1642,6 +1642,53 @@ new Promise((resolve) => {
     M.open("legacy-map");
   }
 
+  console.log("\nC19. 位置属于每个节点自己：拖父节点，子节点**不动**（平级模型 INV-4）");
+  {
+    /* 只有"父节点有坐标、子节点没有"的图才能看见"父子跟随"：两边都有坐标时 follow 分支直接跳过。
+       做法：先按正常路径打开（播种 → 所有节点都有坐标），再**只挖掉 a1x 那一条**（现实中就是
+       老图部分固化的情况）。这样 a1 停在自己的自然位置上，a1x 的自然格子不会被"让位"逻辑挪动 ——
+       于是"子节点动了"只可能是跟随造成的。
+       注意父节点用 a1 不能用根节点：拖根节点在平级模型里是"平移画布"。 */
+    B.localStorage.setItem("mm_map_legacy-map", JSON.stringify(LEGACY));
+    M.open("legacy-map");
+    const seeded = JSON.parse(B.localStorage.getItem("mm_map_legacy-map"));
+    delete seeded.pos.a1x;
+    B.localStorage.setItem("mm_map_legacy-map", JSON.stringify(seeded));
+    M.open("legacy-map");
+    const st19 = () => M.state();
+    const c0 = st19().L.nodes.get("a1x");
+    const c0x = c0.x, c0y = c0.y, p0 = JSON.parse(JSON.stringify(st19().cur.pos.a1));
+    ok("前提：父节点 a1 有坐标、子节点 a1x 没有（子节点当前摆在后端算出来的位置 " + Math.round(c0x) + "," + Math.round(c0y) + "）",
+      !!st19().cur.pos.a1 && !st19().cur.pos.a1x);
+    const r1s = st19().L.nodes.get("a1"), v19 = view2screen();
+    const from = { x: Math.round(v19.ox + (r1s.x + r1s.w / 2) * v19.k), y: Math.round(v19.oy + (r1s.y + r1s.h / 2) * v19.k) };
+    const move = { x: from.x - 380, y: from.y + 300 };          // 往左下拖远，避免"让位"逻辑把子节点按碰撞挪走
+    const host19 = (id) => B.doc.querySelector('#mmStage .mm-node[data-id="' + id + '"]') || B.win.$("mmStage");
+    bubble(host19("a1"), "pointerdown", { target: host19("a1"), clientX: from.x, clientY: from.y });
+    bubble(host19("a1"), "pointermove", { target: host19("a1"), clientX: move.x, clientY: move.y });
+    bubble(host19("a1"), "pointerup", { target: host19("a1"), clientX: move.x, clientY: move.y });
+    const pAfter = st19().cur.pos.a1, cAfter = st19().L.nodes.get("a1x");
+    ok("前提：父节点真的被拖走了（" + JSON.stringify(p0) + " → " + JSON.stringify(pAfter) + "）",
+      pAfter.x !== p0.x || pAfter.y !== p0.y);
+    /* 跟随会把子节点平移**父节点的整个位移**（红跑实测 Δ=-289,228）；删掉后 x 必须一点不动。
+       y 不参与断言：`nudgeFree`（让位）只往下推、父节点挪开后还会复位，这是另一套机制，不是跟随。 */
+    const dp = { x: pAfter.x - p0.x, y: pAfter.y - p0.y };
+    const dc = { x: cAfter.x - c0x, y: cAfter.y - c0y };
+    ok("拖父节点后子节点**没有被带着走**（子 Δx=" + dc.x.toFixed(0) + "，父 Δx=" + dp.x.toFixed(0) +
+      "；子 Δy=" + dc.y.toFixed(0) + " 只可能来自让位逻辑）",
+      Math.abs(dc.x) < 1 && Math.abs(dc.x - dp.x) > 50,
+      "子 (" + Math.round(c0x) + "," + Math.round(c0y) + ") → (" + Math.round(cAfter.x) + "," + Math.round(cAfter.y) + ")");
+    /* 撤销要覆盖这一段：父节点回原值、子节点本来没动 */
+    const ub19 = B.doc.querySelector('[data-mm="undo"]');
+    if (ub19) bubble(ub19, "click", { target: ub19 });
+    const cUndo = st19().L.nodes.get("a1x");
+    ok("撤销后：父节点回原值（" + JSON.stringify(st19().cur.pos.a1) + "）、子节点仍在原位",
+      JSON.stringify(st19().cur.pos.a1) === JSON.stringify(p0) && Math.abs(cUndo.x - c0x) < 1 && Math.abs(cUndo.y - c0y) < 1,
+      "子节点 Δ=" + (cUndo.x - c0x).toFixed(1) + "," + (cUndo.y - c0y).toFixed(1));
+    B.localStorage.setItem("mm_map_legacy-map", JSON.stringify(LEGACY));
+    M.open("legacy-map");
+  }
+
   console.log("\nD. 新建子节点 → 不盖住父节点");
   const st = M.state();
   const target = [...st.L.nodes.values()].find((s) => s.depth === 1);

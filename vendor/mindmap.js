@@ -445,8 +445,6 @@
       placed.push({ x: s.x, y: s.y, w: s.w, h: s.h });
     }
   }
-  const deltaOf = (d, id) => (d[id] || (d[id] = { dx: 0, dy: 0 }));
-
   /* 【独立版】节点尺寸：与坐标同层、同生命周期 —— 存在导图层 cur.size = { 节点id: {w,h} }，
      绝不写进节点字段（安卓 normalizeNode() 是白名单式过滤，会静默丢掉）。
      不变量：
@@ -475,41 +473,17 @@
     const lay = layoutAuto(), pos = curPos(), fixed = new Set();
     if (sizeDirty) { sizeDirty = false; try { storeLocal(cur); } catch (e) {} }
     for (const [id, s] of lay.nodes) if (validPos(pos[id])) fixed.add(id);
-    // 1) 有坐标的：直接用坐标，并记下相对旧布局的位移
-    const delta = {};
+    /* 【独立版·平级】有坐标的节点：坐标就是它的位置 —— **位置属于每个节点自己**（INV-4）。
+       这里原先还有一段"父节点被拖走时，让它的子节点跟着挪同样的位移"（树语义残留）：
+       平级模型下父子只是 children 的迁移来源、不是布局关系，跟随已删（Chief 裁定）。
+       未固化的节点仍由 layoutAuto 摆、再由 nudgeFree 让开已摆好的（见下两步）。 */
     for (const [id, s] of lay.nodes) {
       if (!fixed.has(id)) continue;
-      const p = pos[id], ds = deltaOf(delta, id);
-      ds.dx = p.x - s.x; ds.dy = p.y - s.y;
+      const p = pos[id];
       s.x = p.x; s.y = p.y;
     }
-    // 2) 父节点有坐标的子节点：跟着父节点一起挪（父节点没动就一点不动）
-    const kidsOf = {};
-    for (const [id, s] of lay.nodes) {
-      const pid = s.parent;
-      if (!pid || !fixed.has(pid)) continue;
-      (kidsOf[pid] || (kidsOf[pid] = [])).push([id, s]);
-    }
-    (function move(depth) {
-      if (depth > 200) return;
-      let moved = false;
-      for (const pid of Object.keys(kidsOf)) {
-        const ps = lay.nodes.get(pid);
-        if (ps.done) continue;
-        ps.done = true; moved = true;
-        const pd = deltaOf(delta, pid);
-        for (const [id, s] of kidsOf[pid]) {
-          if (fixed.has(id)) continue;
-          const ds = deltaOf(delta, id);
-          ds.dx = pd.dx; ds.dy = pd.dy;
-          s.x += ds.dx; s.y += ds.dy;
-        }
-      }
-      if (moved) move(depth + 1);
-    })(0);
-    // 3) 没有坐标的节点：让开已经摆好的
+    // 没有坐标的节点：让开已经摆好的
     nudgeFree(lay.nodes, pos);
-    // 4) 重新算外框
     let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
     for (const s of lay.nodes.values()) { if (s.x == null) continue; x0 = Math.min(x0, s.x); y0 = Math.min(y0, s.y); x1 = Math.max(x1, s.x + s.w); y1 = Math.max(y1, s.y + s.h); }
     lay.bounds = { x0, y0, x1, y1 };
