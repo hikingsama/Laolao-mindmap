@@ -838,9 +838,12 @@ new Promise((resolve) => {
       ok("（源码形状）" + nm + "：不存在 fn 外的直接 curPos()[…] = 写入",
         !!body && !/curPos\(\)\[[^\]]*\]\s*=/.test(body));
     }
-    ok("（源码形状）要清理的导图层表清单是常量 LAYER_TABLES = ['pos','size']，两个清单各只有一处定义（加表只改 vendor 那两行）",
+    ok("（源码形状）两个清单各只有一处定义，且**各喂各的函数**：dropLayer 只碰 LAYER_MAPS、dropEdges 只碰 LAYER_LISTS",
       /const LAYER_MAPS = \["pos", "size", "fold"\];/.test(src9) && /const LAYER_LISTS = \["edges"\];/.test(src9) && /dropLayer\(kill/.test(fnSrc("del")) &&
-      ["dropLayer", "pruneLayer", "applyLayer"].every((f) => /for \(const t of LAYER_(MAPS|LISTS)\)/.test(fnSrc(f))));
+      /for \(const t of LAYER_MAPS\)/.test(fnSrc("dropLayer")) && !/LAYER_LISTS/.test(fnSrc("dropLayer")) &&
+      /for \(const t of LAYER_LISTS\)/.test(fnSrc("dropEdges")) && !/LAYER_MAPS/.test(fnSrc("dropEdges")) &&
+      /dropEdges\(kill\)/.test(fnSrc("del")) &&
+      /for \(const t of LAYER_(MAPS|LISTS)\)/.test(fnSrc("pruneLayer")) && /for \(const t of LAYER_(MAPS|LISTS)\)/.test(fnSrc("applyLayer")));
     /* 常驻反向对照（每次跑自测台都重验，不是改文件再改回）：往两个清单各塞一张假表 ——
        ① 孤儿判据必须立刻开始扫它；② 走真实删除链路时清理也必须跟上；
        ③ **列表类绝不当映射删**：条目自己的 id 恰好在树上也要按端点过滤掉。 */

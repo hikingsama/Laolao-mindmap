@@ -274,11 +274,18 @@
   /* 【独立版】**唯一的坐标写入口**：全文只有这里出现 `curPos()[…] = …`。
      调用方必须在 change() 的 fn 内调它（change 先快照再执行 fn，写在 fn 外就撤不回去）。 */
   function putLayerPos(id, p) { if (p) curPos()[id] = p; }
-  // 清掉这些节点 id 在所有导图层表里的条目（del 收集好被删端的 id 后调用）
+  /* 【独立版】删除时按节点 id 清理导图层：**两个清单各喂各的函数，不许互相复用** ——
+     · dropLayer 只对 LAYER_MAPS（按键删）有效
+     · dropEdges 只对 LAYER_LISTS（按**端点**过滤条目）有效
+     为什么必须分开：dropLayer 天生是 `delete map[节点id]` 的语义；列表条目另有自己的 id，
+     让它"顺手"处理列表，等于把两种语义塞进一个函数名 —— 迟早有人拿节点 id 去删边。 */
   function dropLayer(ids) {
     const set = ids instanceof Set ? ids : new Set(ids);
     for (const t of LAYER_MAPS) { const d = cur[t]; if (!d) continue; for (const id of set) delete d[id]; }
-    for (const t of LAYER_LISTS) {                       // 列表类：按端点过滤条目（不是按键删！）
+  }
+  function dropEdges(ids) {
+    const set = ids instanceof Set ? ids : new Set(ids);
+    for (const t of LAYER_LISTS) {
       const a = cur[t]; if (!Array.isArray(a)) continue;
       cur[t] = a.filter((e) => !(e && ((e.from && set.has(e.from.node)) || (e.to && set.has(e.to.node)))));
     }
@@ -597,7 +604,7 @@
     walk(r.n, (n) => kill.push(n.id));
     change(() => {
       r.p.children.splice(i, 1);
-      dropLayer(kill);
+      dropLayer(kill); dropEdges(kill);   // 两个清单各喂各的函数
     });
     select(nx.id, true);
   }
