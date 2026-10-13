@@ -1072,7 +1072,12 @@
       const nd = e.target.closest(".mm-node");
       if (nd) { const id = nd.dataset.id; if (id) { select(id); startEdit(id); } return; }
       if (!cur) return;
-      const p = local(e), k = { id: nid(), text: "分支主题", children: [] }, m = estSize("分支主题", 1);
+      /* 【独立版】盒子必须用 measure() 量出来，不能用 estSize() 的文字估算：
+         estSize("分支主题",1) 给 100×38，实际量出来是 96×40 —— 差 (Δw/2, Δh/2) 就是"中心没落在鼠标点上"的偏差
+         （浏览器实测 dx=-2）。这里和布局用的是同一个 measure()，尺寸完全一致，中心就精确落在鼠标点。
+         坐标换算的基准是 **#mmView 的 rect**（不是 #mmBox）：view.x/view.y 就是相对 #mmView 的，
+         两者之间隔着工具条（实测 47px），基准取错就会整块偏移工具条的高度。 */
+      const p = local(e), k = { id: nid(), text: "分支主题", children: [] }, m = measure(k, 1);
       giveBirth(k, null, { x: Math.round(p.x - m.w / 2), y: Math.round(p.y - m.h / 2) });   // 一次 dblclick 只建一个
       change(() => { (cur.root.children ||= []).push(k); });
       sel = k.id; draw(); startEdit(k.id, true); editingNew = k.id;

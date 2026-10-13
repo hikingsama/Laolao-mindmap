@@ -190,10 +190,14 @@ body {
 .mm-fold.s1 { right: 4px; top: 50%; transform: translateY(-50%); }
 .mm-fold.s-1 { left: 4px; top: 50%; transform: translateY(-50%); }
 .mm-fold.s0 { left: 50%; bottom: 4px; transform: translateX(-50%); }
+/* 【独立版】编辑态必须一眼可辨：选中节点自己的描边是 `.mm-node.sel { outline: 2px solid var(--mm-ink) }`，
+   而编辑框原来只多一条**同色** 2px 边框 —— 两件事长得一模一样，用户就以为"双击没进编辑"。
+   现在给编辑框加一圈柔光环 + 抬高阴影，和"只是选中"明确分开（颜色用字面 rgba，不依赖主题变量）。 */
 .mm-edit {
   position: absolute; z-index: 5; resize: none; overflow: hidden;
   border: 2px solid var(--mm-ink); border-radius: 10px; outline: none;
   background: #fff; color: inherit;
+  box-shadow: 0 0 0 4px rgba(79, 99, 232, .22), 0 8px 20px rgba(31, 42, 61, .18);
 }
 
 .mm-zoom {

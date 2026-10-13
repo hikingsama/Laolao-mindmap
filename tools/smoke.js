@@ -102,7 +102,10 @@ class El {
     for (const f of (this._listeners[type] || []).slice()) f.call(this, e);
     return e;
   }
-  focus() {} blur() {} select() {} setSelectionRange() {} click() { bubble(this, "click", {}); }
+  focus() { this._focused = true; } blur() { this._focused = false; }
+  select() { this._sel = "all"; }
+  setSelectionRange(a, b) { this._sel = [a, b]; }
+  click() { bubble(this, "click", {}); }
   cloneNode() {
     // 只支持浅/深拷贝本仿真台用得到的部分（classList / dataset / id / style / 子节点）
     const e = new El(this.tagName, this.id);
@@ -586,9 +589,20 @@ new Promise((resolve) => {
       Object.keys(M.state().cur.pos).length === posN);
     ok("源码里双击节点显式走 select(id) + startEdit(id)（不再依赖 350ms 判定当主路径）",
       /const nd = e\.target\.closest\("\.mm-node"\);\s*if \(nd\) \{ const id = nd\.dataset\.id; if \(id\) \{ select\(id\); startEdit\(id\); \} return; \}/.test(jsSrc));
-    ok("[未覆盖] 「双击节点后 .mm-edit 输入框真的出现」这条断言本轮没做", false,
-      "本轮更正：属性选择器修好后它已经**可以**观测（实测连点后 stage 里 .mm-edit 数=1），" +
-      "把它补成断言属于 Chief 挂起的那批新活；当前用形状断言 + 选中行为 + 不新建 三条替代");
+    /* 进编辑这件事现在是可真观测的了（它曾标"未覆盖"）：startEdit 会把 textarea appendChild 到 #mmStage，
+       仿真台能查到那个元素；focus() / select() / setSelectionRange() 也会被记下来。
+       浏览器实测的另一半（"用户看不出在编辑"）靠 CSS 形状断言盯：编辑框必须有和"选中"不同的可见样式。 */
+    const ed = B.win.$("mmStage").querySelector(".mm-edit");
+    ok("双击节点后 .mm-edit 输入框真的出现（属性选择器修好后可观测）", !!ed, "stage 里 .mm-edit=" + !!ed);
+    ok("编辑框拿到了焦点", !!ed && ed._focused === true, "focused=" + (ed && ed._focused));
+    ok("编辑已有节点时插入符落在**文字末尾**（不是全选 —— 全选态只显示选区、看不见闪烁光标）",
+      !!ed && Array.isArray(ed._sel) && ed._sel[0] === ed._sel[1] && ed._sel[0] === String(ed.value).length,
+      "sel=" + JSON.stringify(ed && ed._sel) + " len=" + (ed && String(ed.value).length));
+    const cssEd = require("fs").readFileSync(require("path").join(__dirname, "..", "css", "mindmap-standalone.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+    const edRule = (cssEd.match(/\.mm-edit\s*\{([^}]*)\}/) || [])[1] || "";
+    const selRule = (cssEd.match(/\.mm-node\.sel\s*\{([^}]*)\}/) || [])[1] || "";
+    ok("CSS 形状：编辑态有和「选中」不同的可见样式（.mm-edit 有光环；将来若给 .mm-node.sel 也加阴影，这条要改成别的区分方式）",
+      /box-shadow\s*:/.test(edRule) && !/box-shadow\s*:/.test(selRule), "edit=" + edRule.trim().slice(0, 90));
     // 诊断（不是断言、不计入通过数）：遗留的 350ms lastTap 判定会不会进编辑
     M.open("legacy-map");                                   // 重开换了一批 DOM 元素，先清掉旧舞台
     B.win.$("mmStage").appendChild(fx);                     // 夹具重新挂到新舞台上
@@ -601,12 +615,15 @@ new Promise((resolve) => {
       B.win.$("mmStage").querySelectorAll(".mm-edit").length + "（遗留 350ms 判定确实会进编辑；未做成断言）");
 
     M.open("legacy-map");
+    /* 重开之后 #mmView 是**新元素**、监听器挂在新元素上：必须用它派发。
+       往旧元素（重开前那份）派发虽然也能打到旧闭包，但它用的是旧元素的 rect —— 会把"基准取错元素"这类问题盖掉。 */
+    const vwL = B.win.$("mmView");
     const posBefore = Object.keys(M.state().cur.pos).length, rootsBefore = M.state().cur.root.children.length;
     const snap0 = Object.assign({}, M.state().cur.pos);
-    bubble(vwD, "dblclick", { target: vwD, clientX: 400, clientY: 300 });
+    bubble(vwL, "dblclick", { target: vwL, clientX: 400, clientY: 300 });
     const stA = M.state(), snapA = Object.assign({}, stA.cur.pos);
     const rootsA = stA.cur.root.children.length;          // 立刻取数：state().cur 是活引用，留到后面读会被下一次点击改掉
-    bubble(vwD, "dblclick", { target: vwD, clientX: 500, clientY: 380 });
+    bubble(vwL, "dblclick", { target: vwL, clientX: 500, clientY: 380 });
     const stB = M.state(), snapB = Object.assign({}, stB.cur.pos);
     const rootsB = stB.cur.root.children.length;
     const idA = Object.keys(snapA).find((k) => !snap0[k]), idB = Object.keys(snapB).find((k) => !snapA[k]);
@@ -622,6 +639,32 @@ new Promise((resolve) => {
       const ratio = dy === 0 ? NaN : dx / dy, want = 100 / 80;   // 两次点击位移 100,80；同一个 k 约掉，比值与缩放无关
       ok("新节点位置跟着鼠标走（两次点击位移比 ≈ " + want.toFixed(2) + "，实测 " + ratio.toFixed(2) + "）",
         Math.abs(ratio - want) < 0.15, "dx=" + dx + " dy=" + dy);
+    }
+    /* 绝对对齐断言：位移比只能证明"方向对"，证明不了"中心真的落在鼠标点"。
+       这里把 #mmView 的 rect 顶边改成和 #mmBox 不同的值（真实页面中间隔着 47px 工具条），
+       于是"换算基准取错元素"（用 #mmBox 的 rect）会让 y 整块差一个工具条高度 —— 这条断言抓的就是它。
+       期望值由 #mmStage 的 transform（applyView 写的 translate/scale）独立反解，不复用 local() 的内部。 */
+    {
+      const vwA = vwL;
+      const savedRect = vwA.getBoundingClientRect;
+      vwA.getBoundingClientRect = () => ({ left: 0, top: 98, width: 1200, height: 700, right: 1200, bottom: 798 });
+      const cx = 640, cy = 500;
+      const snapC = Object.assign({}, M.state().cur.pos);
+      bubble(vwA, "dblclick", { target: vwA, clientX: cx, clientY: cy });
+      const stC = M.state(), idC = Object.keys(stC.cur.pos).find((q) => !snapC[q]), sC = stC.L.nodes.get(idC);
+      const v = view2screen();
+      const wantX = v ? (cx - v.ox) / v.k : NaN, wantY = v ? (cy - v.oy) / v.k : NaN;
+      const gx = sC ? sC.x + sC.w / 2 : NaN, gy = sC ? sC.y + sC.h / 2 : NaN;
+      ok("双击空白：新节点**中心**落在鼠标点 ±2px（基准 = #mmView 的 rect，不是 #mmBox）",
+        !!sC && Math.abs(gx - wantX) <= 2 && Math.abs(gy - wantY) <= 2,
+        "鼠标点(舞台)=" + wantX.toFixed(1) + "," + wantY.toFixed(1) + " 新节点中心=" + gx.toFixed(1) + "," + gy.toFixed(1) +
+        " 偏差=" + (gx - wantX).toFixed(1) + "," + (gy - wantY).toFixed(1) + "（#mmView top=98 / #mmBox top=52）");
+      const tas = B.win.$("mmStage").querySelectorAll(".mm-edit");
+      const lastTa = tas[tas.length - 1];
+      ok("新建节点进编辑时是**全选**（打字即替换占位文字 —— 刻意的默认选择，与「已有节点用插入符」不同）",
+        !!lastTa && lastTa._sel === "all" && !!lastTa._focused,
+        "sel=" + JSON.stringify(lastTa && lastTa._sel) + " focused=" + (lastTa && lastTa._focused) + " value=" + (lastTa && lastTa.value));
+      vwA.getBoundingClientRect = savedRect;
     }
   }
 
