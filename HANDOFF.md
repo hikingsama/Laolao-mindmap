@@ -62,7 +62,13 @@
   | `addChild` / `addSibling` / `addParent` | 299 / 305 / 311 | **451 / 458 / 466** |
   | `fill()` | 51 | **66** |
 
-  **改代码一律用"实测行号 + 搜索锚点"，不许照抄基线行号。**
+  **改代码一律用"实测行号 + 搜索锚点"，不许照抄基线行号
+  本表在 **`vendor/mindmap.js` blob `012888a4…`（1145 行）** 上实测（2026-10-13）。
+  **换过代码后行号一定会再移，重测办法**：`git rev-parse HEAD:vendor/mindmap.js` 记下 blob，
+  再按这几个锚点搜（锚点不会漂）：`nodes.set(`、`s.side = dir; s.x =`、`s.side = 0; s.x =`、
+  `rs.side = 0; rs.x =`、`function layoutAuto()`、`function endNodeDrag(`、`function addChild(`。
+  ⚠️ 提示bot 复核时给的 185/197/204/218/178/917/438… 量的是 `feat/pos-coordinates@92bac22`，
+  **不是本表这份 blob**，不要混用。。**
   这份文档自己就违反过这条纪律：上一版直接把基线行号写成"完全适用"，而当时 `vendor/mindmap.js` 早已改过。
   另：提问bot 复核时给出的 185/197/204/218/191… 那组数字量的是 `feat/pos-coordinates@92bac22`（**早于**云同步停用那批改动），
   与当前 HEAD 有系统性差异 —— 这就是为什么行号只认"当场实测"。
