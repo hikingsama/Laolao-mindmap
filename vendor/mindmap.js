@@ -590,7 +590,7 @@
     const r = findNode(id || sel); if (!r || !r.p) return;
     const i = r.p.children.indexOf(r.n), nx = r.p.children[i + 1] || r.p.children[i - 1] || r.p;
     /* 【独立版】删除是**整棵子树**：按被删子树收集 id，再由 dropLayer 清掉该 id 在**所有导图层表**里的条目
-       （清单 = LAYER_TABLES；森林加 cur.origin 时只改那一处，这里不动）。
+       （清单 = LAYER_MAPS / LAYER_LISTS，各只有一处定义）。
        不清的后果：① 永久残留在导图层，随每次 change() → storeLocal 反复写回 localStorage；
        ② 残留 id 会污染 spawnPos 的判重（ids = Object.keys(pos)，那个 30×26 检查会误让位）。 */
     const kill = [];
