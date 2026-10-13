@@ -129,6 +129,35 @@ body {
 .mm-stage { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform; }
 .mm-stage.anim { transition: transform .24s ease; }
 .mm-links { position: absolute; overflow: visible; pointer-events: none; }
+/* 【独立版·平级】边的三档视觉（线本身仍是 2px；命中带由 JS 按屏幕 10px 算，与这些样式无关）：
+   常态 2px 灰 → hover 3px 蓝 → 选中 4px 蓝 + 光晕。色值/线宽由 draw() 与 markEdgeHot() 写成属性，
+   这里只补 PNG 预览与不依赖属性时的兜底，以及"选中要有光晕"这种样式层的东西。 */
+.mm-edge.sel { filter: drop-shadow(0 0 3px rgba(47, 124, 246, .65)); }
+.mm-edge.hot { filter: drop-shadow(0 0 2px rgba(47, 124, 246, .45)); }
+/* 【独立版·平级】拖动磁吸点时的虚线预览：与 .mm-links 同一坐标空间，压在连线之上、节点之下。 */
+.mm-linkprev { position: absolute; overflow: visible; pointer-events: none; }
+/* 【独立版·平级】四个磁吸点：常态隐藏、靠近淡入、屏幕恒定（直径由 JS 按 1/view.k 写）。
+   单独一层覆盖在节点之上 —— .mm-node 是 overflow:hidden，骑在边线上的圆点会被裁掉一半。
+   层是 pointer-events:none：命中一律在 magnetAt() 里按几何算，不让元素抢事件。 */
+.mm-magwrap { position: absolute; pointer-events: none; opacity: 0; transition: opacity .12s ease; }
+.mm-magwrap.mag-on, .mm-magwrap.linking { opacity: 1; }
+.mm-mag { position: absolute; border-radius: 999px; background: #2f7cf6; border: 2px solid #fff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, .28); transform: translate(-50%, -50%); }
+.mm-mag.n { left: 50%; top: 0; }
+.mm-mag.e { left: 100%; top: 50%; }
+.mm-mag.s { left: 50%; top: 100%; }
+.mm-mag.w { left: 0; top: 50%; }
+.mm-magwrap.hot .mm-mag { background: #12b76a; box-shadow: 0 0 0 3px rgba(18, 183, 106, .35); }
+/* 【独立版·平级】边的右键菜单：跟着指针出现的浮层（不是弹窗）。挂在 #mmBox 里，坐标相对它算。 */
+.mm-ctx { position: absolute; z-index: 30; min-width: 168px; padding: 5px; display: flex; flex-direction: column;
+  background: var(--mm-card, #fff); border: 1px solid rgba(31, 42, 61, .14); border-radius: 10px;
+  box-shadow: 0 10px 28px rgba(31, 42, 61, .18); }
+.mm-ctx.hidden { display: none; }
+.mm-ctx button { display: block; width: 100%; text-align: left; padding: 7px 9px; border: 0; border-radius: 7px;
+  background: transparent; color: var(--mm-ink, #1f2a3d); font: inherit; font-size: 13px; cursor: pointer; white-space: nowrap; }
+.mm-ctx button:hover { background: rgba(47, 124, 246, .1); }
+.mm-ctx button.danger { color: #d64545; }
+.mo-sep { padding: 6px 8px; font-size: 12px; color: #8b97a6; text-align: center; }
 
 .mm-node {
   position: absolute; overflow: hidden;
@@ -137,15 +166,31 @@ body {
   cursor: grab; user-select: none;
 }
 .mm-node.sel { outline: 2px solid var(--mm-ink); outline-offset: 1px; }
+/* 【独立版】八方向方向光标：必须写成 .mm-node.rz-x（(0,2,0)）才压得过 .mm-node{cursor:grab}（(0,1,0)）。
+   写在 #mmView 上的行内 style 是**赢不了**的 —— 落在节点盒内只会显示抓手。 */
+.mm-node.rz-n, .mm-node.rz-s { cursor: ns-resize; }
+.mm-node.rz-e, .mm-node.rz-w { cursor: ew-resize; }
+.mm-node.rz-nw, .mm-node.rz-se { cursor: nwse-resize; }
+.mm-node.rz-ne, .mm-node.rz-sw { cursor: nesw-resize; }
 .mm-node.hit { outline: 2px dashed #f2a20c; outline-offset: 1px; }
+/* 【独立版】缩放柄：只在选中的节点上出现，拖动改导图层 cur.size（按住 Shift 锁比例）。
+   放在节点内侧右下角，因为 .mm-node 是 overflow:hidden，放到外侧会被裁掉。 */
+.mm-rs { position: absolute; right: 0; bottom: 0; width: 15px; height: 15px; background: var(--mm-ink);
+  border-top-left-radius: 6px; cursor: nwse-resize; touch-action: none; opacity: .85;
+  /* 必须高于 .mm-edit 的 z-index:5：否则手柄被 .mm-edit 压住、真实鼠标点不到
+     （实测：手柄中心点的 elementFromPoint 命中的是 .mm-edit）。
+     选 z-index 而不是给 .mm-edit 加 pointer-events:none —— 后者要么得引入"编辑态"状态类，
+     要么会在进入编辑时挡掉输入焦点，副作用面更大；这里只解决"谁在上"。 */
+  z-index: 6; }
+.mm-rs:hover { opacity: 1; }
+.mm-rs::after { content: ""; position: absolute; right: 3px; bottom: 3px; width: 5px; height: 5px;
+  border-right: 2px solid #fff; border-bottom: 2px solid #fff; }
 .mm-node.b .mm-t { font-weight: 700; }
 .mm-node.d0 { border-radius: 14px; box-shadow: var(--mm-shadow); }
 .mm-node.dragging { opacity: .35; }
 .mm-node.ghost { opacity: .8; pointer-events: none; box-shadow: 0 10px 28px rgba(31, 42, 61, .22); }
 .mm-node.ghost.sel { outline: none; }
-.mm-node.drop-in { outline: 2px solid #2bb98a; outline-offset: 2px; }
-.mm-node.drop-before { box-shadow: 0 -3px 0 0 #2bb98a; }
-.mm-node.drop-after { box-shadow: 0 3px 0 0 #2bb98a; }
+/* 旧的"拖到节点上换父子"反馈类（drop-in / drop-before / drop-after）已随那套落点模型删除：落点只认磁吸点。 */
 .mm-t { display: block; }
 .mm-ic { position: absolute; right: 6px; bottom: 4px; font-size: 11px; font-weight: 400; cursor: pointer; }
 .mm-prog { position: absolute; right: 6px; top: 6px; width: 14px; height: 14px; }
@@ -154,13 +199,32 @@ body {
   border: 1px solid var(--c, var(--mm-ink)); border-radius: 50%;
   background: #fff; color: var(--c, var(--mm-ink)); font-size: 11px; line-height: 1;
 }
-.mm-fold.s1 { right: -10px; top: 50%; transform: translateY(-50%); }
-.mm-fold.s-1 { left: -10px; top: 50%; transform: translateY(-50%); }
-.mm-fold.s0 { left: 50%; bottom: -10px; transform: translateX(-50%); }
+/* 【独立版】收起按钮：常态完全隐藏，鼠标进入节点才完整显示（实心，不要半透明）。
+   位置改到**节点内侧**（原来 right:-10px 会被 .mm-node 的 overflow:hidden 裁掉一半）。
+   视觉开关用透明度，不用 display/visibility —— 否则没有过渡；"能不能点"见下面两条。 */
+.mm-fold { opacity: 0; z-index: 7; transition: opacity .12s; }
+.mm-node:hover .mm-fold, .mm-node.sel .mm-fold { opacity: 1; }
+/* 【独立版】"能不能点"不再由 :hover 决定。
+   原来 base 是 pointer-events:none、要等 :hover 才放开；真实浏览器实测：**第一次点按钮没用、要点第二次**
+   （第二次生效是因为选中态的 .sel 也放开了）—— 判定"谁被按下"的命中测试不保证已经吃到 hover 放开的状态。
+   现在常态就参与命中（视觉仍靠 opacity 隐藏，鼠标一进节点就实心显示），
+   触屏维持原样（不可见即不可点），触屏的握把方案另定。 */
+@media (hover: none) { .mm-fold { pointer-events: none; } }
+/* 光标：.mm-node{cursor:grab} 是 (0,1,0)，这里 (0,2,0) 更具体，能盖掉抓手 */
+.mm-node .mm-fold { cursor: pointer; }
+/* 命中区按屏幕 ≥24px 放宽：视觉仍是小圆点，靠透明外扩把可点区域撑到 24px */
+.mm-fold::after { content: ""; position: absolute; inset: -4px; }
+.mm-fold.s1 { right: 4px; top: 50%; transform: translateY(-50%); }
+.mm-fold.s-1 { left: 4px; top: 50%; transform: translateY(-50%); }
+.mm-fold.s0 { left: 50%; bottom: 4px; transform: translateX(-50%); }
+/* 【独立版】编辑态必须一眼可辨：选中节点自己的描边是 `.mm-node.sel { outline: 2px solid var(--mm-ink) }`，
+   而编辑框原来只多一条**同色** 2px 边框 —— 两件事长得一模一样，用户就以为"双击没进编辑"。
+   现在给编辑框加一圈柔光环 + 抬高阴影，和"只是选中"明确分开（颜色用字面 rgba，不依赖主题变量）。 */
 .mm-edit {
   position: absolute; z-index: 5; resize: none; overflow: hidden;
   border: 2px solid var(--mm-ink); border-radius: 10px; outline: none;
   background: #fff; color: inherit;
+  box-shadow: 0 0 0 4px rgba(79, 99, 232, .22), 0 8px 20px rgba(31, 42, 61, .18);
 }
 
 .mm-zoom {
