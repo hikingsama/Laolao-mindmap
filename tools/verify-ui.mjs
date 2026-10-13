@@ -120,7 +120,7 @@ const SCAN = `(() => {
   }
   for (const t of maps) for (const id of Object.keys(m[t] || {})) if (!live.has(id)) bad.push(t + ":" + id);
   for (const t of lists) for (const e of (Array.isArray(m[t]) ? m[t] : [])) { if (!e || !e.from || !e.to || !live.has(e.from.node) || !live.has(e.to.node)) bad.push(t + ":" + ((e && e.id) || "?")); }
-  let tree = 0; (function w(n) { tree++; (n.children || []).forEach(w); })(m.root);
+  let tree = 0; for (const t of trees) (function w(n) { tree++; (n.children || []).forEach(w); })(t);
   return JSON.stringify({ orphans: bad, tree, pos: Object.keys(m.pos || {}).length, size: Object.keys(m.size || {}).length, sel: st.sel });
 })()`;
 
@@ -198,12 +198,17 @@ const main = async () => {
       console.log("    收起按钮：悬停后 opacity=" + st1.opacity + " pointer-events=" + st1.pe + " · 点之前该节点被选中吗=" + st1.selThis);
       await clickAt(btn.x, btn.y);
       await sleep(400);
-      const folded = JSON.parse(await ev(`(() => { const st = window.Mindmap.state(); const f = (function w(n) { if (n.id === "${foldT.id}") return n; for (const c of n.children || []) { const r = w(c); if (r) return r; } return null; })(st.cur.root); return JSON.stringify({ fold: !!(f && f.fold), dom: document.querySelectorAll('#mmStage .mm-node').length, selThis: st.sel === "${foldT.id}" }); })()`));
+      const folded = JSON.parse(await ev(`(() => { const st = window.Mindmap.state(), m = st.cur;
+  const trees = Array.isArray(m.nodes) ? m.nodes : (m.root ? [m.root] : []);
+  const find = (id) => { for (const t of trees) { const q = (function w(n) { if (n.id === id) return n; for (const c of n.children || []) { const r = w(c); if (r) return r; } return null; })(t); if (q) return q; } return null; };
+  /* 折叠状态在**导图层** cur.fold（节点字段里没有 fold），所以这里读 m.fold 而不是节点上的 f.fold。 */
+  return JSON.stringify({ fold: !!(m.fold && m.fold["${foldT.id}"]), node: !!find("${foldT.id}"), dom: document.querySelectorAll('#mmStage .mm-node').length, selThis: st.sel === "${foldT.id}" }); })()`));
       check("收起按钮：**第 1 次点**就折叠（点之前该节点未被选中：" + !st1.selThis + "）", folded.fold === true, JSON.stringify(folded));
       check("折叠后后代不再画进 DOM（" + domBefore + " → " + folded.dom + "）", folded.dom < domBefore);
       await clickAt(btn.x, btn.y);
       await sleep(400);
-      const unfolded = JSON.parse(await ev(`(() => { const st = window.Mindmap.state(); const f = (function w(n) { if (n.id === "${foldT.id}") return n; for (const c of n.children || []) { const r = w(c); if (r) return r; } return null; })(st.cur.root); return JSON.stringify({ fold: !!(f && f.fold), dom: document.querySelectorAll('#mmStage .mm-node').length }); })()`));
+      const unfolded = JSON.parse(await ev(`(() => { const st = window.Mindmap.state(), m = st.cur;
+  return JSON.stringify({ fold: !!(m.fold && m.fold["${foldT.id}"]), dom: document.querySelectorAll('#mmStage .mm-node').length }); })()`));
       check("第 2 次点展开（一次点击一个动作，不是「按两下才动」）", unfolded.fold === false, JSON.stringify(unfolded));
     }
   }
