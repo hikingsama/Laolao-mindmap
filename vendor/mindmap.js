@@ -999,11 +999,15 @@
     const py = g ? Math.round(parseFloat(g.style.top) || 0) : null;
     const tg = d.target;
     const src0 = findNode(d.id);
-    if (px != null && py != null && src0) curPos()[d.id] = { x: px, y: py };
-    if (!tg) { if (px != null) { storeLocal(cur); scheduleCloud(); } draw(); return; }
+    /* 【独立版】坐标写入必须发生在 change() 的 fn 内部：
+       change() 会先快照当前 cur，再执行 fn —— 先写坐标再进 change 的话，快照里已经含新坐标，撤销就回不去。 */
+    const putPos = () => { if (px != null && py != null) curPos()[d.id] = { x: px, y: py }; };
+    // 拖到空白：只落坐标、不改父子关系。走 change() 才会进撤销栈（并负责 storeLocal / draw）
+    if (!tg) { if (px != null) change(putPos); else draw(); return; }
     const src = src0, dst = findNode(tg.id);
-    if (!src || !dst || !src.p) { if (px != null) { storeLocal(cur); scheduleCloud(); } draw(); return; }
+    if (!src || !dst || !src.p) { if (px != null) change(putPos); else draw(); return; }
     change(() => {
+      putPos();
       src.p.children.splice(src.p.children.indexOf(src.n), 1);
       if (tg.where === "in") { dst.n.fold = false; (dst.n.children ||= []).push(src.n); }
       else { const a = dst.p.children, i = a.indexOf(dst.n); a.splice(tg.where === "before" ? i : i + 1, 0, src.n); }

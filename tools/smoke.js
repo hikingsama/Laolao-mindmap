@@ -103,6 +103,16 @@ class El {
     return e;
   }
   focus() {} blur() {} select() {} setSelectionRange() {} click() { bubble(this, "click", {}); }
+  cloneNode() {
+    // 只支持浅/深拷贝本仿真台用得到的部分（classList / dataset / id / style / 子节点）
+    const e = new El(this.tagName, this.id);
+    e.doc = this.doc;
+    e.className = this.className;
+    Object.assign(e.dataset, this.dataset);
+    Object.assign(e.style, this.style);
+    for (const c of (this.children || [])) { const k = c.cloneNode ? c.cloneNode(true) : null; if (k) { k.parentNode = e; e.children.push(k); } }
+    return e;
+  }
   setPointerCapture() {} releasePointerCapture() {}
   closest(sel) { let n = this; while (n) { if (!sel || sel === "*" || matches(n, sel)) return n; n = n.parentNode; } return null; }
   querySelector(sel) { for (const c of allDesc(this)) if (matches(c, sel)) return c; return null; }
@@ -122,6 +132,19 @@ function allDesc(el) {
 function matches(el, sel) {
   return String(sel).split(",").map((s) => s.trim()).filter(Boolean).some((one) => {
     let m;
+    // 后代选择器（选择器里有空格）：最右一段匹配元素本身，其余逐级向上在祖先里找
+    const chain = one.split(/\s+/).filter(Boolean);
+    if (chain.length > 1) {
+      if (!matches(el, chain[chain.length - 1])) return false;
+      let n = el.parentNode;
+      for (let i = chain.length - 2; i >= 0; i--) {
+        let p = n;
+        while (p && !matches(p, chain[i])) p = p.parentNode;
+        if (!p) return false;
+        n = p.parentNode;
+      }
+      return true;
+    }
     if ((m = one.match(/^\.([\w-]+)$/))) return el.classList.contains(m[1]);
     if ((m = one.match(/^#([\w-]+)$/))) return el.id === m[1];
     if ((m = one.match(/^\[([\w-]+)(?:=["']?([^"'\]]+)["']?)?\]$/))) return m[2] === undefined ? el.dataset[m[1]] != null : String(el.dataset[m[1]]) === m[2];
@@ -364,6 +387,36 @@ new Promise((resolve) => {
   ok("[未覆盖] 缩放柄的鼠标交互（按下/拖动/松手）要靠真实浏览器验 —— 仿真台没有真实布局，元素命中不可信", false,
     "数据层已验证：cur.size 生成、clamp 边界、落盘、二次打开不重算");
   M.open("legacy-map");   // 复位（把刚才被改的两条尺寸重新固化回合法值）
+
+  console.log("\nB2. 拖动落点 → 进撤销栈 → 撤销回到拖动前的坐标");
+  {
+    const stB = M.state();
+    const vwB = B.win.$("mmView");
+    const sNode = [...stB.L.nodes.values()].find((s) => s.depth === 1 && s.n.id !== stB.cur.root.id);
+    // 夹具挂到 **document 查得到**的那个 #mmStage 上：startNodeDrag 用的是 document.querySelector，
+    // 挂到别的实例上它查不到，手势就驱动不起来（这是上一版假通过的根因）
+    const stageEl = B.doc.querySelector("#mmStage");
+    let elB = null;
+    if (stageEl && sNode) {
+      elB = B.doc.createElement("div");
+      elB.className = "mm-node d1";
+      elB.dataset.id = sNode.n.id;
+      stageEl.appendChild(elB);
+    }
+    const found = sNode && !!B.doc.querySelector('#mmStage .mm-node[data-id="' + sNode.n.id + '"]');
+    ok("仿真台里能找到 startNodeDrag 要查的那个元素（驱动手势的前提）", !!found,
+      "stage=" + !!stageEl + " fixture=" + !!elB);
+    // 源码形状断言：这条能真正挡住"把撤销修复回退掉"。仿真台的元素模型（_flat/extraFlat 每次返回新副本）
+    // 让节点元素从 document 里查不到，所以手势的端到端行为在仿真台里驱动不了 —— 如实标"未覆盖"，不报假通过。
+    const src = require("fs").readFileSync(require("path").join(__dirname, "..", "vendor", "mindmap.js"), "utf8");
+    const fn = src.slice(src.indexOf("function endNodeDrag("), src.indexOf("function endNodeDrag(") + 2000);
+    ok("endNodeDrag 里拖到空白那条走 change()（进撤销栈），且坐标写入在 change 的 fn 内部",
+      /if \(!tg\) \{ if \(px != null\) change\(putPos\); else draw\(\); return; \}/.test(fn) && /change\(\(\) => \{\s*putPos\(\);/.test(fn));
+    ok("旧写法已消失：不再有 change() 之外直接写 curPos / 手动 storeLocal 的落点分支",
+      !/if \(px != null && py != null && src0\) curPos\(\)\[d\.id\]/.test(fn) && !/\{ storeLocal\(cur\); scheduleCloud\(\); \} draw\(\); return; \}/.test(fn));
+    ok("[未覆盖] 拖拽手势的端到端行为（含撤销回到拖动前坐标）只能真实浏览器验", false,
+      "原因：仿真台元素模型让 #mmStage 下的节点元素无法从 document 查到，startNodeDrag 拿不到元素");
+  }
 
   console.log("\nD. 新建子节点 → 不盖住父节点");
   const st = M.state();
