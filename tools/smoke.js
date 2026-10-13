@@ -56,6 +56,19 @@ class El {
     this.classList.set = new Set(this._className.split(/\s+/).filter(Boolean));
   }
   get scrollHeight() { return 40; }
+  /* 真实 DOM 的 textContent = 自己的文本 + 全部后代的文本。仿真台原来把它当普通字段（innerHTML 解析出的
+     元素永远没有文字），于是"按钮上写了什么字"这类断言根本没法断 —— 这正是 `n.fold → cur.fold` 迁移
+     回归（按钮文字/提示不跟着走）能一路全绿的原因。 */
+  get textContent() {
+    let s = this.__text || "";
+    for (const c of (this.children || [])) s += c.textContent || "";
+    return s;
+  }
+  set textContent(v) {
+    this.__text = String(v == null ? "" : v);
+    for (const c of (this.children || [])) c.parentNode = null;
+    if (this.children) this.children = [];
+  }
   set innerHTML(v) {
     this._html = String(v);
     for (const c of (this.children || [])) c.parentNode = null;
@@ -64,13 +77,18 @@ class El {
     const stack = [this];
     const re = /<(\/?)([a-zA-Z][\w-]*)([^>]*)>/g;
     const selfClose = new Set(["path", "circle", "line", "rect", "input", "br", "img", "use", "polyline", "polygon", "stop", "ellipse"]);
-    let m;
+    let m, at = 0;
     while ((m = re.exec(this._html))) {
+      // 标签之间的裸文本 = 当前栈顶元素的直接文本节点（真实 DOM 里查询按钮文字就靠它）
+      const rawText = this._html.slice(at, m.index); at = re.lastIndex;
+      if (rawText) { const top = stack[stack.length - 1]; top.__text = (top.__text || "") + rawText; }
       const closing = m[1] === "/", tag = m[2], attrs = m[3] || "", selfClosed = /\/\s*$/.test(attrs) || selfClose.has(tag.toLowerCase());
       if (closing) { if (stack.length > 1) stack.pop(); continue; }
       const e = new El(tag, (attrs.match(/\bid=["']([^"']+)["']/) || [])[1] || "");
       const cls = (attrs.match(/\bclass=["']([^"']+)["']/) || [])[1];
       if (cls) e.className = cls;
+      const tt = attrs.match(/\btitle=["']([^"']*)["']/);      // 真实 DOM 的 el.title 是反射属性
+      if (tt) e.title = tt[1];
       const dre = /\bdata-([\w-]+)=["']?([^"'\s>]+)["']?/g;
       let dm;
       while ((dm = dre.exec(attrs))) e.dataset[dm[1]] = dm[2];
@@ -79,6 +97,8 @@ class El {
       e.parentNode.children.push(e);
       if (!selfClosed) stack.push(e);
     }
+    const tail = this._html.slice(at);
+    if (tail) { const top = stack[stack.length - 1]; top.__text = (top.__text || "") + tail; }
   }
   get innerHTML() { return this._html || ""; }
   extraFlat() {
@@ -737,6 +757,41 @@ new Promise((resolve) => {
     bubble(vwF, "pointerup", Object.assign({ target: pEl }, at));
     ok("⑤ 点在节点上（不是按钮）→ 只选中、不折叠，且 fold 仍是未设置",
       M.state().sel === plain.id && !M.state().cur.fold[plain.id], "sel=" + M.state().sel + " cur.fold=" + JSON.stringify(M.state().cur.fold));
+    /* ⑥ 按钮自己的文字/提示也必须跟着折叠状态走。这是 `n.fold → cur.fold` 迁移的**回归面**：
+       迁移后节点字段里不再有 fold，而按钮那两处三元（title / 文字）原来读 n.fold →
+       折叠后按钮仍显示 "−"、提示仍是"收起"，而按钮**照样能点、折叠状态也照样对**，
+       所以整组测试一路全绿。这条在旧代码上必须红。 */
+    reset();
+    const descCount = (function w(n) { let k = 0; (n.children || []).forEach((c) => { k += 1 + w(c); }); return k; })(tgt);
+    const btn6 = () => {
+      const b = stageF().querySelector('.mm-node[data-id="' + tgt.id + '"] .mm-fold');
+      return b ? { t: b.textContent, ti: b.title, el: b } : { t: "<查不到按钮>", ti: "<查不到按钮>", el: null };
+    };
+    let s6 = btn6();
+    ok("⑥ 折叠前：按钮文字是「−」、title 是「收起」",
+      s6.t === "−" && s6.ti === "收起", "text=" + JSON.stringify(s6.t) + " title=" + JSON.stringify(s6.ti));
+    if (s6.el) bubble(s6.el, "click", { target: s6.el });
+    s6 = btn6();
+    ok("⑥ 折叠后：按钮文字是隐藏的后代数（" + descCount + "）、title 是「展开」",
+      s6.t === String(descCount) && s6.ti === "展开",
+      "text=" + JSON.stringify(s6.t) + " title=" + JSON.stringify(s6.ti) + " · cur.fold=" + JSON.stringify(M.state().cur.fold));
+    if (s6.el) bubble(s6.el, "click", { target: s6.el });
+    s6 = btn6();
+    ok("⑥ 再点一次展开后：回到「−」/「收起」",
+      s6.t === "−" && s6.ti === "收起", "text=" + JSON.stringify(s6.t) + " title=" + JSON.stringify(s6.ti));
+    /* ⑦ 残余的 foldSwallow 不许吞掉下一次激活。复现②那一步（click 的 target 解析成 .mm-node →
+       委派在门禁处早退）：那次 click 必须**消耗掉**这个一次性标记，否则它留到下一次激活上，
+       把键盘/程序触发的那次折叠吞掉（用户看到的是"点了没反应、要点第二次"）。修前这条红。 */
+    reset();
+    const elA7 = btn6().el;
+    bubble(vwF, "pointerdown", Object.assign({ target: elA7 }, at));
+    bubble(vwF, "pointerup", Object.assign({ target: elA7 }, at));            // 指针路径折一次（同时立起 swallow）
+    bubble(vwF, "click", Object.assign({ target: nodeEl }, at));              // click 落在节点上 → 委派早退
+    reset();                                                                  // 回到"展开"（swallow 若残留仍在闭包里）
+    const elB7 = btn6().el;
+    bubble(elB7, "click", { target: elB7 });                                  // 键盘式激活：只有 click、没有 pointerdown
+    ok("⑦ 被早退的那次 click 也消耗掉 foldSwallow（否则下一次激活被吞）",
+      !!M.state().cur.fold[tgt.id], "cur.fold=" + JSON.stringify(M.state().cur.fold));
     const jsF = require("fs").readFileSync(require("path").join(__dirname, "..", "vendor", "mindmap.js"), "utf8");
     ok("源码形状：折叠在 pointerup 完成，不再只挂在 click 委托上",
       /const fb = e\.target\.closest\("\[data-mm=fold\]"\)/.test(jsF) &&

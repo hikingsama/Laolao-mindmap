@@ -542,7 +542,7 @@
       const prog = n.progress ? `<svg class="mm-prog" viewBox="0 0 16 16" title="${n.progress}%"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" opacity=".25" stroke-width="2"/><circle cx="8" cy="8" r="6.5" fill="none" stroke="${d === 0 ? "currentColor" : s.color}" stroke-width="2.4" stroke-dasharray="${(n.progress / 100) * 40.8} 41" transform="rotate(-90 8 8)" stroke-linecap="round"/></svg>` : "";
       html.push(`<div class="mm-node d${Math.min(d, 2)}${isSel ? " sel" : ""}${hit ? " hit" : ""}${n.bold ? " b" : ""}" data-id="${n.id}" style="left:${s.x}px;top:${s.y}px;width:${s.w}px;height:${s.h}px;${style}font:${s.font};line-height:${lineH(d)}px;padding:${s.padY}px ${s.padX}px">`
         + `<span class="mm-t">${E(s.lines.join("\n"))}</span>${prog}${n.note ? `<b class="mm-ic" data-mm="note" title="${E(n.note.slice(0, 100))}">📝</b>` : ""}${n.link ? `<b class="mm-ic" data-mm="link" title="${E(n.link)}">🔗</b>` : ""}`
-        + ((n.children || []).length && d > 0 || (d === 0 && isFold(n)) ? `<button class="mm-fold${isFold(n) ? " on" : ""} s${s.side}" data-mm="fold" data-id="${n.id}" style="--c:${s.color}" title="${n.fold ? "展开" : "收起"}">${n.fold ? hidden(n) : "−"}</button>` : "")
+        + ((n.children || []).length && d > 0 || (d === 0 && isFold(n)) ? `<button class="mm-fold${isFold(n) ? " on" : ""} s${s.side}" data-mm="fold" data-id="${n.id}" style="--c:${s.color}" title="${isFold(n) ? "展开" : "收起"}">${isFold(n) ? hidden(n) : "−"}</button>` : "")
         + (isSel ? `<span class="mm-rs" data-rs="1" data-id="${n.id}" title="拖动改大小（按住 Shift 锁比例）"></span>` : "")
         + `</div>`);
     }
@@ -1110,6 +1110,11 @@
          按下记下来 → 松手没怎么动才算一次点击（拖开 = 取消），折叠在这一步完成。 */
       const fb = e.target.closest("[data-mm=fold]");
       foldDown = null;              // 每次按下都从干净状态开始：万一上一次按下没等到 pointerup（指针跑到窗口外），陈旧值不会误折
+      /* 【独立版】foldSwallow 也是"上一次手势"的残留：指针路径设了它，而紧随的 click 如果没被委派
+         路由到那个按钮（click 的 target 解析成 .mm-node 时 closest("[data-mm]") 是 null，早退），
+         它就**留着吞掉下一次点击**——现象就是"点了没反应、再点一次才折叠"。
+         新的按下 = 新手势开始，这里一并清掉。 */
+      foldSwallow = null;
       if (fb) {
         foldDown = { id: fb.dataset.id, sx: e.clientX, sy: e.clientY, moved: false };
         try { vw.setPointerCapture(e.pointerId); } catch (err) {}
@@ -1364,6 +1369,10 @@
 
   // ---------------- 点击 ----------------
   document.addEventListener("click", async (e) => {
+    /* 【独立版】foldSwallow 是"这一次指针手势的 click 由指针路径处理过了"的一次性标记：
+       任何一次 click（哪怕下面因为 target 落成 .mm-node 而早退）都要把它**消耗掉** ——
+       否则它会留到下一次激活上，把那次折叠吞掉（"点了没反应、要点第二次"）。 */
+    const pendFoldSwallow = foldSwallow; foldSwallow = null;
     const b = e.target.closest("[data-mm]");
     if (!b || !b.closest("#mmBox, #mmDlg, .mm-head")) return;
     const a = b.dataset.mm, id = b.dataset.id;
@@ -1385,7 +1394,7 @@
       case "sib": addSibling(); break;
       case "del": del(); break;
       case "foldsel": toggleFold(); break;
-      case "fold": { const sw = foldSwallow === id; foldSwallow = null; if (!sw) toggleFold(id); break; }   // 指针路径已折过就跳过
+      case "fold": { const sw = pendFoldSwallow === id; if (!sw) toggleFold(id); break; }   // 指针路径已折过就跳过
       case "undo": undo(); break;
       case "redo": redoIt(); break;
       case "style": togglePanel(!panelOpen); break;
