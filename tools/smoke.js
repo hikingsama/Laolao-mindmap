@@ -333,6 +333,38 @@ new Promise((resolve) => {
   M.open("legacy-map");
   ok("第二次打开不再重算（pos 原样不动）", JSON.stringify(M.state().cur.pos) === snap);
 
+  console.log("\nC2. 节点尺寸（导图层 cur.size，与坐标同层，不写节点字段）");
+  const map2 = M.state().cur;
+  const size = map2.size || {};
+  ok("导图层 cur.size 里有 8 条尺寸（实际 " + Object.keys(size).length + "）", Object.keys(size).length === 8);
+  const badSize = Object.entries(size).filter(([id, z]) => !(z.w >= 60 && z.h >= 40));
+  ok("所有尺寸都在下限之上（≥ 60×40）", badSize.length === 0, JSON.stringify(badSize));
+  let sizeFields = 0;
+  (function w(n) { if (n.w !== undefined || n.h !== undefined || n.size !== undefined) sizeFields++; (n.children || []).forEach(w); })(map2.root);
+  ok("尺寸没有写进节点字段（node.w / node.h / node.size 都是 undefined）", sizeFields === 0, "有 " + sizeFields + " 个节点带尺寸字段");
+  const onDisk2 = JSON.parse(B.localStorage.getItem("mm_map_legacy-map"));
+  ok("尺寸已落盘（localStorage 的 size 有 8 条）", !!onDisk2.size && Object.keys(onDisk2.size).length === 8);
+  const sizeSnap = JSON.stringify(size);
+  M.open("legacy-map");
+  ok("第二次打开不再重算尺寸（cur.size 原样不动）", JSON.stringify(M.state().cur.size) === sizeSnap);
+
+  const sizeIds = Object.keys(size);
+  // 注意：open() 会从 localStorage 重新加载，所以必须改**盘上那份**，改内存对象是无效的
+  const raw = JSON.parse(B.localStorage.getItem("mm_map_legacy-map"));
+  raw.size[sizeIds[0]] = { w: 1, h: 1 };              // 过小
+  raw.size[sizeIds[1]] = { w: 99999, h: 99999 };      // 过大
+  B.localStorage.setItem("mm_map_legacy-map", JSON.stringify(raw));
+  M.open("legacy-map");
+  const after = M.state().cur.size;
+  ok("过小的尺寸被夹到下限 60×40", after[sizeIds[0]].w === 60 && after[sizeIds[0]].h === 40, JSON.stringify(after[sizeIds[0]]));
+  const sBig = [...M.state().L.nodes.values()].find((s) => s.n.id === sizeIds[1]);
+  const capW = (sBig.measW || 60) * 4, capH = (sBig.measH || 40) * 4;
+  ok("过大的尺寸被夹到上限（≤ 文本测量值 ×4）", after[sizeIds[1]].w <= capW && after[sizeIds[1]].h <= capH,
+    "w=" + after[sizeIds[1]].w + " cap=" + capW + " / h=" + after[sizeIds[1]].h + " cap=" + capH);
+  ok("[未覆盖] 缩放柄的鼠标交互（按下/拖动/松手）要靠真实浏览器验 —— 仿真台没有真实布局，元素命中不可信", false,
+    "数据层已验证：cur.size 生成、clamp 边界、落盘、二次打开不重算");
+  M.open("legacy-map");   // 复位（把刚才被改的两条尺寸重新固化回合法值）
+
   console.log("\nD. 新建子节点 → 不盖住父节点");
   const st = M.state();
   const target = [...st.L.nodes.values()].find((s) => s.depth === 1);

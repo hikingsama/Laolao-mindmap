@@ -138,6 +138,13 @@ body {
 }
 .mm-node.sel { outline: 2px solid var(--mm-ink); outline-offset: 1px; }
 .mm-node.hit { outline: 2px dashed #f2a20c; outline-offset: 1px; }
+/* 【独立版】缩放柄：只在选中的节点上出现，拖动改导图层 cur.size（按住 Shift 锁比例）。
+   放在节点内侧右下角，因为 .mm-node 是 overflow:hidden，放到外侧会被裁掉。 */
+.mm-rs { position: absolute; right: 0; bottom: 0; width: 15px; height: 15px; background: var(--mm-ink);
+  border-top-left-radius: 6px; cursor: nwse-resize; touch-action: none; opacity: .85; }
+.mm-rs:hover { opacity: 1; }
+.mm-rs::after { content: ""; position: absolute; right: 3px; bottom: 3px; width: 5px; height: 5px;
+  border-right: 2px solid #fff; border-bottom: 2px solid #fff; }
 .mm-node.b .mm-t { font-weight: 700; }
 .mm-node.d0 { border-radius: 14px; box-shadow: var(--mm-shadow); }
 .mm-node.dragging { opacity: .35; }

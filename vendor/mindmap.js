@@ -278,8 +278,42 @@
   }
   const deltaOf = (d, id) => (d[id] || (d[id] = { dx: 0, dy: 0 }));
 
+  /* 【独立版】节点尺寸：与坐标同层、同生命周期 —— 存在导图层 cur.size = { 节点id: {w,h} }，
+     绝不写进节点字段（安卓 normalizeNode() 是白名单式过滤，会静默丢掉）。
+     不变量：
+       1) cur.size 里没有记录的节点，用"现有文本测量结果"落一次盘，之后不再重算（F5 重开不重算）；
+       2) 最小 60×40；最大不超过该节点文本测量尺寸的 4 倍（clampSize 里换算）。 */
+  const SIZE_MIN_W = 60, SIZE_MIN_H = 40, SIZE_MAX_MUL = 4;
+  const curSize = () => (cur.size ||= {});
+  function clampSize(w, h, measW, measH) {
+    const mw = measW > 0 ? measW : SIZE_MIN_W, mh = measH > 0 ? measH : SIZE_MIN_H;
+    const maxW = Math.max(SIZE_MIN_W, Math.round(mw * SIZE_MAX_MUL));
+    const maxH = Math.max(SIZE_MIN_H, Math.round(mh * SIZE_MAX_MUL));
+    return {
+      w: Math.min(maxW, Math.max(SIZE_MIN_W, Math.round(w))),
+      h: Math.min(maxH, Math.max(SIZE_MIN_H, Math.round(h))),
+    };
+  }
+  // 用 cur.size 覆写布局算出的 w/h；缺记录的立刻固化。返回 true = 本次有新写入，需要落盘
+  function applySize(lay) {
+    const size = curSize(); let wrote = false;
+    for (const [id, s] of lay.nodes) {
+      s.measW = s.w; s.measH = s.h;          // 文本测量值另存一份：clamp 的上限以它为基准，不受固化值影响
+      const z = size[id];
+      if (z && z.w > 0 && z.h > 0) {
+        // 读取时也过一遍 clamp：防坏数据（比如被手改/导入的 JSON 里 1×1 或 99999×99999）
+        const c = clampSize(z.w, z.h, s.measW, s.measH);
+        s.w = c.w; s.h = c.h;
+        if (c.w !== z.w || c.h !== z.h) { size[id] = c; wrote = true; }
+      } else { const c = clampSize(s.w, s.h, s.measW, s.measH); size[id] = c; s.w = c.w; s.h = c.h; wrote = true; }
+    }
+    return wrote;
+  }
+
   function layoutWithPos() {
     const lay = layoutAuto(), pos = curPos(), fixed = new Set();
+    // 【独立版】尺寸先于坐标落地：尺寸变了会影响 bounds，而 bounds/连线都在本函数末尾重算
+    if (applySize(lay)) { try { storeLocal(cur); } catch (e) {} }
     for (const [id, s] of lay.nodes) if (validPos(pos[id])) fixed.add(id);
     // 1) 有坐标的：直接用坐标，并记下相对旧布局的位移
     const delta = {};
@@ -398,6 +432,7 @@
       html.push(`<div class="mm-node d${Math.min(d, 2)}${isSel ? " sel" : ""}${hit ? " hit" : ""}${n.bold ? " b" : ""}" data-id="${n.id}" style="left:${s.x}px;top:${s.y}px;width:${s.w}px;height:${s.h}px;${style}font:${s.font};line-height:${lineH(d)}px;padding:${s.padY}px ${s.padX}px">`
         + `<span class="mm-t">${E(s.lines.join("\n"))}</span>${prog}${n.note ? `<b class="mm-ic" data-mm="note" title="${E(n.note.slice(0, 100))}">📝</b>` : ""}${n.link ? `<b class="mm-ic" data-mm="link" title="${E(n.link)}">🔗</b>` : ""}`
         + ((n.children || []).length && d > 0 || (d === 0 && n.fold) ? `<button class="mm-fold${n.fold ? " on" : ""} s${s.side}" data-mm="fold" data-id="${n.id}" style="--c:${s.color}" title="${n.fold ? "展开" : "收起"}">${n.fold ? hidden(n) : "−"}</button>` : "")
+        + (isSel ? `<span class="mm-rs" data-rs="1" data-id="${n.id}" title="拖动改大小（按住 Shift 锁比例）"></span>` : "")
         + `</div>`);
     }
     const b = L.bounds, pad = 400;
@@ -859,6 +894,19 @@
     const local = (e) => { const r = vw.getBoundingClientRect(); return { x: (e.clientX - r.left - view.x) / view.k, y: (e.clientY - r.top - view.y) / view.k, cx: e.clientX - r.left, cy: e.clientY - r.top }; };
     vw.addEventListener("pointerdown", (e) => {
       if (e.target.closest(".mm-zoom, .mm-edit, [data-mm=fold], .mm-ic")) return;
+      /* 【独立版】缩放柄：按下即进入改尺寸模式。尺寸写进导图层 cur.size，不写节点字段；
+         松手才落盘（拖动过程中只重画，不进撤销历史）。 */
+      const rsEl = e.target.closest(".mm-rs");
+      if (rsEl && rsEl.dataset.id && cur) {
+        const s0 = L && L.nodes.get(rsEl.dataset.id);
+        if (s0) {
+          pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+          drag = { moved: true, resize: { id: rsEl.dataset.id, w0: s0.w, h0: s0.h, mx: e.clientX, my: e.clientY,
+            snap: JSON.stringify(cur), ratio: s0.w / Math.max(1, s0.h), raf: 0 } };
+          try { vw.setPointerCapture(e.pointerId); } catch (err) {}
+          return;
+        }
+      }
       vw.focus({ preventScroll: true });
       pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (pts.size === 2) { const [a, b] = [...pts.values()]; pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), k: view.k, cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2 }; drag = null; clearTimeout(press); return; }
@@ -871,6 +919,16 @@
     vw.addEventListener("pointermove", (e) => {
       if (pts.has(e.pointerId)) pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (pinch && pts.size >= 2) { const [a, b] = [...pts.values()]; const r = vw.getBoundingClientRect(); zoomAt(pinch.k * Math.hypot(a.x - b.x, a.y - b.y) / pinch.d, pinch.cx - r.left, pinch.cy - r.top); return; }
+      if (drag && drag.resize) {
+        const z = drag.resize, k = view.k || 1;
+        let w = z.w0 + (e.clientX - z.mx) / k, h = z.h0 + (e.clientY - z.my) / k;
+        if (e.shiftKey) { if (Math.abs(w - z.w0) >= Math.abs(h - z.h0)) h = w / z.ratio; else w = h * z.ratio; }
+        const s0 = L && L.nodes.get(z.id);
+        curSize()[z.id] = clampSize(w, h, s0 ? s0.measW : z.w0, s0 ? s0.measH : z.h0);
+        if (z.raf) cancelAnimationFrame(z.raf);
+        z.raf = requestAnimationFrame(() => { try { draw(); } catch (err) {} });   // 重画：连线端点跟着尺寸一起重锚
+        return;
+      }
       if (!drag) return;
       const dx = e.clientX - drag.sx, dy = e.clientY - drag.sy;
       if (!drag.moved && Math.hypot(dx, dy) < 6) return;
@@ -884,6 +942,14 @@
       if (!drag) return;
       vw.classList.remove("panning");
       const d = drag; drag = null;
+      if (d.resize) {
+        /* 【独立版】松手才落盘：整段拖拽只进一条撤销历史（快照在按下时拍的） */
+        hist.push(d.resize.snap); if (hist.length > 120) hist.shift(); redo = [];
+        try { storeLocal(cur); } catch (e) {}
+        try { scheduleCloud(); } catch (e) {}
+        draw();
+        return;
+      }
       if (d.node) { endNodeDrag(d); return; }
       if (d.moved) return;
       if (d.id) {
