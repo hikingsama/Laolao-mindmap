@@ -195,7 +195,12 @@
     (function prep(n, depth, color, parent) {
       const m = measure(n, depth);
       const c = n.color || (depth === 0 ? th.root : color);
-      nodes.set(n.id, { n, depth, ...m, color: c, parent: parent ? parent.id : null, kids: n.fold ? [] : n.children || [] });
+      /* 【独立版】尺寸在这里合并（measure 之后、nodes.set 之前）：让 span() 的缓存从一开始就按最终尺寸算 */
+      const z = curSize()[n.id];
+      const pinned = !!(z && Number.isFinite(z.w) && Number.isFinite(z.h) && z.w > 0 && z.h > 0);
+      const cs = clampSize(pinned ? z.w : m.w, pinned ? z.h : m.h, m.w, m.h);
+      if (!pinned || cs.w !== z.w || cs.h !== z.h) { curSize()[n.id] = cs; sizeDirty = true; }
+      nodes.set(n.id, { n, depth, ...m, w: cs.w, h: cs.h, measW: m.w, measH: m.h, color: c, parent: parent ? parent.id : null, kids: n.fold ? [] : n.children || [] });
       (n.children || []).forEach((k, i) => prep(k, depth + 1, depth === 0 ? (k.color || th.colors[i % th.colors.length]) : c, n));
     })(cur.root, 0, th.root, null);
     const S = (id) => nodes.get(id);
@@ -285,35 +290,26 @@
        2) 最小 60×40；最大不超过该节点文本测量尺寸的 4 倍（clampSize 里换算）。 */
   const SIZE_MIN_W = 60, SIZE_MIN_H = 40, SIZE_MAX_MUL = 4;
   const curSize = () => (cur.size ||= {});
+  const finNum = (v, d) => (Number.isFinite(v) ? v : d);   // 显式挡 NaN / Infinity：Math.max(60, NaN) 还是 NaN
   function clampSize(w, h, measW, measH) {
-    const mw = measW > 0 ? measW : SIZE_MIN_W, mh = measH > 0 ? measH : SIZE_MIN_H;
+    const mw = Number.isFinite(measW) && measW > 0 ? measW : SIZE_MIN_W;
+    const mh = Number.isFinite(measH) && measH > 0 ? measH : SIZE_MIN_H;
     const maxW = Math.max(SIZE_MIN_W, Math.round(mw * SIZE_MAX_MUL));
     const maxH = Math.max(SIZE_MIN_H, Math.round(mh * SIZE_MAX_MUL));
     return {
-      w: Math.min(maxW, Math.max(SIZE_MIN_W, Math.round(w))),
-      h: Math.min(maxH, Math.max(SIZE_MIN_H, Math.round(h))),
+      w: Math.min(maxW, Math.max(SIZE_MIN_W, Math.round(finNum(w, SIZE_MIN_W)))),
+      h: Math.min(maxH, Math.max(SIZE_MIN_H, Math.round(finNum(h, SIZE_MIN_H)))),
     };
   }
-  // 用 cur.size 覆写布局算出的 w/h；缺记录的立刻固化。返回 true = 本次有新写入，需要落盘
-  function applySize(lay) {
-    const size = curSize(); let wrote = false;
-    for (const [id, s] of lay.nodes) {
-      s.measW = s.w; s.measH = s.h;          // 文本测量值另存一份：clamp 的上限以它为基准，不受固化值影响
-      const z = size[id];
-      if (z && z.w > 0 && z.h > 0) {
-        // 读取时也过一遍 clamp：防坏数据（比如被手改/导入的 JSON 里 1×1 或 99999×99999）
-        const c = clampSize(z.w, z.h, s.measW, s.measH);
-        s.w = c.w; s.h = c.h;
-        if (c.w !== z.w || c.h !== z.h) { size[id] = c; wrote = true; }
-      } else { const c = clampSize(s.w, s.h, s.measW, s.measH); size[id] = c; s.w = c.w; s.h = c.h; wrote = true; }
-    }
-    return wrote;
-  }
+  /* 【独立版】尺寸合并点已前移到 measure() 之后、nodes.set 之前（见下方 layoutAuto 的 prep）。
+     为什么必须在那里：span() 首次算完会把 s.span 缓存住（`if (s.span != null) return s.span`），
+     若先建 Map、再事后覆写 w/h，缓存会停在旧尺寸上 —— 不报错，但给错值。
+     sizeDirty = 本次有尺寸新写入或被 clamp 修正，需要落盘（一趟布局最多落一次） */
+  let sizeDirty = false;
 
   function layoutWithPos() {
     const lay = layoutAuto(), pos = curPos(), fixed = new Set();
-    // 【独立版】尺寸先于坐标落地：尺寸变了会影响 bounds，而 bounds/连线都在本函数末尾重算
-    if (applySize(lay)) { try { storeLocal(cur); } catch (e) {} }
+    if (sizeDirty) { sizeDirty = false; try { storeLocal(cur); } catch (e) {} }
     for (const [id, s] of lay.nodes) if (validPos(pos[id])) fixed.add(id);
     // 1) 有坐标的：直接用坐标，并记下相对旧布局的位移
     const delta = {};
@@ -509,7 +505,16 @@
   function del(id) {
     const r = findNode(id || sel); if (!r || !r.p) return;
     const i = r.p.children.indexOf(r.n), nx = r.p.children[i + 1] || r.p.children[i - 1] || r.p;
-    change(() => { r.p.children.splice(i, 1); });
+    /* 【独立版】删除是**整棵子树**：被删节点及全部后代的 pos / size 必须一起清。
+       不清的后果：① 永久残留在导图层，随每次 change() → storeLocal 反复写回 localStorage；
+       ② 残留 id 会污染 spawnPos 的判重（ids = Object.keys(pos)，351 那个 30×26 检查会误让位）。 */
+    const kill = [];
+    walk(r.n, (n) => kill.push(n.id));
+    change(() => {
+      r.p.children.splice(i, 1);
+      const pos = curPos(), size = curSize();
+      for (const k of kill) { delete pos[k]; delete size[k]; }
+    });
     select(nx.id, true);
   }
   function moveSib(dir) {

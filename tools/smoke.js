@@ -418,6 +418,42 @@ new Promise((resolve) => {
       "原因：仿真台元素模型让 #mmStage 下的节点元素无法从 document 查到，startNodeDrag 拿不到元素");
   }
 
+  console.log("\nC3. 删除整棵子树 → pos/size 一起清（不残留）");
+  {
+    // 选中：把 pointerdown/up 打在**真的 #mmView** 上，但把 target 覆盖成夹具节点（仿真台不做真实命中测试）
+    const vwC = B.win.$("mmView"), stageC = B.win.$("mmStage");
+    const t = [...M.state().L.nodes.values()].find((s) => s.depth === 1 && (s.n.children || []).length);
+    let selected = false;
+    if (t && vwC) {
+      const fx = B.doc.createElement("div");
+      fx.className = "mm-node d1"; fx.dataset.id = t.n.id;
+      if (stageC) stageC.appendChild(fx);
+      bubble(vwC, "pointerdown", { target: fx, clientX: 10, clientY: 10 });
+      bubble(vwC, "pointerup", { target: fx, clientX: 10, clientY: 10 });
+      selected = M.state().sel === t.n.id;
+    }
+    ok("能选中一个带子节点的一级主题（删除断言的前提）", selected, "sel=" + M.state().sel);
+    if (!selected) {
+      ok("[未覆盖] 删除后 pos/size 残留检查没能在仿真台里驱动", false, "前提不成立（不报假通过）");
+    } else {
+      const subtree = [];
+      (function w(n) { subtree.push(n.id); (n.children || []).forEach(w); })(t.n);
+      const before = Object.keys(M.state().cur.pos).length;
+      const delBtn = B.doc.querySelector('[data-mm="del"]');
+      bubble(B.doc, "click", { target: delBtn });
+      const after = M.state();
+      const removed = before - Object.keys(after.cur.pos).length;
+      if (removed <= 0) {
+        ok("[未覆盖] 删除命令没能在仿真台里驱动（工具栏点击链路未接通），残留检查未做", false,
+          "delBtn=" + !!delBtn + " 不报假通过");
+      } else {
+        const leftover = subtree.filter((k) => after.cur.pos[k] || after.cur.size[k]);
+        ok("删掉 " + removed + " 个节点（子树共 " + subtree.length + " 个）后，pos/size 里无残留",
+          leftover.length === 0, "残留=" + leftover.join(","));
+      }
+    }
+  }
+
   console.log("\nD. 新建子节点 → 不盖住父节点");
   const st = M.state();
   const target = [...st.L.nodes.values()].find((s) => s.depth === 1);
