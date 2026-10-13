@@ -243,7 +243,11 @@ function makeCtx() {
 function boot() {
   const doc = new El("html", "");
   const els = {};
-  for (const id of ["banner", "mmHeadTitle", "mmTitleIn", "mmSync", "mmBox", "mmDlg", "mmDlgBody"]) { const e = new El("div", id); els[id] = e; doc.appendChild(e); }
+  for (const id of ["banner", "mmHeadTitle", "mmTitleIn", "mmSync", "mmBox", "mmDlg"]) { const e = new El("div", id); els[id] = e; doc.appendChild(e); }
+  /* #mmDlgBody 在真浏览器里是 #mmDlg 的**子节点**（弹窗内容）。原来摆成兄弟节点，
+     于是文档级 click 委派的门禁 `closest("#mmBox, #mmDlg, .mm-head")` 对弹窗里的按钮恒失败 ——
+     表现是"导出/复制"这些走弹窗的动作在仿真台里静默不做任何事（和 fakeBtn 那次同一个病）。 */
+  els.mmDlgBody = new El("div", "mmDlgBody"); els.mmDlg.appendChild(els.mmDlgBody);
   doc.body = new El("body", "body"); doc.body.doc = doc;
 
   const localStorage = {
@@ -1002,47 +1006,90 @@ new Promise((resolve) => {
     (function w(n) { ids0.push(n.id); (n.children || []).forEach(w); })(root0(tab));
     /* ① 完整性（与"无孤儿"相反的方向）：树上每个 id 都必须有 pos/size 条目 —— 只断"无孤儿"会漏掉
        "表被清空/键没搬过去"这类静默丢数据。 */
+    /* ① 完整性（与"无孤儿"相反的方向）：树上每个 id 都必须有 pos/size 条目 —— 只断"无孤儿"会漏掉
+       "表被清空/键没搬过去"这类静默丢数据。
+       为什么这里**写死 pos/size**（不用 LAYER_MAPS 遍历）：`fold` 只给"折叠过的节点"条目、
+       `edges` 是列表不是按键表 —— 拿清单去遍历会把它们算成"缺失"，这条判据就假红了。
+       将来加**按节点 id 的映射表**（如 size2）时，要把它显式加进这里，别以为这条自动覆盖。 */
     const missing0 = ids0.filter((id) => !tab.pos[id] || !tab.size[id]);
     ok("完整性：树上 " + ids0.length + " 个节点都有 pos/size 条目", missing0.length === 0, "缺=" + missing0.join(","));
     ok("完整性：两个方向合起来 == 表与树一致（无孤儿 + 无缺失）",
       layerOrphans(tab).length === 0 && Object.keys(tab.pos).length === ids0.length && Object.keys(tab.size).length === ids0.length,
       "pos=" + Object.keys(tab.pos).length + " size=" + Object.keys(tab.size).length + " 树=" + ids0.length);
 
-    /* ② 往返：导出（就地取当前图）→ 导入 → 逐字段比对（树 + 导图层）。
-       注意 fill() 会给叶子补 children:[]，所以树要按"结构 + 字段值"比，不能直接比 JSON 字符串。 */
-    const srcM = JSON.parse(B.localStorage.getItem("mm_map_legacy-map"));
-    const backup = { app: "laolao-mindmap", v: 1, layout: srcM.layout, theme: srcM.theme, line: srcM.line,
-      root: JSON.parse(JSON.stringify(root0(srcM))), pos: Object.assign({}, srcM.pos), size: Object.assign({}, srcM.size),
-      fold: { [ids0[1]]: true },
-      edges: [{ id: "edgeRT", from: { node: ids0[0], side: "e" }, to: { node: ids0[1], side: "w" }, dir: "fwd" }] };
+    /* ② 往返：走**真实导出路径**（工具栏「⬇ 导出」→「备份文件（.json）」），把导出的原文喂回
+       readFile，再逐字段比对（树 + 导图层）。
+       手工拼一个 backup 只能证明"导入侧会搬 pos/size"，排除不了"导出侧压根没写"——
+       "自己导出的文件自己读不回来"正是这一族的另一半。
+       注意 fill() 会给叶子补 children:[]，树要按结构与字段值比，不能直接比字符串。 */
     const shapeOf = (n) => JSON.stringify({ id: n.id, text: n.text, bold: n.bold, color: n.color, progress: n.progress, note: n.note, link: n.link, marks: n.marks,
       children: (n.children || []).map((x) => JSON.parse(shapeOf(x))) });
     const norm = (o) => JSON.stringify(Object.keys(o || {}).sort().map((k) => [k, o[k]]));
+    /* 源图先造出可辨别的导图层内容：折叠走**产品路径**（点收起按钮）。
+       边还没有 UI（①b 才做），这里直接往导图层插一条 —— 本组只验"导出/导入不丢边"，
+       不声称验过连线交互。 */
+    const foldTgt = root0(M.state().cur).children.find((c) => (c.children || []).length) || root0(M.state().cur).children[0];
+    const foldEl = B.win.$("mmStage").querySelector('.mm-node[data-id="' + foldTgt.id + '"] .mm-fold');
+    if (foldEl) bubble(foldEl, "click", { target: foldEl });
+    ok("导出前：折叠通过产品路径（点收起按钮）写进导图层 cur.fold",
+      !!M.state().cur.fold[foldTgt.id], "cur.fold=" + JSON.stringify(M.state().cur.fold));
+    const eRT = { id: "edgeRT", from: { node: ids0[0], side: "e" }, to: { node: foldTgt.id, side: "w" }, dir: "fwd" };
+    M.state().cur.edges = [eRT];
+    /* download() 把数据包成 Blob 再交给 URL.createObjectURL：拦这个入口就能拿到导出原文。
+       注意 `Blob` **不在仿真台沙箱的键里**（它解析到 Node 的真实全局 Blob，内容是真的），
+       所以这里拿到的是真 Blob，用 await blob.text() 取回字符串 —— 比拦 Blob 构造可靠。 */
+    let exportBlob = null;
+    const realCOU = B.win.URL.createObjectURL;
+    B.win.URL.createObjectURL = (data) => { exportBlob = data; return "blob:x"; };
+    try {
+      const exOpen = B.doc.querySelector('[data-mm="export"]');
+      ok("工具栏有「导出」入口", !!exOpen);
+      if (exOpen) bubble(exOpen, "click", { target: exOpen });
+      const exJson = B.doc.querySelector('[data-mm="ex-json"]');
+      ok("导出对话框里有「备份文件（.json）」入口", !!exJson);
+      if (exJson) bubble(exJson, "click", { target: exJson });
+    } finally { B.win.URL.createObjectURL = realCOU; }
+    const exported = exportBlob && typeof exportBlob.text === "function" ? await exportBlob.text() : String(exportBlob);
+    ok("导出串里含 pos/size（导出侧真的写了导图层，而不只是导入侧会读）",
+      !!exported && /"pos"/.test(exported) && /"size"/.test(exported), "导出串长度=" + (exported || "").length);
+    const exportedObj = JSON.parse(exported);
+    ok("导出串里含 fold/edges（折叠与边也在同一份 blob 里，不是只活在内存）",
+      !!exportedObj.fold && !!exportedObj.edges && exportedObj.fold[foldTgt.id] === true && exportedObj.edges.length === 1,
+      "fold=" + JSON.stringify(exportedObj.fold) + " edges=" + JSON.stringify(exportedObj.edges));
     const inp = B.doc.createElement("input"); inp.id = "mmFileOpen";
-    inp.files = [{ size: 4096, name: "rt.json", text: async () => JSON.stringify(backup) }];
+    inp.files = [{ size: 4096, name: "rt.json", text: async () => exported }];
     bubble(B.doc, "change", { target: inp });
     await new Promise((res) => setTimeout(res, 20));
     const rt = M.state().cur;
-    ok("往返：树逐字段相同（结构 + 每个节点的字段值）", shapeOf(root0(rt)) === shapeOf(root0(backup)));
+    ok("往返（真实导出→导入）：树逐字段相同（结构 + 每个节点的字段值）", shapeOf(root0(rt)) === shapeOf(root0(exportedObj)));
     ok("往返：导图层逐字段相同（pos/size 的键与值都一致）",
-      norm(rt.pos) === norm(backup.pos) && norm(rt.size) === norm(backup.size),
-      "pos 本地=" + Object.keys(rt.pos).length + " 备份=" + Object.keys(backup.pos).length);
-    ok("往返：布局/主题/线型也带过来了", rt.layout === backup.layout && rt.theme === backup.theme && rt.line === backup.line);
-    ok("往返：fold 一起搬回来（" + ids0[1] + " 仍是折叠状态）", !!rt.fold[ids0[1]], JSON.stringify(rt.fold));
+      norm(rt.pos) === norm(exportedObj.pos) && norm(rt.size) === norm(exportedObj.size),
+      "pos 本地=" + Object.keys(rt.pos).length + " 导出=" + Object.keys(exportedObj.pos).length);
+    ok("往返：布局/主题/线型也带过来了", rt.layout === exportedObj.layout && rt.theme === exportedObj.theme && rt.line === exportedObj.line);
+    ok("往返：fold 一起搬回来（" + foldTgt.id + " 仍是折叠状态）", !!rt.fold[foldTgt.id], JSON.stringify(rt.fold));
     ok("往返：edges 一起搬回来（1 条，端点与方向不变）",
-      Array.isArray(rt.edges) && rt.edges.length === 1 && rt.edges[0].from.node === ids0[0] &&
-      rt.edges[0].to.node === ids0[1] && rt.edges[0].dir === "fwd", JSON.stringify(rt.edges));
+      Array.isArray(rt.edges) && rt.edges.length === 1 && rt.edges[0].from.node === eRT.from.node &&
+      rt.edges[0].to.node === eRT.to.node && rt.edges[0].dir === "fwd", JSON.stringify(rt.edges));
 
     /* ③ 复制导图：重发 id 时两个方向都要成立（新 id 有条目 + 没有旧 id 残留）。 */
     B.localStorage.setItem("mm_map_legacy-map", JSON.stringify(LEGACY));
     M.open("legacy-map");
     const rtId = M.state().cur.id;      // 往返导入那张图的 id（副本必然不是它、也不是 legacy-map）
+    /* 点「复制一份」：按钮按生产位置挂在弹窗内容里（mapMenu 就是往 #mmDlgBody 里渲染这个按钮）。
+       文档级 click 委派的门禁是 closest("#mmBox, #mmDlg, .mm-head")，**不挂进 DOM 会被直接 return** ——
+       之前"副本没重映射"的假红根因就是这个（假按钮没进 DOM → duplicate() 一次都没跑）。 */
+    const idxBefore = JSON.parse(B.localStorage.getItem("mm_index_v1")) || [];
     const fakeBtn = B.doc.createElement("button");
     fakeBtn.className = "mm-b"; fakeBtn.dataset.mm = "dupid"; fakeBtn.dataset.id = "legacy-map";
-    B.win.$("mmBox").appendChild(fakeBtn);   // 文档级 click 委托有 #mmBox 门禁：不挂进 DOM 会被直接 return（之前"副本没重映射"的假红就是它）
+    if (true) B.win.$("mmDlgBody").appendChild(fakeBtn);   // 生产位置：mapMenu 就是把「复制一份」渲染进 #mmDlgBody
     bubble(B.doc, "click", { target: fakeBtn });
     await new Promise((res) => setTimeout(res, 40));
     const idx = JSON.parse(B.localStorage.getItem("mm_index_v1")) || [];
+    /* 先证明"这个动作真的发生了"：索引条目数必须 +1（合成事件被门禁静默拦掉时这半就红，
+       不会让下面的断言在旧对象上误判）。 */
+    const newly = idx.filter((e) => e && !idxBefore.some((b) => b && b.id === e.id));
+    ok("复制动作真的发生了（索引条目数 +1：" + idxBefore.length + " → " + idx.length + "，新增 " + newly.map((e) => e.id).join(",") + "）",
+      newly.length === 1, "新增=" + JSON.stringify(newly.map((e) => e && e.id)));
     /* 按 id 差集找副本：副本的索引标题可能还是旧的（idxPut 没带 title，属既有小缺陷，另行记录），
        所以不能靠标题认副本。 */
     /* 副本识别：**不能按标题、也不能按"最新一条"** —— 索引里可能还有别处导入的图（它们的 id 与原图相同，
@@ -1057,13 +1104,14 @@ new Promise((resolve) => {
       const idsC = [];
       (function w(n) { idsC.push(n.id); (n.children || []).forEach(w); })(root0(cm));
       const missC = idsC.filter((id) => !cm.pos[id] || !cm.size[id]);
-      ok("副本：每个**新 id** 都有 pos/size 条目（反向断言，" + idsC.length + " 个）", missC.length === 0, "缺=" + missC.join(","));
-      ok("副本：没有孤儿（旧 id 不残留）", layerOrphans(cm).length === 0, layerOrphans(cm).join(","));
-      /* 实测：副本的节点 id 与原图**完全重叠** —— 回退时把 reidAll 一起退掉了（现在是既有的
-         walk(root0(c), n => n.id = nid()) 老实现，且 pos/size 的键没跟着搬）。这正是审计列的
-         "副本未重映射"同族缺陷、也是"外科拆除"清单要求**保留 reidAll** 的理由。下一笔修掉它。 */
+      ok("副本：每个**新 id** 都有 pos/size 条目（反向断言，" + idsC.length + " 个）", missC.length === 0,
+        "copy.id=" + copy.id + " 缺=" + missC.join(","));
+      ok("副本：没有孤儿（旧 id 不残留）", layerOrphans(cm).length === 0,
+        "copy.id=" + copy.id + " 孤儿=" + layerOrphans(cm).join(","));
+      /* 「重发节点 id 必须同时重映射导图层」这条判据：副本的 id 集合与原图**完全不相交**
+         （不重映射时 pos/size 的键还是旧 id → 副本一打开就被 pruneLayer 当孤儿清掉，位置全丢）。 */
       ok("副本：id 与原图完全不重叠（键与端点重映射生效）", idsC.every((id) => ids0.indexOf(id) < 0),
-        "重叠 " + idsC.filter((id) => ids0.indexOf(id) >= 0).length + " / " + idsC.length);
+        "copy.id=" + copy.id + " 重叠 " + idsC.filter((id) => ids0.indexOf(id) >= 0).length + " / " + idsC.length);
     }
     B.localStorage.setItem("mm_map_legacy-map", JSON.stringify(LEGACY));
     M.open("legacy-map");
