@@ -110,9 +110,14 @@ const clickAt = async (x, y) => { await mouse("mousePressed", x, y, 1, 1); await
 async function clickSel(sel) { const p = await rectOf(sel); if (!p) throw new Error("页面上找不到元素：" + sel); await clickAt(p.x, p.y); return p; }
 const SCAN = `(() => {
   const st = window.Mindmap.state(), m = st.cur;
-  const live = new Set(); (function w(n) { live.add(n.id); (n.children || []).forEach(w); })(m.root);
+  const trees = Array.isArray(m.nodes) ? m.nodes : (m.root ? [m.root] : []);
+  const live = new Set(); for (const t of trees) (function w(n) { live.add(n.id); (n.children || []).forEach(w); })(t);
   const bad = [];
-  const maps = (window.Mindmap && window.Mindmap.LAYER_MAPS) || [], lists = (window.Mindmap && window.Mindmap.LAYER_LISTS) || [];
+  /* 拿不到清单就**判失败**：兜底成空数组会让"扫 0 张表 → 0 孤儿 → 绿灯"，把"没拿到数据"变成"验过了"。 */
+  const M2 = window.Mindmap, maps = M2 && M2.LAYER_MAPS, lists = M2 && M2.LAYER_LISTS;
+  if (!Array.isArray(maps) || !maps.length || !Array.isArray(lists)) {
+    return JSON.stringify({ orphans: ["清单没拿到或为空（maps=" + JSON.stringify(maps) + " lists=" + JSON.stringify(lists) + "）"], listsMissing: true, tree: live.size, pos: 0, size: 0, sel: st.sel });
+  }
   for (const t of maps) for (const id of Object.keys(m[t] || {})) if (!live.has(id)) bad.push(t + ":" + id);
   for (const t of lists) for (const e of (Array.isArray(m[t]) ? m[t] : [])) { if (!e || !e.from || !e.to || !live.has(e.from.node) || !live.has(e.to.node)) bad.push(t + ":" + ((e && e.id) || "?")); }
   let tree = 0; (function w(n) { tree++; (n.children || []).forEach(w); })(m.root);

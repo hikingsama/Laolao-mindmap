@@ -854,9 +854,9 @@ new Promise((resolve) => {
       const m = M.state().cur;
       LAYER_MAPS.push("__probeMap"); LAYER_LISTS.push("__probeList");
       try {
-        m.__probeMap = { GHOSTMAP: { x: 0, y: 0 } };
-        const mapScanned = layerOrphans(m).some((x) => x.indexOf("__probeMap:GHOSTMAP") === 0);
         const victim2 = (root0(M.state().cur) && root0(M.state().cur).children[0] && root0(M.state().cur).children[0].id) || null;   // 根节点不可删，取第一个子节点
+        m.__probeMap = { GHOSTMAP: { x: 0, y: 0 }, [victim2]: { x: 0, y: 0 } };   // 必须含 victim2，否则"按键删"那半是空断言（恒真）
+        const mapScanned = layerOrphans(m).some((x) => x.indexOf("__probeMap:GHOSTMAP") === 0);
         m.__probeList = [
           { id: victim2, from: { node: victim2, side: "e" }, to: { node: "GHOSTNODE", side: "w" }, dir: "fwd" },
           { id: "GHOSTEDGE", from: { node: "GHOSTNODE" }, to: { node: "GHOSTNODE2" }, dir: "none" },
@@ -871,6 +871,7 @@ new Promise((resolve) => {
         const after = M.state().cur;
         return { mapScanned, listScanned,
           mapCleaned: !(after.__probeMap && after.__probeMap[victim2]),
+          keptMapGhost: !!(after.__probeMap && after.__probeMap.GHOSTMAP),
           listCleanedByEndpoints: !(after.__probeList || []).some((e) => e && e.from && e.from.node === victim2),
           keptOtherEntry: (after.__probeList || []).length === 1 };
       } finally {
@@ -880,8 +881,8 @@ new Promise((resolve) => {
       }
     })();
     ok("反向对照：假表塞进 LAYER_MAPS / LAYER_LISTS 后，孤儿判据立刻开始扫它们", probe.mapScanned && probe.listScanned, JSON.stringify(probe));
-    ok("反向对照：真实删除链路按两个清单清理（映射按键删、列表按端点删且只删命中项）",
-      probe.mapCleaned && probe.listCleanedByEndpoints && probe.keptOtherEntry, JSON.stringify(probe));
+    ok("反向对照：真实删除链路按两个清单清理（映射按键删 victim2、GHOSTMAP 与另一条边都留着）",
+      probe.mapCleaned && probe.listCleanedByEndpoints && probe.keptOtherEntry && probe.keptMapGhost, JSON.stringify(probe));
     ok("（源码形状）birthPos 是纯计算（不再自己写 curPos），spawnPos 仍在 change 之外算",
       /function birthPos\(anchor, at\) \{\s*return at \|\| spawnPos\(anchor\);/.test(src9) && !/function birthPos[\s\S]{0,200}putLayerPos/.test(src9));
 
@@ -983,12 +984,18 @@ new Promise((resolve) => {
     const rtId = M.state().cur.id;      // 往返导入那张图的 id（副本必然不是它、也不是 legacy-map）
     const fakeBtn = B.doc.createElement("button");
     fakeBtn.className = "mm-b"; fakeBtn.dataset.mm = "dupid"; fakeBtn.dataset.id = "legacy-map";
+    B.win.$("mmBox").appendChild(fakeBtn);   // 文档级 click 委托有 #mmBox 门禁：不挂进 DOM 会被直接 return（之前"副本没重映射"的假红就是它）
     bubble(B.doc, "click", { target: fakeBtn });
     await new Promise((res) => setTimeout(res, 40));
     const idx = JSON.parse(B.localStorage.getItem("mm_index_v1")) || [];
     /* 按 id 差集找副本：副本的索引标题可能还是旧的（idxPut 没带 title，属既有小缺陷，另行记录），
        所以不能靠标题认副本。 */
-    const copy = idx.filter((e) => e && e.id !== rtId && e.id !== "legacy-map").pop();
+    /* 副本识别：**不能按标题、也不能按"最新一条"** —— 索引里可能还有别处导入的图（它们的 id 与原图相同，
+       会造出"8/8 重叠"的假红）。真判据：这张图的容器根 id 不在原图 id 集合里。 */
+    const cand = idx.filter((e) => e && e.id !== "legacy-map")
+      .map((e) => ({ id: e.id, m: JSON.parse(B.localStorage.getItem("mm_map_" + e.id) || "null") }))
+      .filter((x) => x.m && Array.isArray(x.m.nodes) && x.m.nodes[0] && ids0.indexOf(x.m.nodes[0].id) < 0);
+    const copy = cand[0];
     if (!copy) ok("复制导图产生了副本条目", false, JSON.stringify(idx.map((e) => e && e.id)));
     else {
       const cm = JSON.parse(B.localStorage.getItem("mm_map_" + copy.id));
