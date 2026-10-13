@@ -55,7 +55,8 @@
   const uid = () => (crypto.randomUUID ? crypto.randomUUID() : "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => { const r = (Math.random() * 16) | 0; return (c === "x" ? r : (r & 3) | 8).toString(16); }));
   const nid = () => Math.random().toString(36).slice(2, 9) + Date.now().toString(36).slice(-3);
   const me = () => (typeof currentUser !== "undefined" && currentUser ? currentUser : null);
-  const rpc = (fn, args) => CCAuth.rpc(fn, args || {});
+  // [独立版] 云同步已停用：RPC 通道不存在（第一版剥离 mm_save / mm_list / mm_get / mm_del / mm_rename）
+  // const rpc = (fn, args) => CCAuth.rpc(fn, args || {});
   const tip = (msg, ms = 2600) => { showBanner(msg); clearTimeout(tip.t); tip.t = setTimeout(() => showBanner(""), ms); };
   const lsGet = (k, d) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } };
   const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch (e) { return false; } };
@@ -85,6 +86,9 @@
     if (!ok) tip("这台设备的存储空间满了：登录后导图会存到账号里", 4000);
   }
 
+  /* ===== [独立版] 云同步整段停用 =====
+     第一版范围明确排除云同步（BRIEF 第 3 节）。下面这段是主仓原实现，
+     原样保留在注释里：将来要恢复云同步，删掉这一对注释符即可，逻辑没被改动过。
   let cloudBusy = false, cloudTimer = 0, syncSt = "";
   function setSync(s) { syncSt = s; const el = $("mmSync"); if (el) { el.textContent = s; el.className = "mm-sync" + (/失败|冲突/.test(s) ? " bad" : /保存中|同步中/.test(s) ? " busy" : ""); } }
   function scheduleCloud() { clearTimeout(cloudTimer); if (!me()) { setSync("只存在这台设备（登录后自动存到账号）"); return; } setSync("保存中…"); cloudTimer = setTimeout(pushDirty, 1200); }
@@ -132,6 +136,15 @@
       if (index.some((x) => x.dirty || x.local)) pushDirty();
     } catch (e) {}
   }
+  ===== [独立版] 云同步停用结束 ===== */
+
+  // 停用后的空壳：调用点一律不改，行为等同"没有云端"。
+  // pullList / pushDirty 必须保持 async（调用点用了 .then），否则会 TypeError。
+  let syncSt = "";
+  function setSync() {}
+  function scheduleCloud() {}
+  async function pushDirty() {}
+  async function pullList() {}
 
   // ---------------- 状态 ----------------
   let cur = null, sel = null, editing = null, editingNew = null, hist = [], redo = [], view = { x: 0, y: 0, k: 1 }, mode = "map", q = "", found = [], clip = null, panelOpen = false, listQ = "";
@@ -728,10 +741,7 @@
   async function openMap(id, fromServer) {
     let m = lsGet(mapKey(id), null);
     const e = idxGet(id) || {};
-    if (me() && (fromServer || !m || (e.server && e.server > (e.version || 0) && !e.dirty))) {
-      try { const r = await rpc("mm_get", { p_id: id }); m = r.data; m.id = r.id; m.title = r.title; lsSet(mapKey(id), m); idxPut({ id, title: r.title, version: r.version, server: r.version, local: false, dirty: false, uid: me().id, nodes: count(fill(m.root)) }); }
-      catch (err) { if (!m) { tip("打不开：" + (err.message || "网络不好")); return; } }
-    }
+    // [独立版] 云同步已停用：不再从账号取导图，只读本机（原 mm_get 分支及 fromServer 语义见 git 历史）
     if (!m) { tip("这张导图在这台设备上找不到了"); return; }
     fill(m.root);
     cur = m; cur.layout ||= "mind"; cur.line ||= "curve"; cur.theme ||= "fresh";
@@ -794,7 +804,7 @@
   async function duplicate(id) {
     const m = id === (cur && cur.id) ? clone(cur) : lsGet(mapKey(id), null);
     let src = m;
-    if (!src && me()) { try { const r = await rpc("mm_get", { p_id: id }); src = r.data; } catch (e) {} }
+    // [独立版] 云同步已停用：不再从账号取导图（原 mm_get 分支见 git 历史）
     if (!src) { tip("这张图还没下载到这台设备，先打开一次再复制"); return; }
     const c = { ...clone(src), id: uid(), title: (src.title || "导图") + " 副本" };
     walk(c.root, (n) => { n.id = nid(); }); c.root.text = c.title;
@@ -804,7 +814,7 @@
   async function deleteMap(id) {
     const e = idxGet(id); if (!e || !confirm(`删除「${e.title}」？删除后不能恢复。`)) return;
     closeDlg();
-    if (me() && !e.local) { try { await rpc("mm_del", { p_id: id }); save(LS_REV, { t: Date.now() }); } catch (err) { tip("删除失败：" + (err.message || "")); return; } }
+    // [独立版] 云同步已停用：删除只作用于本机（原 mm_del 分支见 git 历史）
     lsDel(mapKey(id)); index = index.filter((x) => x.id !== id); idxSave();
     if (cur && cur.id === id) closeMap(); else renderList();
   }
@@ -1030,7 +1040,7 @@
       case "ren": { const e2 = idxGet(id); closeDlg(); const v = prompt("导图名称", e2.title); if (!v || !v.trim()) break;
         const m = lsGet(mapKey(id), null); if (m) { m.title = v.trim().slice(0, 80); m.root.text = m.title; lsSet(mapKey(id), m); }
         idxPut({ id, title: v.trim().slice(0, 80), updated: Date.now(), dirty: !!m });
-        if (me() && !e2.local && !m) { try { await rpc("mm_rename", { p_id: id, p_title: v.trim() }); } catch (err) {} } else scheduleCloud();
+        scheduleCloud();   // [独立版] 云同步已停用：只改本机（原 mm_rename 分支见 git 历史）
         renderList(); break; }
       case "dupid": duplicate(id); break;
       case "delmap": deleteMap(id); break;
@@ -1115,6 +1125,7 @@
     pullList().then(() => { if (!cur && currentView() === "mindmap") renderList(); });
   };
   window.mmLeave = () => { document.body.classList.remove("mm-editing"); if (cur) { endEdit(); pushDirty(); } };
+  /* ===== [独立版] 云同步停用：跨设备变更订阅（Sync.onChange）+ 登录后自动上传 =====
   try {
     Sync.onChange((set) => {
       if (!set || !set.has || !set.has(LS_REV)) return;
@@ -1128,5 +1139,6 @@
   let lastUid = me() ? me().id : null;
   setInterval(() => { const u = me() ? me().id : null; if (u !== lastUid) { lastUid = u; if (u) { index.forEach((e) => { if (!e.uid) { e.uid = u; e.dirty = true; } }); idxSave(); pullList(); } if (currentView() === "mindmap" && !cur) renderList(); } }, 2000);
   window.addEventListener("beforeunload", () => { if (index.some((x) => x.dirty) && me()) pushDirty(); });
+  ===== [独立版] 云同步停用结束 ===== */
   window.Mindmap = { parseText, toMarkdown, state: () => ({ cur, sel, index, L }), open: openMap, create };
 })();

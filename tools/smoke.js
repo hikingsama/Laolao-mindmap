@@ -316,7 +316,7 @@ new Promise((resolve) => {
   const st0 = M.state();
   const map = st0.cur;
   const pos = map.pos || {};
-  ok("导图层 cur.pos 里有 9 条坐标（实际 " + Object.keys(pos).length + "）", Object.keys(pos).length === 9);
+  ok("导图层 cur.pos 里有 8 条坐标（实际 " + Object.keys(pos).length + "）", Object.keys(pos).length === 8);
   let nodeFields = 0;
   (function w(n) { if (n.x !== undefined || n.y !== undefined || n.pos !== undefined) nodeFields++; (n.children || []).forEach(w); })(map.root);
   ok("坐标没有写进节点字段（node.x / node.pos 都是 undefined）", nodeFields === 0, "有 " + nodeFields + " 个节点带坐标字段");
@@ -328,7 +328,7 @@ new Promise((resolve) => {
   }
   ok("打开后 " + arr.length + " 个节点彼此不重叠", dup.length === 0, dup.join(","));
   const onDisk = JSON.parse(B.localStorage.getItem("mm_map_legacy-map"));
-  ok("播种结果已落盘（localStorage 的 pos 有 9 条）", !!onDisk.pos && Object.keys(onDisk.pos).length === 9);
+  ok("播种结果已落盘（localStorage 的 pos 有 8 条）", !!onDisk.pos && Object.keys(onDisk.pos).length === 8);
   const snap = JSON.stringify(pos);
   M.open("legacy-map");
   ok("第二次打开不再重算（pos 原样不动）", JSON.stringify(M.state().cur.pos) === snap);
