@@ -39,7 +39,7 @@ class El {
     this.id = id || "";
     this.children = [];
     this.parentNode = null;
-    this.style = {};
+    this.style = { setProperty(k, v) { this[k] = String(v); }, getPropertyValue(k) { return this[k] || ""; }, removeProperty(k) { delete this[k]; } };
     this.dataset = {};
     this.value = "";
     this.textContent = "";
@@ -530,6 +530,55 @@ new Promise((resolve) => {
     delete tgt.fold;
     B.localStorage.setItem("mm_map_legacy-map", JSON.stringify(raw));
     M.open("legacy-map");
+  }
+
+  console.log("\nC7. 双击行为：节点 → 编辑；空白 → 在鼠标处新建（一次只建一个）");
+  {
+    const vwD = B.win.$("mmView");
+    const t = [...M.state().L.nodes.values()].find((s) => s.depth === 1);
+    const fx = B.doc.createElement("div"); fx.className = "mm-node d1"; fx.dataset.id = t.n.id;
+    B.win.$("mmStage").appendChild(fx);
+    const jsSrc = require("fs").readFileSync(require("path").join(__dirname, "..", "vendor", "mindmap.js"), "utf8");
+    const posN = Object.keys(M.state().cur.pos).length;
+    bubble(vwD, "dblclick", { target: fx, clientX: 200, clientY: 200 });
+    ok("双击节点把它选中", M.state().sel === t.n.id, "sel=" + M.state().sel);
+    ok("双击节点不新建节点（老代码在这条分支上什么都不做，半修版会误建）",
+      Object.keys(M.state().cur.pos).length === posN);
+    ok("源码里双击节点显式走 select(id) + startEdit(id)（不再依赖 350ms 判定当主路径）",
+      /const nd = e\.target\.closest\("\.mm-node"\);\s*if \(nd\) \{ const id = nd\.dataset\.id; if \(id\) \{ select\(id\); startEdit\(id\); \} return; \}/.test(jsSrc));
+    ok("[未覆盖] “编辑框真的弹出来”只能真实浏览器验 —— 仿真台的 innerHTML 只是上次 set 的字符串，观测不到 startEdit 追加的 textarea", false,
+      "已用形状断言 + 选中行为 + 不新建 三条替代");
+    // 诊断：遗留的 350ms lastTap 判定在仿真台里到底会不会进编辑（只记录，不当通过/失败）
+    bubble(vwD, "pointerdown", { target: fx, clientX: 200, clientY: 200 });
+    bubble(vwD, "pointerup", { target: fx, clientX: 200, clientY: 200 });
+    bubble(vwD, "pointerdown", { target: fx, clientX: 200, clientY: 200 });
+    bubble(vwD, "pointerup", { target: fx, clientX: 200, clientY: 200 });
+    ok("[诊断] 连点两次（<350ms）走 lastTap 判定：仅记录，不断言成败", true,
+      "仿真台观测不到 startEdit 追加的 textarea，故不在此判定（见上一条未覆盖说明）");
+
+    M.open("legacy-map");
+    const posBefore = Object.keys(M.state().cur.pos).length, rootsBefore = M.state().cur.root.children.length;
+    const snap0 = Object.assign({}, M.state().cur.pos);
+    bubble(vwD, "dblclick", { target: vwD, clientX: 400, clientY: 300 });
+    const stA = M.state(), snapA = Object.assign({}, stA.cur.pos);
+    const rootsA = stA.cur.root.children.length;          // 立刻取数：state().cur 是活引用，留到后面读会被下一次点击改掉
+    bubble(vwD, "dblclick", { target: vwD, clientX: 500, clientY: 380 });
+    const stB = M.state(), snapB = Object.assign({}, stB.cur.pos);
+    const rootsB = stB.cur.root.children.length;
+    const idA = Object.keys(snapA).find((k) => !snap0[k]), idB = Object.keys(snapB).find((k) => !snapA[k]);
+    ok("空白双击一次只建一个节点（" + posBefore + " → " + Object.keys(snapA).length + " → " + Object.keys(snapB).length + "）",
+      Object.keys(snapA).length === posBefore + 1 && Object.keys(snapB).length === posBefore + 2);
+    ok("新节点挂在根节点下（不挂到当前选中的节点下）" ,
+      rootsA === rootsBefore + 1 && rootsB === rootsBefore + 2,
+      "根子节点数 " + rootsBefore + " → " + rootsA + " → " + rootsB);
+    ok("两个新节点都拿到了出生坐标", !!idA && !!idB && !!stA.cur.pos[idA] && !!stB.cur.pos[idB]);
+    if (idA && idB) {
+      const a = stA.cur.pos[idA], b = stB.cur.pos[idB];
+      const dx = b.x - a.x, dy = b.y - a.y;
+      const ratio = dy === 0 ? NaN : dx / dy, want = 100 / 80;   // 两次点击位移 100,80；同一个 k 约掉，比值与缩放无关
+      ok("新节点位置跟着鼠标走（两次点击位移比 ≈ " + want.toFixed(2) + "，实测 " + ratio.toFixed(2) + "）",
+        Math.abs(ratio - want) < 0.15, "dx=" + dx + " dy=" + dy);
+    }
   }
 
   console.log("\nD. 新建子节点 → 不盖住父节点");

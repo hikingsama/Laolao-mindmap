@@ -391,8 +391,9 @@
     return best;
   }
   // 新建节点：算一次初始坐标、立刻固化（改动 4）
-  function giveBirth(k, anchor) {
-    const p = spawnPos(anchor);
+  // at：显式指定左上角（双击空白用）；不传就按 spawnPos 算（挂在父/兄弟旁边）
+  function giveBirth(k, anchor, at) {
+    const p = at || spawnPos(anchor);
     if (p) curPos()[k.id] = p;
     return k;
   }
@@ -1023,7 +1024,20 @@
       if (e.ctrlKey || e.metaKey) zoomAt(view.k * Math.exp(-e.deltaY * 0.0022), e.clientX - r.left, e.clientY - r.top);
       else { view.x -= e.deltaX; view.y -= e.deltaY; applyView(); }
     }, { passive: false });
-    vw.addEventListener("dblclick", (e) => { if (!e.target.closest(".mm-node") && !e.target.closest(".mm-zoom")) { const r = findNode(sel); if (r) addChild(sel); } });
+    /* 【独立版】双击：节点 → 选中并进编辑（不再靠上条 350ms 判定当主路径）；
+       空白 → 在**鼠标位置**新建一个节点（中心落在鼠标点），出生即固化坐标。
+       新节点挂到**根节点**下：数据是纯树、渲染从 cur.root 递归开始，没有父节点的节点不会被画出来；
+       挂根既满足"不挂到当前选中节点下面"（自由画布上到处双击不该都长在选中节点下），又保证它能被渲染。 */
+    vw.addEventListener("dblclick", (e) => {
+      if (e.target.closest(".mm-zoom")) return;
+      const nd = e.target.closest(".mm-node");
+      if (nd) { const id = nd.dataset.id; if (id) { select(id); startEdit(id); } return; }
+      if (!cur) return;
+      const p = local(e), k = { id: nid(), text: "分支主题", children: [] }, m = estSize("分支主题", 1);
+      giveBirth(k, null, { x: Math.round(p.x - m.w / 2), y: Math.round(p.y - m.h / 2) });   // 一次 dblclick 只建一个
+      change(() => { (cur.root.children ||= []).push(k); });
+      sel = k.id; draw(); startEdit(k.id, true); editingNew = k.id;
+    });
   }
   // 拖节点：放到别的主题中间 = 成为它的子主题；放到上 / 下边缘 = 插到它前面 / 后面
   function startNodeDrag(d, e) {
