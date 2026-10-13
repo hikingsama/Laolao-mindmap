@@ -1029,7 +1029,17 @@
       try {
         const o = JSON.parse(text); const m = (o.root || Array.isArray(o.nodes)) ? o : (o.data && (o.data.root || Array.isArray(o.data.nodes))) ? o.data : null;
         if (!m) throw new Error();
-        create("blank", null, clone(m.root || (m.nodes || [])[0]));
+        /* 容器列表：旧格式（root）与新格式（nodes 数组）都认。
+           **多容器不静默丢** —— 原来只取 [0]，其余容器无声消失（连提示都没有）。现在全部导入，
+           并把"当前版本只画第一个容器"讲清楚（与 openMap 的多容器提示同口径：宁可吵，不要安静丢）。 */
+        const rootsIn = Array.isArray(m.nodes) && m.nodes.length ? m.nodes : (m.root ? [m.root] : []);
+        if (!rootsIn.length) throw new Error();
+        create("blank", null, clone(rootsIn[0]));
+        if (rootsIn.length > 1) {
+          cur.nodes = cur.nodes.concat(rootsIn.slice(1).map((r) => fill(clone(r))));
+          storeLocal(cur);
+          tip("这张备份有 " + rootsIn.length + " 个独立容器，已全部导入；当前版本只画第一个", 4000);
+        }
         if (m.layout) cur.layout = m.layout; if (m.theme) cur.theme = m.theme; if (m.line) cur.line = m.line;
         /* 【独立版】位置/尺寸一起搬回来（只搬树上存在的 id）：备份文件里本来就有 pos/size，
            不搬 = "导出再导入位置没了"，用户会当成 bug。 */

@@ -324,6 +324,13 @@ const LEGACY = {
 function bootAll() {
   const b = boot();
   loadInto(b.sandbox, "js/host-bridge.js", b.sandbox.window);
+  /* 提示语取证：#showBanner 等宿主函数是在 **vendor 加载时**被当成参数绑进它的闭包的
+     （loadInto 把沙箱的键列为 new Function 的形参），所以加载之后再改 window.showBanner 已经晚了。
+     要断言"用户看得见的那句话"，必须在这里就换成记录版（并转发给真的那个，#banner 照旧可断）。 */
+  b.banners = [];
+  const realShowBanner = b.sandbox.showBanner;
+  b.sandbox.showBanner = (msg) => { b.banners.push(String(msg == null ? "" : msg)); return realShowBanner(msg); };
+  b.sandbox.window.showBanner = b.sandbox.showBanner;
   b.localStorage.setItem("mm_map_legacy-map", JSON.stringify(LEGACY));
   b.localStorage.setItem("mm_index_v1", JSON.stringify([{ id: "legacy-map", title: "旧导图", updated: Date.now(), nodes: 9, version: 0, local: true, dirty: false }]));
   b.Mindmap = loadInto(b.sandbox, "vendor/mindmap.js", b.sandbox.window);
@@ -1063,6 +1070,31 @@ new Promise((resolve) => {
       ok("形状不合法的尺寸没有被搬进来（BADSHAPE）", !c.size.BADSHAPE);
       ok("导入完导图层里没有孤儿（搬进来的 id 都在树上）", layerOrphans(c).length === 0, layerOrphans(c).join(","));
     }
+    /* 多容器备份：不许静默只取第一个容器（当前版本只画第一个容器，但数据要都在、并且给可见提示）。 */
+    const twoC = JSON.parse(JSON.stringify(LEGACY));
+    const rootA = root0(twoC);
+    const rootB = { id: "b1", text: "第二丛", children: [{ id: "b1x", text: "B 子" }] };
+    delete twoC.root; twoC.nodes = [rootA, rootB];
+    twoC.pos = { [rootA.id]: { x: 0, y: 0 }, b1: { x: 900, y: 0 }, b1x: { x: 1100, y: 0 } };
+    twoC.size = { [rootA.id]: { w: 120, h: 52 }, b1: { w: 120, h: 52 }, b1x: { w: 90, h: 40 } };
+    const bannersBefore = B.banners.length;
+    let cImp = null;
+    {
+      const inp2 = B.doc.createElement("input"); inp2.id = "mmFileOpen";
+      inp2.files = [{ size: 4096, name: "two.json", text: async () => JSON.stringify(twoC) }];
+      bubble(B.doc, "change", { target: inp2 });
+      await new Promise((res) => setTimeout(res, 20));
+      cImp = M.state().cur;
+    }
+    const banners = B.banners.slice(bannersBefore);
+    ok("导入含 2 个容器的备份：两个容器都进来了（不许静默只取第一个）",
+      !!cImp && Array.isArray(cImp.nodes) && cImp.nodes.length === 2,
+      "nodes=" + (cImp && cImp.nodes ? cImp.nodes.length : "null"));
+    ok("第二个容器的节点与 pos/size 也一起搬进来（b1 / b1x）",
+      !!(cImp && cImp.pos.b1 && cImp.size.b1 && cImp.pos.b1x), JSON.stringify(cImp && cImp.pos));
+    ok("多容器导入给了可见提示（不是静默）", banners.some((s) => /独立容器/.test(s)), JSON.stringify(banners));
+    ok("导入后导图层没有孤儿（两个容器的 id 都算 live）", !cImp || layerOrphans(cImp).length === 0, cImp ? layerOrphans(cImp).join(",") : "cur 为空");
+
     M.open("legacy-map");
   }
 
@@ -1073,8 +1105,6 @@ new Promise((resolve) => {
     const tab = M.state().cur;
     const ids0 = [];
     (function w(n) { ids0.push(n.id); (n.children || []).forEach(w); })(root0(tab));
-    /* ① 完整性（与"无孤儿"相反的方向）：树上每个 id 都必须有 pos/size 条目 —— 只断"无孤儿"会漏掉
-       "表被清空/键没搬过去"这类静默丢数据。 */
     /* ① 完整性（与"无孤儿"相反的方向）：树上每个 id 都必须有 pos/size 条目 —— 只断"无孤儿"会漏掉
        "表被清空/键没搬过去"这类静默丢数据。
        为什么这里**写死 pos/size**（不用 LAYER_MAPS 遍历）：`fold` 只给"折叠过的节点"条目、
@@ -1143,7 +1173,6 @@ new Promise((resolve) => {
     /* ③ 复制导图：重发 id 时两个方向都要成立（新 id 有条目 + 没有旧 id 残留）。 */
     B.localStorage.setItem("mm_map_legacy-map", JSON.stringify(LEGACY));
     M.open("legacy-map");
-    const rtId = M.state().cur.id;      // 往返导入那张图的 id（副本必然不是它、也不是 legacy-map）
     /* 点「复制一份」：按钮按生产位置挂在弹窗内容里（mapMenu 就是往 #mmDlgBody 里渲染这个按钮）。
        文档级 click 委派的门禁是 closest("#mmBox, #mmDlg, .mm-head")，**不挂进 DOM 会被直接 return** ——
        之前"副本没重映射"的假红根因就是这个（假按钮没进 DOM → duplicate() 一次都没跑）。 */
