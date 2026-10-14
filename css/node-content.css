@@ -1,0 +1,46 @@
+.mm-rich { white-space: normal; overflow-wrap: anywhere; line-height: 1.5; font-weight: 400; }
+.mm-rich > :first-child { margin-top: 0; }
+.mm-rich > :last-child { margin-bottom: 0; }
+.mm-rich p { margin: 0 0 .55em; }
+.mm-rich h1,.mm-rich h2,.mm-rich h3,.mm-rich h4,.mm-rich h5,.mm-rich h6 { line-height: 1.3; margin: .65em 0 .35em; font-weight: 700; }
+.mm-rich h1 { font-size: 1.5em; } .mm-rich h2 { font-size: 1.3em; } .mm-rich h3 { font-size: 1.15em; }
+.mm-rich ul,.mm-rich ol { padding-left: 1.4em; margin: .4em 0; }
+.mm-rich li > p { margin: .2em 0; }
+.mm-rich blockquote { margin: .55em 0; padding-left: .75em; border-left: 3px solid #8b96b8; opacity: .85; }
+.mm-rich code { font: .85em/1.4 Consolas,monospace; background: rgba(128,140,165,.14); border-radius: 3px; padding: .1em .25em; }
+.mm-rich pre { white-space: pre; overflow: auto; margin: .5em 0; padding: .6em; background: rgba(128,140,165,.12); border-radius: 6px; }
+.mm-rich pre code { padding: 0; background: none; }
+.mm-rich table { border-collapse: collapse; font-size: .9em; margin: .5em 0; }
+.mm-rich th,.mm-rich td { padding: .25em .5em; border: 1px solid #aab4cb; }
+.mm-rich a { color: #487de0; text-decoration: underline; }
+.mm-rich .katex { font-size: 1.1em; white-space: normal; }
+.mm-rich .katex-display { margin: .6em 0; overflow-x: auto; overflow-y: hidden; padding: .2em 0; }
+.mm-math-block { display: block; }
+.mm-math-error { color: #b83d42; }
+.mm-task { color: #487de0; }
+.mm-image-alt { color: #7f899b; }
+.mm-node .mm-rich { height: 100%; overflow: auto; scrollbar-width: thin; }
+.mm-edit { font-family: Consolas,'Microsoft YaHei',monospace !important; font-weight: 400 !important; overflow: auto; max-height: 480px; }
+.mm-edit-preview { position: absolute; z-index: 6; width: 320px; max-height: 480px; overflow: auto; padding: 14px; background: #fff; color: #1f2a3d; border: 1px solid #c7d1e6; border-radius: 10px; box-shadow: 0 8px 24px #17234026; font: 15px/1.5 'Microsoft YaHei',sans-serif; }
+.mm-edit-preview-title { font-size: 11px; color: #7e8aa0; margin-bottom: 8px; }
+.mm-edit-help { position: absolute; z-index: 6; padding: 5px 8px; background: #fff; color: #718099; border-radius: 5px; font: 11px/1.5 'Microsoft YaHei',sans-serif; white-space: nowrap; }
+.mm-content-measure { contain: layout style; }
+.mm-shortcuts-button { white-space: nowrap; flex-shrink: 0; }
+.mm-shortcuts-open .mm-box { margin-right: 350px; }
+.mm-shortcuts { position: fixed; z-index: 20; right: 0; top: 52px; bottom: 0; width: 350px; overflow-y: auto; padding: 16px; background: #fff; color: #1f2a3d; border-left: 1px solid #e3e9f2; font-size: 13px; }
+.mm-shortcuts-heading { display: flex; align-items: center; justify-content: space-between; position: sticky; top: -16px; padding: 10px 0; background: #fff; border-bottom: 1px solid #e3e9f2; }
+.mm-shortcuts-heading b { font-size: 15px; }
+.mm-shortcuts h3 { font-size: 13px; margin: 22px 0 10px; }
+.mm-shortcuts-intro,.mm-shortcuts-note { color: #65728a; line-height: 1.7; }
+.mm-shortcuts code { font: 12px/1.5 Consolas,monospace; overflow-wrap: anywhere; }
+.mm-shortcuts kbd { font: 11px/1.5 inherit; background: #f0f3f9; border: 1px solid #dae1ed; border-radius: 4px; padding: 1px 4px; white-space: nowrap; }
+.mm-shortcuts-table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+.mm-shortcuts-table th { background: #f6f8fc; text-align: left; color: #6b7992; font-weight: 500; }
+.mm-shortcuts-table td,.mm-shortcuts-table th { padding: 8px; border-bottom: 1px solid #e8edf5; vertical-align: top; }
+.mm-shortcuts-table small { display: block; color: #8a95a7; font-size: 11px; margin-top: 2px; }
+.mm-shortcuts-table .mm-snippet-fields { color: #65728a; line-height: 1.7; margin-top: 7px; }
+.mm-snippet-search { width: 100%; height: 34px; padding: 0 10px; font: inherit; border: 1px solid #dce3ef; border-radius: 6px; background: #f8faff; }
+.mm-snippet-count { font-size: 11px; color: #8a95a7; margin: 8px 0; }
+.mm-shortcuts-keys { display: grid; grid-template-columns: max-content 1fr; gap: 10px 12px; }
+.mm-shortcuts-keys dt,.mm-shortcuts-keys dd { margin: 0; } .mm-shortcuts-keys dd { color: #65728a; }
+@media(max-width:720px) { .mm-shortcuts { width: min(350px,100vw); box-shadow: -8px 0 28px #17234020; } .mm-shortcuts-open .mm-box { margin-right: 0; } .mm-shortcuts-button { padding: 0 8px; font-size: 12px; } }

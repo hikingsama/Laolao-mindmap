@@ -42,7 +42,7 @@
     ["warn", "⚠️", "易错"], ["idea", "💡", "想法"], ["pin", "📌", "记住"], ["book", "📖", "要看书"], ["calc", "✏️", "要练习"], ["heart", "❤️", "喜欢"]];
   const MARK = Object.fromEntries(MARKS.map((m) => [m[0], m[1]]));
   const TEMPLATES = [
-    { id: "blank", icon: "⚪", name: "空白导图", tip: "只有一个中心主题", make: () => ({ text: "中心主题", children: [] }) },
+    { id: "blank", icon: "⚪", name: "空白导图", tip: "从一个空白节点开始", make: () => ({ text: "", children: [] }) },
     { id: "course", icon: "📚", name: "课程复习", tip: "章节 → 重点 / 难点 / 例题 / 易错", make: () => T("课程名", [T("第一章", [T("重点"), T("难点"), T("例题"), T("易错点")]), T("第二章", [T("重点"), T("难点")]), T("公式汇总"), T("考试范围")]) },
     { id: "exam", icon: "🎯", name: "考试准备", tip: "考点、题型、时间安排", make: () => T("期末考试", [T("考试信息", [T("时间"), T("地点"), T("题型分值")]), T("必考知识点"), T("薄弱环节"), T("复习计划", [T("第一周"), T("第二周"), T("考前一天")])]) },
     { id: "question", icon: "❓", name: "解决一个问题", tip: "问题 → 需要的知识 → 步骤", make: () => T("我遇到的问题", [T("问题是什么"), T("需要先懂的知识", [T("知识点 1"), T("知识点 2")]), T("解决步骤", [T("第一步"), T("第二步")]), T("答案 / 结论"), T("还不懂的")]) },
@@ -64,8 +64,12 @@
   const clone = (o) => JSON.parse(JSON.stringify(o));
   const when = (t) => { const d = new Date(t); if (isNaN(d)) return ""; const s = (Date.now() - d) / 1000; if (s < 60) return "刚刚"; if (s < 3600) return Math.floor(s / 60) + " 分钟前"; if (s < 86400) return Math.floor(s / 3600) + " 小时前"; return `${d.getMonth() + 1}月${d.getDate()}日`; };
   const fill = (n) => { n.id = n.id || nid(); n.text = String(n.text ?? ""); n.children = (n.children || []).map(fill); return n; };
-  const walk = (n, f, p = null, depth = 0) => { f(n, p, depth); if (n.children) for (const c of n.children) walk(c, f, n, depth + 1); };
+  const walk = (n, f, p = null, depth = 0) => { if (!n) return; f(n, p, depth); if (n.children) for (const c of n.children) walk(c, f, n, depth + 1); };
   const count = (n) => { let k = 0; walk(n, () => k++); return k; };
+  /* 容器版计数：新格式 nodes 数组、旧格式 root 都认。 */
+  /* 【独立版·平级】边的 id 走独立空间（与节点 id 不同源），便于排查与断言。 */
+  const eid = () => "e" + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
+  const countNodes = (m) => (Array.isArray(m && m.nodes) ? m.nodes : m && m.root ? [m.root] : []).reduce((a, r) => a + count(r), 0);
   const pref = Object.assign({ layout: "mind", line: "curve", theme: "fresh" }, lsGet(LS_PREF, {}));
 
   // ---------------- 存储 ----------------
@@ -77,12 +81,12 @@
   function newMap(tpl, title) {
     const root = fill(clone((TEMPLATES.find((t) => t.id === tpl) || TEMPLATES[0]).make()));
     if (title) root.text = title;
-    return { id: uid(), title: title || root.text, layout: pref.layout, line: pref.line, theme: pref.theme, root, v: 1 };
+    return { id: uid(), title: title || root.text || "未命名导图", layout: pref.layout, line: pref.line, theme: pref.theme, nodes: [root], fold: {}, edges: [], v: 2 };
   }
   function storeLocal(m) {
     const e = idxGet(m.id) || {};
     const ok = lsSet(mapKey(m.id), m);
-    idxPut({ id: m.id, title: m.title, updated: Date.now(), nodes: count(m.root), version: e.version || 0, local: e.local ?? true, dirty: true, uid: me() ? me().id : e.uid || null });
+    idxPut({ id: m.id, title: m.title, updated: Date.now(), nodes: countNodes(m), version: e.version || 0, local: e.local ?? true, dirty: true, uid: me() ? me().id : e.uid || null });
     if (!ok) tip("这台设备的存储空间满了：登录后导图会存到账号里", 4000);
   }
 
@@ -99,12 +103,12 @@
     try {
       for (const e of index.filter((x) => x.dirty && (!x.uid || x.uid === me().id))) {
         const m = lsGet(mapKey(e.id), null); if (!m) { e.dirty = false; continue; }
-        const r = await rpc("mm_save", { p_id: m.id, p_title: m.title, p_data: m, p_base: e.local ? null : e.version || null, p_nodes: count(m.root) });
+        const r = await rpc("mm_save", { p_id: m.id, p_title: m.title, p_data: m, p_base: e.local ? null : e.version || null, p_nodes: countNodes(m) });
         if (r && r.ok) { e.version = r.version; e.local = false; e.dirty = false; e.uid = me().id; }
         else if (r && r.conflict) {
           // 别的设备先改了：我这份另存为「冲突副本」，当前打开的换成账号里的最新版
           const copy = { ...clone(m), id: uid(), title: m.title + "（冲突副本）" };
-          lsSet(mapKey(copy.id), copy); index.unshift({ id: copy.id, title: copy.title, updated: Date.now(), nodes: count(copy.root), version: 0, local: true, dirty: true, uid: me().id });
+          lsSet(mapKey(copy.id), copy); index.unshift({ id: copy.id, title: copy.title, updated: Date.now(), nodes: countNodes(copy), version: 0, local: true, dirty: true, uid: me().id });
           e.dirty = false; e.version = 0;
           tip("这张图在别的设备上也改过：账号里的最新版已经打开，你刚才这份另存为「冲突副本」", 6000);
           if (cur && cur.id === m.id) { await openMap(m.id, true); }
@@ -148,20 +152,41 @@
 
   // ---------------- 状态 ----------------
   let cur = null, sel = null, editing = null, editingNew = null, hist = [], redo = [], view = { x: 0, y: 0, k: 1 }, mode = "map", q = "", found = [], clip = null, panelOpen = false, listQ = "";
+  /* 【独立版】收起按钮的指针路径状态（见 bindCanvas 的 pointerdown / up）：
+     foldDown = 按下时命中的收起按钮；foldSwallow = 这次折叠已经由指针路径处理过，
+     浏览器随后还会补发一次 click，别在 click 委托里再折一次（否则一按一展开、净效果为零）。 */
+  let foldDown = null, foldSwallow = null;
+  /* 【独立版·平级】正在从某个磁吸点拖出的连线：{ from:{node,side} }；松手时按松手位置的磁吸点建边。 */
+  let link = null;
+  /* 选中的边（与"选中的节点" sel 是两套：点线选线、点节点选节点）。右键菜单与 Delete 都看它。 */
+  let selEdge = null;
+  /* 指针悬停到的那条边（视觉档：hover 比常态明显、比选中弱）。 */
+  let hotEdge = null;
   let L = null;   // 最近一次布局：{nodes: Map(id → {n, x, y, w, h, depth, side, color, parent}), bounds}
   const node = (id) => (L && L.nodes.get(id) ? L.nodes.get(id).n : null);
-  function findNode(id, n = cur && cur.root, p = null) { if (!n) return null; if (n.id === id) return { n, p }; for (const c of n.children || []) { const r = findNode(id, c, n); if (r) return r; } return null; }
+  /* 【独立版·平级】按 id 查找必须覆盖**全部容器**（多容器下只搜 nodes[0] = 选中/编辑/删除/撤销里
+     第二个容器的节点"找不到"，随后被当成"已删除"清掉 sel）。不传 n 时遍历全部容器；
+     传 n 时仍是单棵树的递归（内部递归、isAncestor 都走这条）。 */
+  function findNode(id, n, p = null) {
+    if (n) {
+      if (n.id === id) return { n, p };
+      for (const c of n.children || []) { const r = findNode(id, c, n); if (r) return r; }
+      return null;
+    }
+    for (const r of nodesArr()) { const hit = findNode(id, r, null); if (hit) return hit; }
+    return null;
+  }
   const isAncestor = (a, b) => { let r = findNode(b); while (r && r.p) { if (r.p.id === a) return true; r = findNode(r.p.id); } return false; };
 
   function change(fn, keepSel) {
     if (!cur) return;
     hist.push(JSON.stringify(cur)); if (hist.length > 120) hist.shift(); redo = [];
     fn();
-    cur.title = String(cur.root.text || "未命名导图").split("\n")[0].slice(0, 80) || "未命名导图";
+    if (!cur.flat) cur.title = String((topNode() || {}).text || "未命名导图").split("\n")[0].slice(0, 80) || "未命名导图";
     storeLocal(cur); scheduleCloud(); draw();
   }
-  function undo() { if (!hist.length) return; redo.push(JSON.stringify(cur)); cur = JSON.parse(hist.pop()); if (!findNode(sel)) sel = cur.root.id; storeLocal(cur); scheduleCloud(); draw(); tip("已撤销", 1200); }
-  function redoIt() { if (!redo.length) return; hist.push(JSON.stringify(cur)); cur = JSON.parse(redo.pop()); if (!findNode(sel)) sel = cur.root.id; storeLocal(cur); scheduleCloud(); draw(); }
+  function undo() { if (!hist.length) return; redo.push(JSON.stringify(cur)); cur = JSON.parse(hist.pop()); if (!findNode(sel)) sel = topNode() ? topNode().id : null; storeLocal(cur); scheduleCloud(); draw(); tip("已撤销", 1200); }
+  function redoIt() { if (!redo.length) return; hist.push(JSON.stringify(cur)); cur = JSON.parse(redo.pop()); if (!findNode(sel)) sel = topNode() ? topNode().id : null; storeLocal(cur); scheduleCloud(); draw(); }
 
   // ---------------- 量字 + 布局 ----------------
   const cvs = document.createElement("canvas").getContext("2d");
@@ -185,56 +210,98 @@
     const wr = wrapLines((pre ? pre + " " : "") + (n.text || " "), font, maxW);
     const extra = (n.note ? 20 : 0) + (n.link ? 20 : 0) + (n.progress ? 22 : 0);
     const padX = depth === 0 ? 22 : depth === 1 ? 14 : 10, padY = depth === 0 ? 12 : depth === 1 ? 8 : 6;
+    if (window.MMContent && window.MMContent.isRich(n.text)) {
+      const rich = window.MMContent.measure(n.text, font, maxW);
+      return { w: rich.w + extra + padX * 2 + 6, h: rich.h + padY * 2 + 2 + (pre ? lineH(depth) : 0), lines: wr.lines, font, padX, padY, rich: true };
+    }
     // +6：边框和字体渲染的误差，免得最后一个字被挤到下一行
     return { w: Math.ceil(Math.max(depth === 0 ? 90 : 34, wr.w + extra) + padX * 2 + 6), h: wr.lines.length * lineH(depth) + padY * 2 + 2, lines: wr.lines, font, padX, padY };
   }
-  function layoutAuto() {
+  function layoutAuto(all) {
     const th = THEMES[cur.theme] || THEMES.fresh, nodes = new Map(), lay = cur.layout || "mind";
+    /* 【独立版·平级】**每个容器都是一棵树**：布局从全部容器开始摆，不再只看第一个。
+       这里只改"从哪几个根开始"—— span / placeH / placeV 的算法本身一字不动
+       （老图首次打开还要靠它们播种坐标，见 seedPos）。 */
+    const roots = nodesArr();
+    if (!roots.length) return { nodes, th, bounds: { x0: 0, y0: 0, x1: 0, y1: 0 } };
     const HG = lay === "down" ? 26 : 46, VG = lay === "down" ? 56 : 14;
-    // 1) 量大小、记颜色
-    (function prep(n, depth, color, parent) {
-      const m = measure(n, depth);
-      const c = n.color || (depth === 0 ? th.root : color);
-      nodes.set(n.id, { n, depth, ...m, color: c, parent: parent ? parent.id : null, kids: n.fold ? [] : n.children || [] });
-      (n.children || []).forEach((k, i) => prep(k, depth + 1, depth === 0 ? (k.color || th.colors[i % th.colors.length]) : c, n));
-    })(cur.root, 0, th.root, null);
+    // 1) 量大小、记颜色（每个容器各量一棵，容器根一律是 depth 0）
+    /* 【独立版·平级】可见性来自 **hiddenIds(cur)**（"谁被折叠盖住"的唯一权威）：
+       · 不可见的节点**不进 L.nodes**（于是 draw / span / nudgeFree / bounds 全都只看得见可见节点）；
+       · 但**仍然往下递归**：多父的节点可能被折叠挡了一条路、又靠另一条路绕得到（a2→a1x），
+         不递归就摸不到它 —— 这也正是不能用 `children` 判折叠的原因（它判的只是叶子关系）。
+       · cur.pos / cur.size 里被藏起来的条目故意保留：那是"用户摆过的位置"，展开时直接用回去。 */
+    const hid = cur.flat ? new Set() : hiddenIds(cur, all);
+    function prep(n, depth, color, parent) {
+      if (!hid.has(n.id)) {
+        const m = measure(n, depth);
+        const c = n.color || (depth === 0 ? th.root : color);
+        /* 【独立版】尺寸在这里合并（measure 之后、nodes.set 之前）：让 span() 的缓存从一开始就按最终尺寸算 */
+        const z = curSize()[n.id];
+        const pinned = !!(z && Number.isFinite(z.w) && Number.isFinite(z.h) && z.w > 0 && z.h > 0);
+        const cs = clampSize(pinned ? z.w : m.w, pinned ? z.h : m.h, m.w, m.h);
+        if (!pinned || cs.w !== z.w || cs.h !== z.h) { curSize()[n.id] = cs; sizeDirty = true; }
+        nodes.set(n.id, { n, depth, ...m, w: cs.w, h: cs.h, measW: m.w, measH: m.h, color: c, parent: parent ? parent.id : null, kids: n.children || [] });
+      }
+      (n.children || []).forEach((k, i) => prep(k, depth + 1, depth === 0 ? (k.color || th.colors[i % th.colors.length]) : color, n));
+    }
+    for (const r of roots) prep(r, cur.flat ? 1 : 0, cur.flat ? th.colors[0] : th.root, null);
     const S = (id) => nodes.get(id);
     // 2) 子树大小
+    /* 【独立版·平级】只把**有盒子**的孩子算进 span/摆位：被折叠盖住的后代不进 L.nodes（`S(id)` 为 undefined），
+       它们不占位置；展开时它们会重新参与（L 每帧重算）。 */
+    const liveKids = (s) => s.kids.filter((k) => S(k.id));
     const span = (n) => { const s = S(n.id); if (s.span != null) return s.span;
-      const ks = s.kids; const own = lay === "down" ? s.w : s.h;
+      const ks = liveKids(s); const own = lay === "down" ? s.w : s.h;
       s.span = !ks.length ? own : Math.max(own, ks.reduce((a, k) => a + span(k), 0) + VG * (ks.length - 1) * (lay === "down" ? 0 : 1) + (lay === "down" ? HG * (ks.length - 1) : 0));
       return s.span; };
     // 横向：x 往 dir 方向长，y 在 [top, top+span] 内居中
     function placeH(n, x, top, dir) {
       const s = S(n.id); span(n);
       s.side = dir; s.x = dir > 0 ? x : x - s.w; s.y = top + s.span / 2 - s.h / 2;
-      const tot = s.kids.reduce((a, k) => a + span(k), 0) + VG * Math.max(0, s.kids.length - 1);
+      const tot = liveKids(s).reduce((a, k) => a + span(k), 0) + VG * Math.max(0, liveKids(s).length - 1);
       let y = top + (s.span - tot) / 2;
-      for (const k of s.kids) { placeH(k, dir > 0 ? s.x + s.w + HG : s.x - HG, y, dir); y += span(k) + VG; }
+      for (const k of liveKids(s)) { placeH(k, dir > 0 ? s.x + s.w + HG : s.x - HG, y, dir); y += span(k) + VG; }
     }
     function placeV(n, left, y) {
       const s = S(n.id); span(n);
       s.side = 0; s.x = left + s.span / 2 - s.w / 2; s.y = y;
-      const tot = s.kids.reduce((a, k) => a + span(k), 0) + HG * Math.max(0, s.kids.length - 1);
+      const tot = liveKids(s).reduce((a, k) => a + span(k), 0) + HG * Math.max(0, liveKids(s).length - 1);
       let x = left + (s.span - tot) / 2;
-      const rowH = Math.max(...s.kids.map((k) => S(k.id).h), 0);
-      for (const k of s.kids) { placeV(k, x, y + s.h + VG + (rowH - S(k.id).h) * 0); x += span(k) + HG; }
+      const rowH = Math.max(...liveKids(s).map((k) => S(k.id).h), 0);
+      for (const k of liveKids(s)) { placeV(k, x, y + s.h + VG + (rowH - S(k.id).h) * 0); x += span(k) + HG; }
     }
-    const root = cur.root, rs = S(root.id);
-    if (lay === "down") placeV(root, 0, 0);
-    else if (lay === "right") placeH(root, 0, 0, 1);
-    else {
-      // 左右分布：按高度把一级主题分成两边（右边先放、尽量各一半）；可以手动指定 side
-      const ks = rs.kids, total = ks.reduce((a, k) => a + span(k), 0);
-      const right = [], left = []; let acc = 0;
-      ks.forEach((k) => { const want = k.side === "l" ? left : k.side === "r" ? right : (acc + span(k) / 2 <= total / 2 + 1 || !right.length ? right : left); want.push(k); if (want === right) acc += span(k); });
-      rs.side = 0; rs.x = -rs.w / 2; rs.y = -rs.h / 2;
-      const stack = (arr, dir) => {
-        const tot = arr.reduce((a, k) => a + span(k), 0) + VG * Math.max(0, arr.length - 1);
-        let y = -tot / 2;
-        for (const k of arr) { placeH(k, dir > 0 ? rs.x + rs.w + HG + 14 : rs.x - HG - 14, y, dir); y += span(k) + VG; }
-      };
-      stack(right, 1); stack(left, -1);
+    /* 3) 摆位置：**每个容器各摆一棵**，然后纵向叠放（容器之间留一条空）。
+       `mind` 那套"左右按高度分两半"每个容器内部照旧。 */
+    const placeRoot = (root) => {
+      const rs = S(root.id);
+      if (lay === "down") placeV(root, 0, 0);
+      else if (lay === "right") placeH(root, 0, 0, 1);
+      else {
+        // 左右分布：按高度把一级主题分成两边（右边先放、尽量各一半）；可以手动指定 side
+        const ks = liveKids(rs), total = ks.reduce((a, k) => a + span(k), 0);
+        const right = [], left = []; let acc = 0;
+        ks.forEach((k) => { const want = k.side === "l" ? left : k.side === "r" ? right : (acc + span(k) / 2 <= total / 2 + 1 || !right.length ? right : left); want.push(k); if (want === right) acc += span(k); });
+        rs.side = 0; rs.x = -rs.w / 2; rs.y = -rs.h / 2;
+        const stack = (arr, dir) => {
+          const tot = arr.reduce((a, k) => a + span(k), 0) + VG * Math.max(0, arr.length - 1);
+          let y = -tot / 2;
+          for (const k of arr) { placeH(k, dir > 0 ? rs.x + rs.w + HG + 14 : rs.x - HG - 14, y, dir); y += span(k) + VG; }
+        };
+        stack(right, 1); stack(left, -1);
+      }
+    };
+    let yOff = 0;
+    for (const root of roots) {
+      placeRoot(root);
+      const sub = [];
+      walk(root, (n) => { const s = S(n.id); if (s && s.x != null) sub.push(s); });
+      if (!sub.length) continue;
+      let mn = Infinity, mx = -Infinity;
+      for (const s of sub) { mn = Math.min(mn, s.y); mx = Math.max(mx, s.y + s.h); }
+      const dy = yOff - mn;
+      for (const s of sub) s.y += dy;
+      yOff += (mx - mn) + (lay === "down" ? 48 : 72);
     }
     let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
     for (const s of nodes.values()) { if (s.x == null) continue; x0 = Math.min(x0, s.x); y0 = Math.min(y0, s.y); x1 = Math.max(x1, s.x + s.w); y1 = Math.max(y1, s.y + s.h); }
@@ -252,12 +319,201 @@
     if (!cur.pos || typeof cur.pos !== "object") cur.pos = {};
     return cur.pos;
   }
-  // 把这次布局里所有有坐标的节点的最终位置写回 cur.pos（只补新出现的，不删旧的）
-  function syncPosFromLayout(lay) {
-    const p = curPos();
-    lay = lay || L || layoutWithPos();
-    for (const [id, s] of lay.nodes) { if (s.x != null && s.y != null) p[id] = { x: Math.round(s.x), y: Math.round(s.y) }; }
-    return p;
+  /* 【独立版·平级】节点集合的入口是**数组** `cur.nodes = [root]`（按 Chief 裁定；不参与布局/样式/折叠语义，
+     `children` 留在节点上作迁移来源）。**不留 `root` 别名。**
+     ⚠️ **数据形状只有这一处权威**（新格式 `nodes` 数组 / 旧格式 `root`）：`nodesOf(m)` 是唯一读取入口，
+     渲染之外的调用方（自测台、`tools/verify-ui.mjs` 的页内片段）一律走它，**不许自己写**
+     `Array.isArray(m.nodes) ? m.nodes : [m.root]` —— 第二份形状知识迟早和这里走偏。 */
+  const nodesOf = (m) => (m && Array.isArray(m.nodes) ? m.nodes : (m && m.root ? [m.root] : []));
+  const nodesArr = () => nodesOf(cur);
+  const topNode = () => nodesArr()[0] || null;
+  const isTopNode = (v) => { const id = v && typeof v === "object" ? v.id : v; return !!id && nodesArr().some((r) => r.id === id); };
+  /* 全部容器里的节点 id 集合（pruneLayer / applyLayer / 断言共用同一处，别各写一份遍历）。 */
+  const liveIds = (m) => { const s = new Set(); for (const r of nodesOf(m)) walk(r, (n) => s.add(n.id)); return s; };
+  /* 【独立版·平级】**"谁看得见"只有这一处权威**（像 nodesOf 一样导出）：layout / draw / outline /
+     doFind / exportPng 全调它，任何一处都不许自己再算一遍"谁被折叠盖住"。
+     折叠 = **边的可达集合**（关系来源是**边**；`children` 只当迁移来源，老图的 children 在 migrateMap 里变成 fwd 边）：
+       · 遍历种子 s = **容器根 ∪ 一张边都没有的节点**。只从容器根出发等于在渲染层偷偷安了一个"起点"
+         （正是 INV-1 要拆的），代价是"边被删光/新建的点"这些孤岛被当成"被折叠"而消失 ——
+         **无边 ≠ 被折叠**：跟任何节点都没关系的点照样画出来（它本来就画得出来，只是没人连它）。
+         注意只放"**一条边都没有**"的节点（看的是是否有边，不看方向）：若按"没有出边的节点"放种子，
+         有向图里**每个叶子**都会被放出来，折叠父亲时孩子会凭空露出来 —— 折叠功能整体失效。
+       · 被折叠的节点**自身可见**，但不再往外传（邻居要靠别的路才够得着）；
+       · 环用 visited 防死循环（INV-3：环合法）；多父的节点只要还有一条没被挡住的路就仍然可见。
+     `all=true` = 不看折叠（播种时要用：折叠只是"暂时看不见"，位置照旧该固化）。 */
+  const isFoldIn = (m, id) => !!(m && m.fold && m.fold[id]);
+  function visibleIds(m, all) {
+    if (m && m.flat) return liveIds(m);
+    const out = new Set(), adj = new Map();
+    for (const e of (m && Array.isArray(m.edges) ? m.edges : [])) {
+      if (!e || !e.from || !e.to) continue;
+      if (!adj.has(e.from.node)) adj.set(e.from.node, []);
+      if (!adj.has(e.to.node)) adj.set(e.to.node, []);
+      adj.get(e.from.node).push(e.to.node);
+      adj.get(e.to.node).push(e.from.node);
+    }
+    const queue = [];
+    /* 孤岛：**一条边都没有**的节点直接当遍历种子（先收它们，再收容器根；顺序无关，只是把两族种子一次放齐）。 */
+    for (const r of nodesOf(m)) walk(r, (n) => { if (!adj.has(n.id) && !out.has(n.id)) { out.add(n.id); queue.push(n.id); } });
+    for (const r of nodesOf(m)) { out.add(r.id); queue.push(r.id); }
+    while (queue.length) {
+      const id = queue.shift();
+      if (!all && isFoldIn(m, id)) continue;               // 自身可见，但不往外传
+      for (const nb of adj.get(id) || []) if (!out.has(nb)) { out.add(nb); queue.push(nb); }
+    }
+    return out;
+  }
+  function hiddenIds(m, all) {
+    const vis = visibleIds(m, all), hid = new Set();
+    for (const r of nodesOf(m)) walk(r, (n) => { if (!vis.has(n.id)) hid.add(n.id); });
+    return hid;
+  }
+  /* 要"看见某个节点"需要先展开哪些折叠节点：从容器根按边找一条路，收集路上的折叠点。
+     搜索命中了被折叠盖住的节点时用它（把路展开），而不是靠 children 的父子链去猜。 */
+  function foldPathTo(m, id) {
+    const prev = new Map(), seen = new Set(nodesOf(m).map((r) => r.id)), q = [...seen];
+    const nbOf = (e, from) => {
+      const a = e && e.from && e.from.node, b = e && e.to && e.to.node;
+      return a === from ? b : b === from ? a : null;
+    };
+    while (q.length) {
+      const cur2 = q.shift();
+      if (cur2 === id) {
+        const out = []; let x = id;
+        while (prev.has(x)) { const p = prev.get(x); if (isFoldIn(m, p)) out.push(p); x = p; }
+        return out;
+      }
+      for (const e of (m && Array.isArray(m.edges) ? m.edges : [])) {
+        const nb = nbOf(e, cur2);
+        if (!nb || seen.has(nb)) continue;
+        seen.add(nb); prev.set(nb, cur2); q.push(nb);
+      }
+    }
+    return [];
+  }
+  /* 【独立版·平级】折叠状态在**导图层** `cur.fold = { 节点id: true }`（与 pos/size 同层，绝不写节点字段）。
+     所有读写走这两个入口：节点字段里**不再有** fold（迁移时 delete n.fold）。 */
+  const isFold = (n) => !!(n && cur && cur.fold && cur.fold[n.id]);
+  const setFold = (n, v) => { if (!n || !cur) return; if (v) (cur.fold ||= {})[n.id] = true; else if (cur.fold) delete cur.fold[n.id]; };
+  /* 【独立版·平级】迁移（**显式步骤，不顺带**）：把老图节点字段上的折叠搬进导图层，
+     并保证两个新导图层字段存在（fold 映射 / edges 列表）。幂等靠 v:2 —— 否则用户"删光折叠"后重开又被重建。 */
+  function migrateMap(m) {
+    if (!m || typeof m !== "object") return false;
+    let changed = false;
+    if (!m.fold || typeof m.fold !== "object" || Array.isArray(m.fold)) { m.fold = {}; changed = true; }
+    if (!Array.isArray(m.edges)) { m.edges = []; changed = true; }
+    if (!Array.isArray(m.nodes)) { m.nodes = m.root ? [m.root] : []; delete m.root; changed = true; }
+    /* 顺序要紧：**补 id 必须在搬折叠之前**。`fill` 才给无 id 的老节点分配 id（见文件头），
+       先搬折叠会把它的折叠写成 key "undefined"，随后被 pruneLayer 当孤儿清掉 —— 折叠静默丢失。
+       （openMap 里那句 `for (const r of m.nodes) fill(r)` 在迁移之后，补不上这个洞。） */
+    let idFilled = false;
+    for (const r of m.nodes) walk(r, (n) => { if (!n.id) idFilled = true; });
+    for (const r of m.nodes) fill(r);
+    if (idFilled) changed = true;
+    for (const r of m.nodes) walk(r, (n) => { if (n.fold) { m.fold[n.id] = true; delete n.fold; changed = true; } });
+    /* 【独立版·平级】**children → 边**：老图的上下级自动变线（层级从此在边上，渲染与折叠都按边算）。
+       只做一次，靠 v:3 幂等 —— 用户删光边之后重开不会再被重建。
+       侧面：mind 默认 e→w（左分支 w→e）；down 用 s→n。拿不到布局信息时按默认走。 */
+    if (m.v !== 3 && !(Array.isArray(m.edges) && m.edges.length)) {
+      for (const r of m.nodes) walk(r, (n) => {
+        for (const k of n.children || []) {
+          const sd = (m.layout === "down") ? { from: "s", to: "n" } : (k.side === "l" ? { from: "w", to: "e" } : { from: "e", to: "w" });
+          m.edges.push({ id: eid(), from: { node: n.id, side: sd.from }, to: { node: k.id, side: sd.to }, dir: "fwd" });
+          changed = true;
+        }
+      });
+    }
+    if (m.v !== 3) { m.v = 3; changed = true; }
+    return changed;
+  }
+  /* 【独立版】导图层表的**两个清单**（契约 §2.4）：各自只有一处定义，断言直接读同一处（见导出）。
+     · LAYER_MAPS  按键删：`delete map[节点id]`
+     · LAYER_LISTS 按**端点**删：过滤掉 from.node / to.node 命中被删集合的**条目**。
+       它们没有"按节点 id 的键"，**绝不可当映射去 `delete d[节点id]`** —— 那删的是条目自己的 id，完全删错东西。
+     `fold` / `edges` 落地时由这两处自动覆盖，清理代码不用再改。 */
+  const LAYER_MAPS = ["pos", "size", "fold"];
+  const LAYER_LISTS = ["edges"];
+  /* 【独立版】**唯一的坐标写入口**：全文只有这里出现 `curPos()[…] = …`。
+     调用方必须在 change() 的 fn 内调它（change 先快照再执行 fn，写在 fn 外就撤不回去）。 */
+  function putLayerPos(id, p) { if (p) curPos()[id] = p; }
+  /* 【独立版】删除时按节点 id 清理导图层：**两个清单各喂各的函数，不许互相复用** ——
+     · dropLayer 只对 LAYER_MAPS（按键删）有效
+     · dropEdges 只对 LAYER_LISTS（按**端点**过滤条目）有效
+     为什么必须分开：dropLayer 天生是 `delete map[节点id]` 的语义；列表条目另有自己的 id，
+     让它"顺手"处理列表，等于把两种语义塞进一个函数名 —— 迟早有人拿节点 id 去删边。 */
+  function dropLayer(ids) {
+    const set = ids instanceof Set ? ids : new Set(ids);
+    for (const t of LAYER_MAPS) { const d = cur[t]; if (!d) continue; for (const id of set) delete d[id]; }
+  }
+  function dropEdges(ids) {
+    const set = ids instanceof Set ? ids : new Set(ids);
+    for (const t of LAYER_LISTS) {
+      const a = cur[t]; if (!Array.isArray(a)) continue;
+      cur[t] = a.filter((e) => !(e && ((e.from && set.has(e.from.node)) || (e.to && set.has(e.to.node)))));
+    }
+  }
+  /* 【独立版】**列表类的最小助手**（只碰 LAYER_LISTS，函数体里不出现 delete）。
+     抽出来的唯一目的是让"列表分支绝不按键删"这条形状断言**范围天然干净** —— 正则没法按分支圈范围，
+     写成"整个 pruneLayer 里没有 delete"会把映射分支里正当的 `delete d[id]` 逼红。
+     语义与原来内联的那两段一字不差（纯搬运，不带行为变化）。 */
+  function pruneEdgesIn(live) {
+    let n = 0;
+    for (const t of LAYER_LISTS) {
+      const a = cur[t]; if (!Array.isArray(a)) continue;
+      const keep = a.filter((e) => e && e.from && e.to && live.has(e.from.node) && live.has(e.to.node));
+      n += a.length - keep.length;
+      cur[t] = keep;
+    }
+    return n;
+  }
+  function applyEdgesInto(src, live) {
+    let n = 0;
+    for (const t of LAYER_LISTS) {
+      const from = src[t]; if (!Array.isArray(from)) continue;
+      const to = (cur[t] ||= []);
+      for (const e of from) {
+        if (!e || !e.from || !e.to) continue;
+        if (!live.has(e.from.node) || !live.has(e.to.node)) continue;
+        to.push(clone(e)); n++;
+      }
+    }
+    return n;
+  }
+  /* 导入时把文件里的导图层条目搬到当前图上：**只搬树上存在的 id / 两端都在树上的条目**
+     （与 pruneLayer 同一判据），并按表做形状校验（坏数据不进门）。清单同样来自上面两处。 */
+  const LAYER_OK = {
+    pos: (v) => !!validPos(v),
+    size: (v) => !!v && Number.isFinite(v.w) && Number.isFinite(v.h) && v.w > 0 && v.h > 0,
+  };
+  function applyLayer(src) {
+    if (!cur || !src) return 0;
+    const live = liveIds(cur);                         // 全部容器（唯一一处遍历；只算第一个容器 = 把别的容器当孤儿删）
+    let n = 0;
+    for (const t of LAYER_MAPS) {
+      const from = src[t]; if (!from || typeof from !== "object") continue;
+      const ok = LAYER_OK[t], to = (cur[t] ||= {});
+      for (const id of Object.keys(from)) {
+        if (!live.has(id)) continue;
+        const v = from[id]; if (ok && !ok(v)) continue;
+        to[id] = clone(v); n++;
+      }
+    }
+    n += applyEdgesInto(src, live);                    // 列表类：只搬"两端都在树上"的条目（助手只碰 LAYER_LISTS）
+    return n;
+  }
+  /* 读取容错：把"表里有、树里没有"的孤儿条目清掉（返回清掉的条数）。
+     治本在 del 的清理；这里救的是**本次修复之前**就已经被污染、存在盘上的旧图。
+     映射类按键清；列表类按**端点**清（条目自己还有 id，绝不能拿节点 id 去 delete）。 */
+  function pruneLayer() {
+    if (!cur || !topNode()) return 0;
+    const live = liveIds(cur);                         // 全部容器（唯一一处遍历；只算第一个容器 = 把别的容器当孤儿删）
+    let n = 0;
+    for (const t of LAYER_MAPS) {
+      const d = cur[t]; if (!d) continue;
+      for (const id of Object.keys(d)) if (!live.has(id)) { delete d[id]; n++; }
+    }
+    n += pruneEdgesIn(live);                           // 列表类：按端点清理（助手只碰 LAYER_LISTS）
+    return n;
   }
 
   function collide(rects, x, y, w, h) {
@@ -276,46 +532,50 @@
       placed.push({ x: s.x, y: s.y, w: s.w, h: s.h });
     }
   }
-  const deltaOf = (d, id) => (d[id] || (d[id] = { dx: 0, dy: 0 }));
+  /* 【独立版】节点尺寸：与坐标同层、同生命周期 —— 存在导图层 cur.size = { 节点id: {w,h} }，
+     绝不写进节点字段（安卓 normalizeNode() 是白名单式过滤，会静默丢掉）。
+     不变量：
+       1) cur.size 里没有记录的节点，用"现有文本测量结果"落一次盘，之后不再重算（F5 重开不重算）；
+       2) 最小 60×40；最大不超过该节点文本测量尺寸的 4 倍（clampSize 里换算）。 */
+  const SIZE_MIN_W = 60, SIZE_MIN_H = 40, SIZE_MAX_MUL = 4;
+  const curSize = () => (cur.size ||= {});
+  const finNum = (v, d) => (Number.isFinite(v) ? v : d);   // 显式挡 NaN / Infinity：Math.max(60, NaN) 还是 NaN
+  function clampSize(w, h, measW, measH) {
+    const mw = Number.isFinite(measW) && measW > 0 ? measW : SIZE_MIN_W;
+    const mh = Number.isFinite(measH) && measH > 0 ? measH : SIZE_MIN_H;
+    const maxW = Math.max(SIZE_MIN_W, Math.round(mw * SIZE_MAX_MUL));
+    const maxH = Math.max(SIZE_MIN_H, Math.round(mh * SIZE_MAX_MUL));
+    return {
+      w: Math.min(maxW, Math.max(SIZE_MIN_W, Math.round(finNum(w, SIZE_MIN_W)))),
+      h: Math.min(maxH, Math.max(SIZE_MIN_H, Math.round(finNum(h, SIZE_MIN_H)))),
+    };
+  }
+  /* 【独立版】尺寸合并点已前移到 measure() 之后、nodes.set 之前（见下方 layoutAuto 的 prep）。
+     为什么必须在那里：span() 首次算完会把 s.span 缓存住（`if (s.span != null) return s.span`），
+     若先建 Map、再事后覆写 w/h，缓存会停在旧尺寸上 —— 不报错，但给错值。
+     sizeDirty = 本次有尺寸新写入或被 clamp 修正，需要落盘（一趟布局最多落一次） */
+  let sizeDirty = false;
 
   function layoutWithPos() {
     const lay = layoutAuto(), pos = curPos(), fixed = new Set();
+    if (sizeDirty) { sizeDirty = false; try { storeLocal(cur); } catch (e) {} }
     for (const [id, s] of lay.nodes) if (validPos(pos[id])) fixed.add(id);
-    // 1) 有坐标的：直接用坐标，并记下相对旧布局的位移
-    const delta = {};
+    /* 【独立版·平级】有坐标的节点：坐标就是它的位置 —— **位置属于每个节点自己**（INV-4）。
+       这里原先还有一段"父节点被拖走时，让它的子节点跟着挪同样的位移"（树语义残留）：
+       平级模型下父子只是 children 的迁移来源、不是布局关系，跟随已删（Chief 裁定）。
+       未固化的节点仍由 layoutAuto 摆、再由 nudgeFree 让开已摆好的（见下两步）。 */
     for (const [id, s] of lay.nodes) {
       if (!fixed.has(id)) continue;
-      const p = pos[id], ds = deltaOf(delta, id);
-      ds.dx = p.x - s.x; ds.dy = p.y - s.y;
+      const p = pos[id];
       s.x = p.x; s.y = p.y;
     }
-    // 2) 父节点有坐标的子节点：跟着父节点一起挪（父节点没动就一点不动）
-    const kidsOf = {};
-    for (const [id, s] of lay.nodes) {
-      const pid = s.parent;
-      if (!pid || !fixed.has(pid)) continue;
-      (kidsOf[pid] || (kidsOf[pid] = [])).push([id, s]);
-    }
-    (function move(depth) {
-      if (depth > 200) return;
-      let moved = false;
-      for (const pid of Object.keys(kidsOf)) {
-        const ps = lay.nodes.get(pid);
-        if (ps.done) continue;
-        ps.done = true; moved = true;
-        const pd = deltaOf(delta, pid);
-        for (const [id, s] of kidsOf[pid]) {
-          if (fixed.has(id)) continue;
-          const ds = deltaOf(delta, id);
-          ds.dx = pd.dx; ds.dy = pd.dy;
-          s.x += ds.dx; s.y += ds.dy;
-        }
-      }
-      if (moved) move(depth + 1);
-    })(0);
-    // 3) 没有坐标的节点：让开已经摆好的
+    // 没有坐标的节点：让开已经摆好的
     nudgeFree(lay.nodes, pos);
-    // 4) 重新算外框
+    if (cur.flat) {
+      let pinned = false;
+      for (const [id, box] of lay.nodes) if (!validPos(pos[id])) { putLayerPos(id, { x: box.x, y: box.y }); pinned = true; }
+      if (pinned) storeLocal(cur);
+    }
     let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
     for (const s of lay.nodes.values()) { if (s.x == null) continue; x0 = Math.min(x0, s.x); y0 = Math.min(y0, s.y); x1 = Math.max(x1, s.x + s.w); y1 = Math.max(y1, s.y + s.h); }
     lay.bounds = { x0, y0, x1, y1 };
@@ -325,9 +585,10 @@
   // 迁移播种：旧导图第一次打开（没有 pos）→ 用旧布局算法算一遍写进 pos
   // 坐标原点对齐到中心主题：根节点落在 (0,0)，整张图往左上方长也一样能看清
   function seedPos() {
+    if (!topNode()) return false;
     const p = curPos();
     if (Object.keys(p).length) return false;
-    const lay = layoutAuto(), rs = lay.nodes.get(cur.root.id);
+    const lay = layoutAuto(true), rs = lay.nodes.get(topNode().id);   // all=true：折叠只是"暂时看不见"，位置照旧固化
     const ox = rs && rs.x != null ? rs.x : 0, oy = rs && rs.y != null ? rs.y : 0;
     for (const [id, s] of lay.nodes) if (s.x != null && s.y != null) p[id] = { x: Math.round(s.x - ox), y: Math.round(s.y - oy) };
     try { storeLocal(cur); } catch (e) {}     // 立刻落盘：之后打开就是"已固化"的图
@@ -358,50 +619,186 @@
     return best;
   }
   // 新建节点：算一次初始坐标、立刻固化（改动 4）
-  function giveBirth(k, anchor) {
-    const p = spawnPos(anchor);
-    if (p) curPos()[k.id] = p;
-    return k;
+  // at：显式指定左上角（双击空白用）；不传就按 spawnPos 算（挂在父/兄弟旁边）
+  /* 【独立版】算新节点的出生坐标（**纯计算、不写数据**）。
+     spawnPos 读 L，而 L 只在 draw() 里重算 —— 所以这一步必须在 change() 的 fn **之外**做，
+     fn 里看到的还是旧 L。写入由调用方在 change() 的 fn 内调 putLayerPos，与 endNodeDrag 的 putPos 同构。 */
+  function birthPos(anchor, at) {
+    return at || spawnPos(anchor);
   }
   const layout = layoutWithPos;
 
-  // 两个点之间的连线
-  function linkPath(a, b, side, style) {
-    let sx, sy, ex, ey;
-    if (side === 0) { sx = a.x + a.w / 2; sy = a.y + a.h; ex = b.x + b.w / 2; ey = b.y; }
-    else { sx = side > 0 ? a.x + a.w : a.x; sy = a.y + a.h / 2; ex = side > 0 ? b.x : b.x + b.w; ey = b.y + b.h / 2; }
-    if (style === "straight") return `M${sx},${sy} L${ex},${ey}`;
-    if (side === 0) { const my = (sy + ey) / 2; return style === "elbow" ? `M${sx},${sy} V${my} H${ex} V${ey}` : `M${sx},${sy} C${sx},${my} ${ex},${my} ${ex},${ey}`; }
-    const mx = sx + (ex - sx) / 2;
-    return style === "elbow" ? `M${sx},${sy} H${mx} V${ey} H${ex}` : `M${sx},${sy} C${mx},${sy} ${mx},${ey} ${ex},${ey}`;
-  }
   const hidden = (n) => { let k = 0; for (const c of n.children || []) walk(c, () => k++); return k; };
 
-  // ---------------- 画 ----------------
+  /* ---------------- 磁吸点（连线落点） ----------------
+     【独立版·平级】每条边记的是 { from:{node,side}, to:{node,side} } —— **只有端点语义，没有坐标**：
+     端点位置每帧从布局盒现算（节点被拖动/缩放/换 zoom 后连线自然跟着走，不需要"重锚"）。
+     磁吸点 = 节点盒四条边的中点（n/e/s/w），屏幕坐标下**大小恒定**：
+       · 命中半径 magRadius：clamp(0.4 × min(节点屏幕宽, 屏幕高), 8, 16)   —— 常规节点退化成 16
+       · 圆点直径 magDia   ：clamp(0.25 × min(…), 6, 12)                 —— 常规节点退化成 12
+     圆点**只做视觉**（pointer-events:none），命中一律在 magnetAt() 里按几何算 ——
+     与八方向缩放同一套口径，避免"元素命中抢事件"（第一次点被 hover 状态吃掉那次的教训）。 */
+  const MAG_SIDES = ["n", "e", "s", "w"];
+  const MAG_DIST = 26;                 // 指针离节点屏幕矩形多少像素以内 → 磁吸点淡入（屏幕像素，恒定）
+  const magRadius = (s) => Math.max(8, Math.min(16, Math.round(0.4 * Math.min(s.w * view.k, s.h * view.k))));
+  const magDia = (s) => Math.max(6, Math.min(12, Math.round(0.25 * Math.min(s.w * view.k, s.h * view.k))));
+  /* 磁吸点的**舞台坐标**（每帧现算，不落盘） */
+  const magPos = (s, side) => side === "n" ? { x: s.x + s.w / 2, y: s.y }
+    : side === "s" ? { x: s.x + s.w / 2, y: s.y + s.h }
+    : side === "w" ? { x: s.x, y: s.y + s.h / 2 }
+    : { x: s.x + s.w, y: s.y + s.h / 2 };
+  const magScreen = (s, side) => { const p = magPos(s, side); return { x: p.x * view.k + view.x, y: p.y * view.k + view.y }; };
+  /* 磁吸点"屏幕恒定"：缩放变了要**立刻**把圆点直径改回 magDia/view.k（不然它会跟着舞台一起缩放）。
+     只在 k 真的变了时才动 DOM —— 平移每帧都调 applyView，不做无谓的样式写。 */
+  let magK = 1;
+  function syncMagSize() {
+    if (magK === view.k || !L) return;
+    magK = view.k;
+    const kk = view.k || 1;
+    for (const w of document.querySelectorAll("#mmStage .mm-magwrap")) {
+      const s = L.nodes.get(w.dataset.id); if (!s) continue;
+      const md = Math.max(4, Math.round(magDia(s) / kk));
+      for (const d of w.children) { d.style.width = md + "px"; d.style.height = md + "px"; }
+    }
+  }
+  /* 【独立版·平级】边的命中（屏幕坐标入参）：线只有 1–2px，用户点不中就是没做 —— 所以按**屏幕 10px
+     命中带**算（点到线段的距离）。节点优先于边：调用方先问节点、再问边。 */
+  const EDGE_HIT = 10;
+  function edgeAt(cx, cy) {
+    if (!L || !cur || !Array.isArray(cur.edges) || !cur.edges.length) return null;
+    const r = $("mmView").getBoundingClientRect(), px = cx - r.left, py = cy - r.top;
+    let best = null, bestD = EDGE_HIT;
+    for (const e of cur.edges) {
+      const a = L.nodes.get(e.from.node), b = L.nodes.get(e.to.node);
+      if (!a || !b || a.x == null || b.x == null) continue;
+      const points = window.MMEdgeRouter.route(a, b, e).points.map(p => ({ x: p.x * view.k + view.x, y: p.y * view.k + view.y }));
+      for (let i = 1; i < points.length; i++) {
+        const p1 = points[i - 1], p2 = points[i], vx = p2.x - p1.x, vy = p2.y - p1.y, len2 = vx * vx + vy * vy;
+        const t = len2 ? Math.max(0, Math.min(1, ((px - p1.x) * vx + (py - p1.y) * vy) / len2)) : 0;
+        const d = Math.hypot(px - (p1.x + t * vx), py - (p1.y + t * vy));
+        if (d <= bestD) { bestD = d; best = e; }
+      }
+    }
+    return best;
+  }
+  /* 磁吸点命中（屏幕坐标入参）：返回 { id, side, cx, cy } 或 null。
+     选中节点优先（与 zoneAt 同口径）—— 选中那一个的最后一次操作最可能是它。 */
+  function magnetAt(cx, cy) {
+    if (!L || !cur) return null;
+    const r = $("mmView").getBoundingClientRect(), px = cx - r.left, py = cy - r.top;
+    const list = [...L.nodes.values()];
+    const si = list.findIndex((s) => s.n.id === sel);
+    if (si > 0) { const s = list.splice(si, 1)[0]; list.unshift(s); }
+    for (const s of list) {
+      if (s.x == null || s.y == null) continue;
+      const rad = magRadius(s);
+      for (const side of MAG_SIDES) {
+        const p = magScreen(s, side);
+        if (Math.hypot(px - p.x, py - p.y) <= rad) return { id: s.n.id, side, cx: p.x, cy: p.y };
+      }
+    }
+    return null;
+  }
+  /* 【独立版·平级】同一对端点**唯一，且含反向**：已经 A.e↔B.w 之后，无论从 A.e 拖到 B.w、
+     还是从 B.w 拖回 A.e，都是同一条线（拦下并给可见提示，不许静默丢）。
+     注意**磁吸点本身不独占**：同一个点上可以挂多条边（扇出是正常需求）；
+     平行边靠"不同的端点对"成立（A.e→B.n 与 A.s→B.w 是两条合法边）。 */
+  function edgeDup(from, to) {
+    return (cur.edges || []).some((e) => e && e.from && e.to && (
+      (e.from.node === from.node && e.from.side === from.side && e.to.node === to.node && e.to.side === to.side) ||
+      (e.from.node === to.node && e.from.side === to.side && e.to.node === from.node && e.to.side === from.side)));
+  }
+  function addEdge(from, to, dir) {
+    if (!cur || !from || !to) return null;
+    if (from.node === to.node) { tip("同一个主题的磁吸点之间不能连线"); return null; }
+    if (edgeDup(from, to)) { tip("这两个点之间已经有一条线了（换个点连，或先删掉那条）"); return null; }
+    const e = { id: eid(), from: { node: from.node, side: from.side }, to: { node: to.node, side: to.side }, dir: dir || "fwd" };
+    change(() => { (cur.edges ||= []).push(e); });     // 走 change：可撤销、能落盘
+    return e;
+  }
+
+  /* ---------------- 画 ----------------
+     【独立版·平级】边怎么画：端点每帧从布局盒现算（magPos），线走直线，箭头画成小三角 `<path>`。
+     箭头位置由 dir 决定：fwd = 只在终点（to）、rev = 只在起点、both = 两端、none = 不画。
+     `data-end` 标明这一端是哪一头，方便断言与排查。 */
+  const EDGE_COLOR = "#5b6b7c", EDGE_HOT = "#2f7cf6", ARROW = 10;
+  /* 边的三档视觉：常态 2px 灰 / hover 3px 蓝 / 选中 4px 蓝 + 外圈光晕（选中必须比 hover 更明显）。
+     命中带跟这个无关 —— 命中一律按屏幕 10px 几何算（EDGE_HIT），线本身多细都点得中。 */
+  function edgeArrow(p, q, end, hot, eid) {
+    const deg = Math.atan2(p.y - q.y, p.x - q.x) * 180 / Math.PI;
+    return `<path class="mm-arrow${hot ? " hot" : ""}" data-end="${end}" data-edge="${eid}" d="M0,0 L${-ARROW},${ARROW * 0.45} L${-ARROW},${-ARROW * 0.45} Z" fill="${hot ? EDGE_HOT : EDGE_COLOR}" transform="translate(${p.x},${p.y}) rotate(${deg})"/>`;
+  }
+  function edgeSvg() {
+    if (!cur || !Array.isArray(cur.edges)) return [];
+    const out = [];
+    for (const e of cur.edges) {
+      if (!e || !e.from || !e.to) continue;
+      const a = L.nodes.get(e.from.node), b = L.nodes.get(e.to.node);
+      if (!a || !b || a.x == null || b.x == null) continue;      // 端点不在画布上（折叠/已删）就这条不画
+      const routed = window.MMEdgeRouter.route(a, b, e), points = routed.points, p1 = points[0], p2 = points[points.length - 1], dir = e.dir || "fwd";
+      const sel2 = e.id === selEdge, hot = !sel2 && e.id === hotEdge;
+      const cls = "mm-edge" + (sel2 ? " sel" : hot ? " hot" : "");
+      const col = sel2 || hot ? EDGE_HOT : EDGE_COLOR, wd = sel2 ? 4 : hot ? 3 : 2;
+      out.push(`<path class="${cls}" data-id="${e.id}" d="${routed.path}" stroke="${col}" stroke-width="${wd}" fill="none" stroke-linecap="round" opacity="${sel2 || hot ? 1 : .9}"/>`);
+      if (dir === "fwd" || dir === "both") out.push(edgeArrow(p2, points[points.length - 2], "to", sel2 || hot, e.id));
+      if (dir === "rev" || dir === "both") out.push(edgeArrow(p1, points[1], "from", sel2 || hot, e.id));
+    }
+    return out;
+  }
+  /* 指针悬停到某条线上：只改类名/属性，不重画整张图（连线可能很多）。
+     与选中互斥：选中的那条永远用"选中档"。 */
+  function markEdgeHot(id) {
+    if (hotEdge === id) return;
+    hotEdge = id;
+    for (const p of document.querySelectorAll("#mmStage .mm-links path.mm-edge")) {
+      const on = p.dataset.id === id, isSel = p.classList.contains("sel");
+      p.classList.toggle("hot", on && !isSel);
+      if (on && !isSel) { p.setAttribute("stroke", EDGE_HOT); p.setAttribute("stroke-width", "3"); p.setAttribute("opacity", "1"); }
+      else if (!isSel) { p.setAttribute("stroke", EDGE_COLOR); p.setAttribute("stroke-width", "2"); p.setAttribute("opacity", ".9"); }
+    }
+    for (const a of document.querySelectorAll("#mmStage .mm-links path.mm-arrow")) {
+      const owner = cur && (cur.edges || []).find((e) => e.id === id);
+      const isHot = !!owner && a.dataset.end && (owner.dir || "fwd") === (a.dataset.end === "to" ? "fwd" : "rev") && !selEdge;
+      a.setAttribute("fill", isHot ? EDGE_HOT : EDGE_COLOR);
+    }
+  }
   const E = (s) => esc(s);
   function draw() {
     if (!cur) return;
+    if (!cur.flat || nodesArr().some(n => n.children && n.children.length)) {
+      seedPos();
+      const flat = []; for (const r of nodesArr()) walk(r, n => flat.push(n));
+      for (const n of flat) { n.children = []; delete n.side; }
+      cur.nodes = flat; cur.fold = {}; cur.flat = true; cur.v = 3;
+      storeLocal(cur);
+    }
     L = layout();
     const th = L.th, st = $("mmStage"), svg = [], html = [];
-    for (const s of L.nodes.values()) {
-      if (s.x == null) continue;
-      for (const k of s.kids) {
-        const t = L.nodes.get(k.id); if (!t || t.x == null) continue;
-        svg.push(`<path d="${linkPath(s, t, t.side, cur.line)}" stroke="${t.color}" stroke-width="${s.depth === 0 ? th.line + 1 : th.line}" fill="none" stroke-linecap="round" opacity="${s.depth === 0 ? .9 : .75}"/>`);
-      }
-    }
     for (const s of L.nodes.values()) {
       if (s.x == null) continue;
       const n = s.n, d = s.depth, isSel = n.id === sel, hit = found.includes(n.id);
       const style = d === 0 ? `background:${s.color};color:${th.rootText};` : d === 1 ? `background:${mix(s.color, th.sub, .16)};border-color:${s.color};color:${th.text};` : `border-color:${mix(s.color, th.sub, .55)};color:${th.text};background:${th.sub};`;
       const prog = n.progress ? `<svg class="mm-prog" viewBox="0 0 16 16" title="${n.progress}%"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" opacity=".25" stroke-width="2"/><circle cx="8" cy="8" r="6.5" fill="none" stroke="${d === 0 ? "currentColor" : s.color}" stroke-width="2.4" stroke-dasharray="${(n.progress / 100) * 40.8} 41" transform="rotate(-90 8 8)" stroke-linecap="round"/></svg>` : "";
       html.push(`<div class="mm-node d${Math.min(d, 2)}${isSel ? " sel" : ""}${hit ? " hit" : ""}${n.bold ? " b" : ""}" data-id="${n.id}" style="left:${s.x}px;top:${s.y}px;width:${s.w}px;height:${s.h}px;${style}font:${s.font};line-height:${lineH(d)}px;padding:${s.padY}px ${s.padX}px">`
-        + `<span class="mm-t">${E(s.lines.join("\n"))}</span>${prog}${n.note ? `<b class="mm-ic" data-mm="note" title="${E(n.note.slice(0, 100))}">📝</b>` : ""}${n.link ? `<b class="mm-ic" data-mm="link" title="${E(n.link)}">🔗</b>` : ""}`
-        + ((n.children || []).length && d > 0 || (d === 0 && n.fold) ? `<button class="mm-fold${n.fold ? " on" : ""} s${s.side}" data-mm="fold" data-id="${n.id}" style="--c:${s.color}" title="${n.fold ? "展开" : "收起"}">${n.fold ? hidden(n) : "−"}</button>` : "")
+        + (s.rich ? `<div class="mm-t mm-rich">${(n.marks || []).length ? `<p>${E(n.marks.map(m => MARK[m] || "").join(""))}</p>` : ""}${window.MMContent.render(n.text)}</div>` : `<span class="mm-t">${E(s.lines.join("\n"))}</span>`)
+        + `${prog}${n.note ? `<b class="mm-ic" data-mm="note" title="${E(n.note.slice(0, 100))}">📝</b>` : ""}${n.link ? `<b class="mm-ic" data-mm="link" title="${E(n.link)}">🔗</b>` : ""}`
+        + ((n.children || []).length && d > 0 || (d === 0 && isFold(n)) ? `<button class="mm-fold${isFold(n) ? " on" : ""} s${s.side}" data-mm="fold" data-id="${n.id}" style="--c:${s.color}" title="${isFold(n) ? "展开" : "收起"}">${isFold(n) ? hidden(n) : "−"}</button>` : "")
         + `</div>`);
     }
+    /* 磁吸点画成**独立覆盖层**（在节点之上、不放进 .mm-node 里）：.mm-node 是 overflow:hidden，
+       圆点骑在盒子边线上会被裁掉一半。层本身 pointer-events:none —— 命中在 magnetAt 里按几何算。
+       直径要写 val/view.k：#mmStage 整体被 scale(view.k) 放大，写死屏幕像素才"大小恒定"。 */
+    const magHtml = [];
+    for (const s of L.nodes.values()) {
+      if (s.x == null) continue;
+      const md = Math.max(4, Math.round(magDia(s) / (view.k || 1)));
+      magHtml.push(`<span class="mm-magwrap" data-id="${s.n.id}" style="left:${s.x}px;top:${s.y}px;width:${s.w}px;height:${s.h}px">`
+        + MAG_SIDES.map((sd) => `<i class="mm-mag ${sd}" data-side="${sd}" style="width:${md}px;height:${md}px"></i>`).join("") + `</span>`);
+    }
     const b = L.bounds, pad = 400;
-    st.innerHTML = `<svg class="mm-links" style="left:${b.x0 - pad}px;top:${b.y0 - pad}px;width:${b.x1 - b.x0 + pad * 2}px;height:${b.y1 - b.y0 + pad * 2}px" viewBox="${b.x0 - pad} ${b.y0 - pad} ${b.x1 - b.x0 + pad * 2} ${b.y1 - b.y0 + pad * 2}">${svg.join("")}</svg>${html.join("")}`;
+    /* 预览线（拖磁吸点时那条虚线）与连线同坐标空间：每帧重建，拖动过程中只改它的 innerHTML。 */
+    const prevBox = `left:${b.x0 - pad}px;top:${b.y0 - pad}px;width:${b.x1 - b.x0 + pad * 2}px;height:${b.y1 - b.y0 + pad * 2}px" viewBox="${b.x0 - pad} ${b.y0 - pad} ${b.x1 - b.x0 + pad * 2} ${b.y1 - b.y0 + pad * 2}`;
+    st.innerHTML = `<svg class="mm-links" style="${prevBox}">${svg.join("")}${edgeSvg().join("")}</svg><svg class="mm-linkprev" style="${prevBox}"></svg>${html.join("")}${magHtml.join("")}`;
     const vw = $("mmView");
     vw.style.background = th.bg; vw.style.setProperty("--grid", th.grid); vw.dataset.theme = cur.theme;
     applyView();
@@ -414,7 +811,7 @@
     const p = (h) => { h = h.replace("#", ""); if (h.length === 3) h = h.split("").map((c) => c + c).join(""); return [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16)); };
     try { const x = p(hex), y = p(base); return "rgb(" + x.map((v, i) => Math.round(v * a + y[i] * (1 - a))).join(",") + ")"; } catch (e) { return base; }
   }
-  function applyView() { const st = $("mmStage"); if (st) st.style.transform = `translate(${view.x}px,${view.y}px) scale(${view.k})`; const z = $("mmZoom"); if (z) z.textContent = Math.round(view.k * 100) + "%"; }
+  function applyView() { const st = $("mmStage"); if (st) st.style.transform = `translate(${view.x}px,${view.y}px) scale(${view.k})`; const z = $("mmZoom"); if (z) z.textContent = Math.round(view.k * 100) + "%"; syncMagSize(); }
   function fit(anim) {
     if (!L) return;
     const vw = $("mmView"), r = vw.getBoundingClientRect(), b = L.bounds, pad = 40;
@@ -423,7 +820,7 @@
     view.k = Math.max(minK, Math.min(1.4, want));
     if (want < minK) {
       // 手机上整张图放不下：不缩得看不清，以中心主题为准，其余的左右拖着看
-      const s = L.nodes.get(cur.root.id), lay = cur.layout;
+      const s = L.nodes.get(topNode().id), lay = cur.layout;
       const cx = lay === "right" ? s.x + Math.min(r.width / view.k / 2 - 20, (b.x1 - b.x0) / 2) : s.x + s.w / 2, cy = lay === "down" ? s.y + Math.min(r.height / view.k / 2 - 20, (b.y1 - b.y0) / 2) : s.y + s.h / 2;
       view.x = r.width / 2 - cx * view.k; view.y = r.height / 2 - cy * view.k;
     } else { view.x = r.width / 2 - ((b.x0 + b.x1) / 2) * view.k; view.y = r.height / 2 - ((b.y0 + b.y1) / 2) * view.k; }
@@ -442,51 +839,47 @@
   }
   function select(id, show) { sel = id; document.querySelectorAll("#mmStage .mm-node.sel").forEach((x) => x.classList.remove("sel")); const el = document.querySelector(`#mmStage .mm-node[data-id="${id}"]`); if (el) el.classList.add("sel"); toolbarState(); if (panelOpen) panel(); if (show) reveal(id); }
   function toolbarState() {
-    const r = sel && findNode(sel), isRoot = !r || !r.p;
-    for (const [id, off] of [["mmSib", isRoot], ["mmDel", isRoot], ["mmUndo", !hist.length], ["mmRedo", !redo.length], ["mmFold", !r || !(r.n.children || []).length]]) { const b = $(id); if (b) b.disabled = !!off; }
-    const f = $("mmFold"); if (f && r) f.textContent = r.n.fold ? "▸ 展开" : "▾ 收起";
+    for (const [id, off] of [["mmSib", !sel], ["mmDel", !sel], ["mmUndo", !hist.length], ["mmRedo", !redo.length], ["mmFold", true]]) { const b = $(id); if (b) b.disabled = off; }
   }
-
-  // ---------------- 编辑操作 ----------------
+  // Flat nodes: creating a node does not create a hierarchy or an edge.
   function addChild(id, text) {
-    const r = findNode(id || sel); if (!r) return;
-    const k = { id: nid(), text: text || (r.p ? "子主题" : "分支主题"), children: [] };
-    giveBirth(k, { x: (L && L.nodes.get(r.n.id)) ? L.nodes.get(r.n.id).x : 0, y: (L && L.nodes.get(r.n.id)) ? L.nodes.get(r.n.id).y : 0, w: estSize(r.n.text, 1).w, h: estSize(r.n.text, 1).h });   // 【独立版】出生位置立刻固化
-    change(() => { r.n.fold = false; (r.n.children ||= []).push(k); });
+    const anchor = L && L.nodes.get(id || sel);
+    const k = { id: nid(), text: text ?? "", children: [] };
+    const at = birthPos(anchor || { x: 0, y: 0, w: 150, h: 40 });
+    change(() => { cur.nodes.push(k); putLayerPos(k.id, at); });
     sel = k.id; draw(); reveal(k.id); startEdit(k.id, true); editingNew = k.id;
   }
-  function addSibling(id, before) {
-    const r = findNode(id || sel); if (!r || !r.p) return addChild(id);
-    const k = { id: nid(), text: r.p === cur.root ? "分支主题" : "子主题", children: [] };
-    const ps = L && L.nodes.get(r.n.id);
-    giveBirth(k, { x: ps ? ps.x : 0, y: ps ? ps.y : 0, w: ps ? ps.w : 150, h: ps ? ps.h : 32 });   // 【独立版】出生位置立刻固化
-    change(() => { const i = r.p.children.indexOf(r.n); r.p.children.splice(before ? i : i + 1, 0, k); });
-    sel = k.id; draw(); reveal(k.id); startEdit(k.id, true); editingNew = k.id;
+  function addSibling(id) { addChild(id); }
+  function pushAISummary(mapId, sourceId, text) {
+    if (!cur || cur.id !== mapId || !findNode(sourceId)) throw new Error("提问节点已删除或导图已切换，请重新选择节点。");
+    if (typeof text !== "string" || !text.startsWith("# 第")) throw new Error("总结缺少提问标题，请重新生成。");
+    endEdit();
+    const anchor = L.nodes.get(sourceId), node = { id: nid(), text, children: [] };
+    const box = measure(node, 1), p = { x: anchor.x + anchor.w + 80, y: anchor.y };
+    // Scan a column beside A using the full measured Markdown rectangle.
+    const occupied = [...L.nodes.values()];
+    while (occupied.some(s => p.x < s.x+s.w+24 && p.x+box.w+24 > s.x && p.y < s.y+s.h+24 && p.y+box.h+24 > s.y)) {
+      const hits = occupied.filter(s => p.x < s.x+s.w+24 && p.x+box.w+24 > s.x && p.y < s.y+s.h+24 && p.y+box.h+24 > s.y);
+      p.y = Math.max(...hits.map(s => s.y+s.h+32));
+    }
+    change(() => {
+      cur.nodes.push(node); putLayerPos(node.id, p); curSize()[node.id] = { w: box.w, h: box.h };
+      (cur.edges ||= []).push({ id: eid(), from: { node: node.id, side: "w" }, to: { node: sourceId, side: "e" }, dir: "fwd" });
+    });
+    select(node.id, true); return node.id;
   }
-  function addParent() {
-    const r = findNode(sel); if (!r || !r.p) return;
-    const k = { id: nid(), text: "主题", children: [] };
-    const ps = L && L.nodes.get(r.n.id);
-    giveBirth(k, { x: ps ? ps.x : 0, y: ps ? ps.y : 0, w: ps ? ps.w : 150, h: ps ? ps.h : 32 });   // 【独立版】出生位置立刻固化
-    change(() => { const i = r.p.children.indexOf(r.n); r.p.children.splice(i, 1, k); k.children.push(r.n); });
-    sel = k.id; draw(); startEdit(k.id, true);
-  }
+  function addParent() {}
   function del(id) {
-    const r = findNode(id || sel); if (!r || !r.p) return;
-    const i = r.p.children.indexOf(r.n), nx = r.p.children[i + 1] || r.p.children[i - 1] || r.p;
-    change(() => { r.p.children.splice(i, 1); });
-    select(nx.id, true);
+    const r = findNode(id || sel); if (!r) return;
+    const index = cur.nodes.indexOf(r.n);
+    change(() => { cur.nodes.splice(index, 1); dropLayer([r.n.id]); dropEdges([r.n.id]); });
+    sel = (cur.nodes[Math.min(index, cur.nodes.length - 1)] || {}).id || null;
+    draw(); if (sel) select(sel, true);
   }
-  function moveSib(dir) {
-    const r = findNode(sel); if (!r || !r.p) return;
-    const a = r.p.children, i = a.indexOf(r.n), j = i + dir; if (j < 0 || j >= a.length) return;
-    change(() => { a.splice(i, 1); a.splice(j, 0, r.n); }); select(r.n.id, true);
-  }
-  function toggleFold(id) {
-    const r = findNode(id || sel); if (!r || !(r.n.children || []).length) return;
-    change(() => { r.n.fold = !r.n.fold; });
-  }
-  function foldLevel(lv) { change(() => walk(cur.root, (n, p, d) => { if ((n.children || []).length) n.fold = lv > 0 && d >= lv; })); setTimeout(() => fit(true), 20); }
+  function moveSib() {}
+  function toggleFold() {}
+  function foldLevel() {}
+
   function setProp(k, v) { const r = findNode(sel); if (!r) return; change(() => { if (v === undefined || v === "" || v === false || v === null) delete r.n[k]; else r.n[k] = v; }); }
   function toggleMark(m) {
     const r = findNode(sel); if (!r) return;
@@ -501,8 +894,8 @@
   function copySel(cut) {
     const r = findNode(sel); if (!r) return;
     clip = clone(r.n);
-    try { navigator.clipboard.writeText(toText(r.n, 0)); } catch (e) {}
-    if (cut && r.p) del(r.n.id); else tip("已复制这一枝" + (cut ? "" : "（Ctrl+V 粘贴到别的主题下）"), 1600);
+    try { navigator.clipboard.writeText(r.n.text); } catch (e) {}
+    if (cut) del(r.n.id); else tip("已复制这一枝" + (cut ? "" : "（Ctrl+V 粘贴到别的主题下）"), 1600);
   }
   function pasteTo(id, text) {
     const r = findNode(id || sel); if (!r) return;
@@ -511,7 +904,9 @@
     else if (clip) items = [clone(clip)];
     if (!items || !items.length) return;
     const fresh = items.map((n) => { walk(n, (x) => { x.id = nid(); }); return fill(n); });
-    change(() => { r.n.fold = false; (r.n.children ||= []).push(...fresh); });
+    const flat = []; for (const n of fresh) walk(n, x => flat.push(x));
+    for (const n of flat) n.children = [];
+    change(() => { cur.nodes.push(...flat); });
     select(fresh[0].id, true);
   }
 
@@ -527,26 +922,75 @@
     ta.className = "mm-edit"; ta.value = initial != null ? initial : s.n.text; ta.spellcheck = false;
     ta.style.cssText = `left:${s.x}px;top:${s.y}px;min-width:${Math.max(s.w, 80)}px;min-height:${s.h}px;font:${s.font};line-height:${lineH(s.depth)}px;padding:${s.padY}px ${s.padX}px;`;
     $("mmStage").appendChild(ta);
-    const grow = () => { ta.style.height = "auto"; ta.style.height = ta.scrollHeight + "px"; ta.style.width = "auto"; cvs.font = s.font; const w = Math.max(...ta.value.split("\n").map((l) => cvs.measureText(l).width)) + s.padX * 2 + 24; ta.style.width = Math.min(Math.max(s.w, w), 420) + "px"; };
+    const preview = window.MMContent ? document.createElement("div") : null;
+    const help = window.MMContent ? document.createElement("div") : null;
+    if (preview) {
+      preview.className = "mm-edit-preview"; help.className = "mm-edit-help";
+      help.textContent = "Enter 换行 · Ctrl+Enter 保存 · Esc 取消 · Tab 补全 / 下一项 · Shift+Tab 上一项";
+      preview.addEventListener("pointerdown", e => e.preventDefault()); help.addEventListener("pointerdown", e => e.preventDefault());
+      $("mmStage").appendChild(preview); $("mmStage").appendChild(help);
+    }
+    const grow = () => {
+      const r = $("mmView").getBoundingClientRect(), k = view.k || 1;
+      const available = Math.max(160, (r.width - 32) / k), stacked = available < 450;
+      const width = Math.min(360, stacked ? available : (available - 16) / 2);
+      const maxHeight = Math.max(90, Math.min(360, (r.height - 112) / k / (stacked ? 2 : 1)));
+      const totalWidth = stacked ? width : width * 2 + 16;
+      const x = Math.max((16 - view.x) / k, Math.min(s.x, (r.width - 16 - view.x) / k - totalWidth));
+      const y = Math.max((16 - view.y) / k, Math.min(s.y, (r.height - 64 - view.y) / k - maxHeight * (stacked ? 2 : 1)));
+      ta.style.left = x + "px"; ta.style.top = y + "px";
+      ta.style.minWidth = "0"; ta.style.minHeight = "0"; ta.style.width = width + "px";
+      ta.style.height = "auto"; ta.style.height = Math.min(maxHeight, Math.max(s.h, ta.scrollHeight, 140)) + "px";
+      if (preview) {
+        const active = window.MMContent.completionStatus(ta);
+        help.textContent = active ? `${active.label}：第 ${active.index}/${active.total} 项 · ${active.field} · Tab 下一项 / Shift+Tab 上一项` : "Enter 换行 · Ctrl+Enter 保存 · Esc 取消 · Tab 补全 / 下一项 · Shift+Tab 上一项";
+        help.style.width = totalWidth + "px"; help.style.whiteSpace = "normal";
+        preview.innerHTML = `<div class="mm-edit-preview-title">实时预览</div><div class="mm-rich">${window.MMContent.render(ta.value)}</div>`;
+        preview.style.width = width + "px"; preview.style.maxHeight = maxHeight + "px";
+        preview.style.left = (stacked ? x : x + width + 16) + "px";
+        preview.style.top = (stacked ? y + maxHeight + 12 : y) + "px";
+        help.style.left = x + "px"; help.style.top = y + maxHeight * (stacked ? 2 : 1) + (stacked ? 18 : 6) + "px";
+      }
+    };
     ta.addEventListener("input", grow);
+    window.addEventListener("resize", grow);
+    ta._resizeHandler = grow;
     ta.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); const was = editing; endEdit(); if (e.ctrlKey || e.metaKey) return; if (findNode(was) && findNode(was).p) addSibling(was); }
-      else if (e.key === "Tab" && !e.isComposing) { e.preventDefault(); const was = editing; endEdit(); addChild(was); }
+      if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && !e.isComposing) { e.preventDefault(); endEdit(); }
+      else if (e.key === "Tab" && !e.isComposing) {
+        e.preventDefault();
+        if (!window.MMContent || !window.MMContent.handleTab(ta,e.shiftKey)) {
+          if (!e.shiftKey) ta.setRangeText("  ", ta.selectionStart, ta.selectionEnd, "end");
+        }
+        grow();
+      }
       else if (e.key === "Escape") { e.preventDefault(); endEdit(true); }
       e.stopPropagation();
     });
-    ta.addEventListener("blur", () => setTimeout(() => { if (editing === id && document.activeElement !== ta) endEdit(); }, 0));
+    ta.addEventListener("blur", () => setTimeout(() => {
+      // A removed editor can blur after a new editor opens on the same node.
+      if (editing === id && document.querySelector("#mmStage .mm-edit") === ta && document.activeElement !== ta && !document.activeElement.closest("#mmShortcuts")) endEdit();
+    }, 0));
     grow(); ta.focus();
     if (selectAll) ta.select(); else ta.setSelectionRange(ta.value.length, ta.value.length);
   }
   function endEdit(cancel) {
     const ta = document.querySelector("#mmStage .mm-edit"); if (!ta) { editing = null; return; }
-    const id = editing, v = ta.value.replace(/\s+$/g, ""), fresh = editingNew === id;
+    const id = editing, v = ta.value, fresh = editingNew === id;
+    if (ta._resizeHandler) window.removeEventListener("resize", ta._resizeHandler);
     editing = null; editingNew = null; ta.remove();
+    document.querySelectorAll("#mmStage .mm-edit-preview, #mmStage .mm-edit-help").forEach(el => el.remove());
     // 刚新建的主题按 Esc：等于没建（撤销掉那一步）
-    if (cancel && fresh && hist.length) { const fr = findNode(id), back = fr && fr.p ? fr.p.id : cur.root.id; redo = []; cur = JSON.parse(hist.pop()); sel = findNode(back) ? back : cur.root.id; storeLocal(cur); scheduleCloud(); draw(); $("mmView").focus({ preventScroll: true }); return; }
+    if (cancel && fresh && hist.length) { const back = topNode() ? topNode().id : null; redo = []; cur = JSON.parse(hist.pop()); sel = findNode(back) ? back : (topNode() ? topNode().id : null); storeLocal(cur); scheduleCloud(); draw(); $("mmView").focus({ preventScroll: true }); return; }
     const r = findNode(id);
-    if (!cancel && r && v !== r.n.text) change(() => { r.n.text = v || (r.p ? "主题" : "中心主题"); });
+    if (!cancel && r && v !== r.n.text) change(() => {
+      r.n.text = v;
+      if (window.MMContent && window.MMContent.isRich(v)) {
+        const old = curSize()[id] || {w:300,h:40}, box = measure(r.n, 1), width = Math.max(old.w,box.w);
+        const content = window.MMContent.measure(v, box.font, Math.max(60, width - box.padX * 2));
+        curSize()[id] = { w: width, h: Math.max(old.h, content.h + box.padY * 2 + 4 + ((r.n.marks || []).length ? lineH(1) : 0)) };
+      }
+    });
     else draw();
     $("mmView").focus({ preventScroll: true });
   }
@@ -591,7 +1035,7 @@
       const t = clean(x.t); if (!t) continue;
       flat.push({ d, t, bold: /^\*\*.+\*\*$/.test(x.t.trim()) });
     }
-    if (!flat.length) return { root: { id: nid(), text: "中心主题", children: [] }, isRootOnly: true };
+    if (!flat.length) return { root: { id: nid(), text: "", children: [] }, isRootOnly: true };
     // 只有一个最上层（比如一个 # 标题）→ 它就是中心主题
     const top = flat.filter((x) => x.d === Math.min(...flat.map((y) => y.d)));
     let root, fromTitle = false;
@@ -616,16 +1060,52 @@
     setTimeout(() => URL.revokeObjectURL(url), 4000);
   }
   const safeName = () => (cur.title || "思维导图").replace(/[\\/:*?"<>|\n]/g, "_").slice(0, 40);
-  function exportPng() {
+  async function exportPng() {
+    if (window.htmlToImage && window.MMContent) {
+      let wrapper;
+      try {
+        endEdit();
+        await document.fonts.ready;
+        const lay = layout(), b = lay.bounds, pad = 48, width = Math.ceil(b.x1 - b.x0 + pad * 2), height = Math.ceil(b.y1 - b.y0 + pad * 2 + 30);
+        wrapper = document.createElement("div");
+        wrapper.style.cssText = `position:fixed;left:-100000px;top:0;width:${width}px;height:${height}px;background:${lay.th.bg};overflow:hidden;`;
+        const stage = $("mmStage").cloneNode(true);
+        stage.style.transform = `translate(${pad - b.x0}px,${pad - b.y0}px)`; stage.style.left = "0"; stage.style.top = "0";
+        stage.classList.remove("anim");
+        stage.querySelectorAll(".mm-magwrap,.mm-linkprev,.mm-edit,.mm-edit-preview,.mm-edit-help,.ghost").forEach(el => el.remove());
+        stage.querySelectorAll(".sel,.hot,.hit").forEach(el => { el.classList.remove("sel","hot","hit"); });
+        stage.querySelectorAll(".mm-edge").forEach(el => {el.setAttribute("stroke", EDGE_COLOR);el.setAttribute("stroke-width","2");});
+        stage.querySelectorAll(".mm-arrow").forEach(el => el.setAttribute("fill", EDGE_COLOR));
+        wrapper.appendChild(stage); document.body.appendChild(wrapper);
+        // Exclude logical inset/size aliases: copying both aliases and physical styles
+        // can retain the offscreen position when the SVG clone is moved to its origin.
+        const includeStyleProperties = Array.from(getComputedStyle(wrapper)).filter(name => !/^(inset|block-size|inline-size|(?:min|max)-(?:block|inline)-size|(?:margin|padding|border)-(?:block|inline)|position-visibility)/.test(name));
+        const canvas = await window.htmlToImage.toCanvas(wrapper, { width, height, pixelRatio: Math.min(2, 8000 / Math.max(width,height)), preferredFontFormat:"woff2", includeStyleProperties, backgroundColor:lay.th.bg, style:{ position:"relative",left:"0",top:"0",right:"auto",bottom:"auto" } });
+        canvas.toBlob(blob => { if (blob) download(safeName()+".png",blob); else tip("图片导出失败"); },"image/png");
+      } catch (e) { console.error("PNG 导出失败",e); tip("图片导出失败，请缩小导图后重试"); }
+      finally { if (wrapper) wrapper.remove(); }
+      return;
+    }
     const lay = layout(), th = lay.th, b = lay.bounds, pad = 48, sc = Math.min(2, 8000 / Math.max(b.x1 - b.x0 + pad * 2, b.y1 - b.y0 + pad * 2));
     const W = Math.ceil((b.x1 - b.x0 + pad * 2) * sc), H = Math.ceil((b.y1 - b.y0 + pad * 2 + 30) * sc);
     const c = document.createElement("canvas"); c.width = W; c.height = H;
     const g = c.getContext("2d");
     g.scale(sc, sc); g.fillStyle = th.bg; g.fillRect(0, 0, W, H);
     g.translate(pad - b.x0, pad - b.y0);
-    for (const s of lay.nodes.values()) {
-      if (s.x == null) continue;
-      for (const k of s.kids) { const t = lay.nodes.get(k.id); if (!t || t.x == null) continue; g.strokeStyle = t.color; g.lineWidth = s.depth === 0 ? th.line + 1 : th.line; g.globalAlpha = s.depth === 0 ? .9 : .75; g.lineCap = "round"; g.stroke(new Path2D(linkPath(s, t, t.side, cur.line))); }
+    for (const e of cur.edges || []) {
+      const a = lay.nodes.get(e.from.node), b = lay.nodes.get(e.to.node); if (!a || !b) continue;
+      const routed = window.MMEdgeRouter.route(a, b, e), p = routed.points;
+      g.strokeStyle = EDGE_COLOR; g.lineWidth = 2; g.lineCap = "round"; g.stroke(new Path2D(routed.path));
+      const arrow = (tip, prev) => {
+        const angle = Math.atan2(tip.y - prev.y, tip.x - prev.x), c = Math.cos(angle), sn = Math.sin(angle);
+        g.beginPath(); g.moveTo(tip.x, tip.y);
+        g.lineTo(tip.x - ARROW * c - ARROW * .45 * sn, tip.y - ARROW * sn + ARROW * .45 * c);
+        g.lineTo(tip.x - ARROW * c + ARROW * .45 * sn, tip.y - ARROW * sn - ARROW * .45 * c);
+        g.closePath(); g.fillStyle = EDGE_COLOR; g.fill();
+      };
+      const dir = e.dir || "fwd";
+      if (dir === "fwd" || dir === "both") arrow(p[p.length - 1], p[p.length - 2]);
+      if (dir === "rev" || dir === "both") arrow(p[0], p[1]);
     }
     g.globalAlpha = 1;
     const rr = (x, y, w, h, r) => { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); };
@@ -642,7 +1122,7 @@
       if (n.progress) { g.beginPath(); g.arc(ix + 9, s.y + s.h / 2, 6.5, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * n.progress / 100); g.strokeStyle = d === 0 ? th.rootText : s.color; g.lineWidth = 2.4; g.stroke(); ix += 20; }
       if (n.note) { g.fillText("📝", ix, s.y + s.h / 2); ix += 18; }
       if (n.link) g.fillText("🔗", ix, s.y + s.h / 2);
-      if (n.fold && (n.children || []).length) { const fx = s.side < 0 ? s.x - 10 : s.side > 0 ? s.x + s.w + 10 : s.x + s.w / 2, fy = s.side === 0 ? s.y + s.h + 10 : s.y + s.h / 2; g.beginPath(); g.arc(fx, fy, 9, 0, Math.PI * 2); g.fillStyle = th.sub; g.fill(); g.strokeStyle = s.color; g.lineWidth = 1.5; g.stroke(); g.fillStyle = s.color; g.font = `700 10px ${FONT}`; g.textAlign = "center"; g.fillText(String(hidden(n)), fx, fy + .5); g.textAlign = "left"; }
+      if (isFold(n) && (n.children || []).length) { const fx = s.side < 0 ? s.x - 10 : s.side > 0 ? s.x + s.w + 10 : s.x + s.w / 2, fy = s.side === 0 ? s.y + s.h + 10 : s.y + s.h / 2; g.beginPath(); g.arc(fx, fy, 9, 0, Math.PI * 2); g.fillStyle = th.sub; g.fill(); g.strokeStyle = s.color; g.lineWidth = 1.5; g.stroke(); g.fillStyle = s.color; g.font = `700 10px ${FONT}`; g.textAlign = "center"; g.fillText(String(hidden(n)), fx, fy + .5); g.textAlign = "left"; }
     }
     g.setTransform(sc, 0, 0, sc, 0, 0); g.font = `12px ${FONT}`; g.fillStyle = th.text; g.globalAlpha = .45; g.textBaseline = "alphabetic";
     g.fillText("捞捞思维导图 · laolaokechengbiao.cn", pad, b.y1 - b.y0 + pad * 2 + 14);
@@ -676,20 +1156,18 @@
   // ---------------- 界面：编辑器 ----------------
   function editorHtml() {
     return `<div class="mm-tools" role="toolbar">
-        <div class="mm-tg"><button class="mm-b pri" id="mmChild" data-mm="child" title="子主题（Tab）">＋ 子主题</button><button class="mm-b" id="mmSib" data-mm="sib" title="同级主题（Enter）">＋ 同级</button><button class="mm-b" id="mmDel" data-mm="del" title="删除（Delete）">删除</button><button class="mm-b" id="mmFold" data-mm="foldsel" title="收起 / 展开（空格）">▾ 收起</button></div>
+        <div class="mm-tg"><button class="mm-b pri" id="mmChild" data-mm="child" title="新建节点（Tab / Enter）">＋ 节点</button><button class="mm-b" id="mmDel" data-mm="del" title="删除（Delete）">删除</button></div>
         <div class="mm-tg"><button class="mm-b ic" id="mmUndo" data-mm="undo" title="撤销（Ctrl+Z）">↶</button><button class="mm-b ic" id="mmRedo" data-mm="redo" title="重做（Ctrl+Y）">↷</button></div>
-        <div class="mm-tg"><button class="mm-b" data-mm="style" title="颜色、标记、进度、备注、链接">🎨 样式</button><button class="mm-b" data-mm="outline" id="mmOutBtn" title="大纲视图">☰ 大纲</button><button class="mm-b" data-mm="find" title="搜索（Ctrl+F）">🔍</button></div>
+        <div class="mm-tg"><button class="mm-b" data-mm="outline" id="mmOutBtn" title="大纲视图">☰ 大纲</button><button class="mm-b" data-mm="find" title="搜索（Ctrl+F）">🔍</button></div>
         <div class="mm-tg mm-sel">
-          <label title="结构"><select id="mmLayout">${Object.entries(LAYOUTS).map(([k, v]) => `<option value="${k}">${v}</option>`).join("")}</select></label>
-          <label title="连线"><select id="mmLine">${Object.entries(LINES).map(([k, v]) => `<option value="${k}">${v}</option>`).join("")}</select></label>
           <label title="主题"><select id="mmTheme">${Object.entries(THEMES).map(([k, v]) => `<option value="${k}">${v.name}</option>`).join("")}</select></label></div>
-        <div class="mm-tg"><button class="mm-b" data-mm="paste-in" title="把一段文字加到选中的主题下面">📋 粘贴文字</button><button class="mm-b" data-mm="export" title="导出图片 / Markdown / 备份">⬇ 导出</button></div>
+        <div class="mm-tg"><button class="mm-b" data-mm="paste-in" title="把文字转换成平级节点">📋 粘贴文字</button><button class="mm-b" data-mm="export" title="导出图片 / Markdown / 备份">⬇ 导出</button></div>
       </div>
       <div class="mm-findbar hidden" id="mmFindBar"><input id="mmFindIn" placeholder="搜索主题、备注…" maxlength="60"><span id="mmFindN"></span><button class="mm-b ic" data-mm="fprev">↑</button><button class="mm-b ic" data-mm="fnext">↓</button><button class="mm-b ic" data-mm="fclose">✕</button></div>
       <div class="mm-main">
         <div class="mm-view" id="mmView" tabindex="0" aria-label="思维导图画布"><div class="mm-stage" id="mmStage"></div>
-          <div class="mm-zoom"><button data-mm="zout" title="缩小（Ctrl -）">−</button><span id="mmZoom">100%</span><button data-mm="zin" title="放大（Ctrl +）">＋</button><button data-mm="fit" title="适应屏幕（Ctrl 0）">⤢</button><button data-mm="lv" title="只看前两层 / 全部展开">◎</button></div>
-          <div class="mm-hint" id="mmHint">${isMobile() ? "双击改字 · 长按拖动换位置 · 两指缩放" : "Tab 子主题 · Enter 同级 · F2 改字 · 拖动节点换位置 · 拖空白处移动画布 · Ctrl+滚轮缩放"}</div></div>
+          <div class="mm-zoom"><button data-mm="zout" title="缩小（Ctrl -）">−</button><span id="mmZoom">100%</span><button data-mm="zin" title="放大（Ctrl +）">＋</button><button data-mm="fit" title="适应屏幕（Ctrl 0）">⤢</button></div>
+          <div class="mm-hint" id="mmHint">${isMobile() ? "双击改字 · 长按拖动换位置 · 两指缩放" : "双击节点改字 · Tab / Enter 新建节点 · 拖动节点换位置 · 拖空白处移动画布 · Ctrl+滚轮缩放"}</div></div>
         <div class="mm-outline hidden" id="mmOutline"></div>
         <aside class="mm-panel hidden" id="mmPanel"></aside>
       </div>`;
@@ -701,7 +1179,7 @@
     $("mmHeadTitle").classList.add("hidden"); $("mmTitleIn").classList.remove("hidden"); $("mmSync").classList.remove("hidden");
     box.className = "mm-box edit";
     box.innerHTML = editorHtml();
-    $("mmLayout").value = cur.layout || "mind"; $("mmLine").value = cur.line || "curve"; $("mmTheme").value = cur.theme || "fresh";
+    $("mmTheme").value = cur.theme || "fresh";
     fitBox(); bindCanvas();
     draw(); fit();
     setSync(!me() ? "只存在这台设备（登录后自动存到账号）" : (idxGet(cur.id) || {}).dirty ? "待同步" : "已存到账号");
@@ -713,21 +1191,28 @@
     const n = r.n, th = THEMES[cur.theme] || THEMES.fresh;
     el.innerHTML = `<div class="mp-h"><b>${E((n.text || "").split("\n")[0].slice(0, 16))}</b><button class="mm-b ic" data-mm="pclose" aria-label="关闭">✕</button></div>
       <div class="mp-sec">颜色</div><div class="mp-colors"><button class="mp-c auto${n.color ? "" : " on"}" data-mm="color" data-v="" title="跟着分支">自动</button>${th.colors.concat(["#1f2a3d", "#8b96a8"]).map((c) => `<button class="mp-c${n.color === c ? " on" : ""}" data-mm="color" data-v="${c}" style="background:${c}" aria-label="${c}"></button>`).join("")}</div>
-      <div class="mp-row"><button class="mm-b${n.bold ? " on" : ""}" data-mm="bold"><b>B</b> 加粗</button>${r.p && !r.p.p && cur.layout === "mind" ? `<button class="mm-b" data-mm="side">⇄ 换到${(L.nodes.get(n.id) || {}).side > 0 ? "左边" : "右边"}</button>` : ""}<button class="mm-b" data-mm="parent" ${r.p ? "" : "disabled"}>⤴ 加上级</button></div>
+      <div class="mp-row"><button class="mm-b${n.bold ? " on" : ""}" data-mm="bold"><b>B</b> 加粗</button></div>
       <div class="mp-sec">标记</div><div class="mp-marks">${MARKS.map(([k, ic, nm]) => `<button class="mp-m${(n.marks || []).includes(k) ? " on" : ""}" data-mm="mark" data-v="${k}" title="${nm}">${ic}<small>${nm}</small></button>`).join("")}</div>
       <div class="mp-sec">进度 <span>${n.progress || 0}%</span></div><div class="mp-prog">${[0, 25, 50, 75, 100].map((v) => `<button class="mm-b${(n.progress || 0) === v ? " on" : ""}" data-mm="prog" data-v="${v}">${v === 0 ? "无" : v + "%"}</button>`).join("")}</div>
       <div class="mp-sec">备注</div><textarea id="mmNote" rows="4" maxlength="4000" placeholder="详细解释、例题、出处…（主题上会显示 📝）">${E(n.note || "")}</textarea>
       <div class="mp-sec">链接</div><div class="mp-link"><input id="mmLink" maxlength="500" placeholder="https://…" value="${E(n.link || "")}">${n.link ? `<a class="mm-b" href="${E(safeUrl(n.link))}" target="_blank" rel="noopener">打开</a>` : ""}</div>
-      <div class="mp-sec">整张图</div><div class="mp-row"><button class="mm-b" data-mm="lv1">只看一级</button><button class="mm-b" data-mm="lv2">看到二级</button><button class="mm-b" data-mm="lv0">全部展开</button></div>`;
+      `;
   }
   const safeUrl = (u) => (/^(https?:)?\/\//i.test(u) ? u : /^[\w.-]+\.[a-z]{2,}/i.test(u) ? "https://" + u : "#");
 
   // 大纲：像写列表一样编辑（Enter 新一行、Tab 缩进、Shift+Tab 退回、空行退格删除）
   function outline(focusId) {
     const box = $("mmOutline"); if (!box) return;
+    /* 【独立版·平级】大纲列**全部容器**（每个容器一棵，容器之间来一条分隔行）。
+       原来只列第一个容器，多容器下第二个容器在大纲里根本看不到。 */
     const rows = [];
-    (function w(n, d) { rows.push(`<div class="mo-row" style="--d:${d}" data-id="${n.id}">${(n.children || []).length ? `<button class="mo-tog" data-mm="ofold" data-id="${n.id}">${n.fold ? "▸" : "▾"}</button>` : `<span class="mo-dot">•</span>`}<input class="mo-in${d === 0 ? " root" : ""}" data-id="${n.id}" value="${E(n.text.replace(/\n/g, " "))}" maxlength="500"></div>`); if (!n.fold) for (const c of n.children || []) w(c, d + 1); })(cur.root, 0);
-    box.innerHTML = `<div class="mo-tip">Enter 新建一行 · Tab 缩进 · Shift+Tab 退回 · 空行按退格删除 · ↑↓ 换行</div>` + rows.join("");
+    const roots18 = nodesArr();
+    const hidO = cur.flat ? new Set() : hiddenIds(cur);          // 可见性唯一权威（大纲与渲染/导出读同一处）
+    for (let ri = 0; ri < roots18.length; ri++) {
+      if (ri) rows.push(`<div class="mo-sep">— 另一个容器 —</div>`);
+      (function w(n, d) { if (!n) return; if (!hidO.has(n.id)) rows.push(`<div class="mo-row" style="--d:${d}" data-id="${n.id}">${(n.children || []).length ? `<button class="mo-tog" data-mm="ofold" data-id="${n.id}">${isFold(n) ? "▸" : "▾"}</button>` : `<span class="mo-dot">•</span>`}<input class="mo-in${d === 0 ? " root" : ""}" data-id="${n.id}" value="${E(n.text.replace(/\n/g, " "))}" maxlength="500"></div>`); for (const c of n.children || []) w(c, d + 1); })(roots18[ri], 0);
+    }
+    box.innerHTML = `<div class="mo-tip">Enter 新建节点 · 空行按退格删除 · ↑↓ 换行</div>` + rows.join("");
     const f = focusId && box.querySelector(`.mo-in[data-id="${focusId}"]`); if (f) { f.focus(); f.setSelectionRange(f.value.length, f.value.length); }
   }
   function setMode(m) {
@@ -743,11 +1228,17 @@
     const e = idxGet(id) || {};
     // [独立版] 云同步已停用：不再从账号取导图，只读本机（原 mm_get 分支及 fromServer 语义见 git 历史）
     if (!m) { tip("这张导图在这台设备上找不到了"); return; }
-    fill(m.root);
+    const migrated = migrateMap(m);        // 【独立版·平级】显式迁移：容器成数组 + fold 搬进导图层 + v:2
+        for (const r of m.nodes) fill(r);
     cur = m; cur.layout ||= "mind"; cur.line ||= "curve"; cur.theme ||= "fresh";
+    if (migrated) { try { storeLocal(cur); } catch (e) {} }
+    /* 【独立版】读取容错：旧图上可能已经有"表里有、树里没有"的孤儿条目（本次修复之前删出来的）。
+       打开时清一次并落盘（治本在 del 的 dropLayer）。清完再播种，免得"只剩孤儿"时被 seedPos 的
+       `if (Object.keys(p).length) return false` 误判成"已固化"。 */
+    const pruned = pruneLayer();
+    if (pruned) { console.log("[独立版] 打开时清理了 " + pruned + " 条不在树上的导图层条目"); try { storeLocal(cur); } catch (e) {} }
     seedPos();          // 【独立版】旧导图第一次打开：算一遍坐标写进 pos（之后不再重算）
-    view = { x: 0, y: 0, k: 1 };
-    sel = cur.root.id; hist = []; redo = []; found = []; mode = "map"; panelOpen = !isMobile() && lsGet("mm_panel_v1", false);
+    sel = topNode() ? topNode().id : null; hist = []; redo = []; found = []; mode = "map"; panelOpen = !isMobile() && lsGet("mm_panel_v1", false);
     document.body.classList.add("mm-editing");
     renderEditor();
     if (panelOpen) { $("mmPanel").classList.remove("hidden"); panel(); }
@@ -756,11 +1247,11 @@
   function closeMap() { endEdit(); cur = null; L = null; document.body.classList.remove("mm-editing"); renderList(); try { save("mm_last_v1", ""); } catch (e) {} }
   function create(tpl, title, rootObj) {
     const m = newMap(tpl, title);
-    if (rootObj) { m.root = fill(rootObj); m.title = (m.root.text || "未命名导图").slice(0, 80); }
+    if (rootObj) { m.nodes = [fill(rootObj)]; m.title = ((m.nodes[0] || {}).text || "未命名导图").slice(0, 80); }
     storeLocal(m); idxPut({ id: m.id, local: true });
     scheduleCloud();
     openMap(m.id);
-    if (tpl !== "blank" || title) setTimeout(() => startEdit(m.root.id, true), 120);
+    if ((tpl !== "blank" || title) && m.nodes[0]) setTimeout(() => startEdit(m.nodes[0].id, true), 120);
   }
 
   // ---------------- 弹窗 ----------------
@@ -801,14 +1292,91 @@
       <button type="button" data-mm="delmap" data-id="${id}" class="danger">🗑 删除</button></div>
       <div class="nd-actions"><span class="spacer"></span><button type="button" class="small" data-mm="dclose">取消</button></div></form>`);
   }
-  async function duplicate(id) {
-    const m = id === (cur && cur.id) ? clone(cur) : lsGet(mapKey(id), null);
+  /* 【独立版·平级】一条边的菜单内容：四种指向 + 删除。写成"→ 指向「第二章」"这种话，
+     用户不用理解 fwd/rev/none/both；当前那一项打勾。 */
+  function edgeMenuHtml(e) {
+    const a = findNode(e.from.node), b = findNode(e.to.node);
+    const na = a ? a.n.text.split("\n")[0].slice(0, 14) : "?", nb = b ? b.n.text.split("\n")[0].slice(0, 14) : "?";
+    const now = e.dir || "fwd";
+    const item = (v, label) => `<button type="button" data-mm="edir" data-id="${e.id}" data-dir="${v}">${now === v ? "✓ " : ""}${label}</button>`;
+    return item("none", "— 没有箭头") + item("fwd", "→ 指向「" + E(nb) + "」") + item("rev", "← 指向「" + E(na) + "」") +
+      item("both", "↔ 两头都有箭头") + `<button type="button" data-mm="edel" data-id="${e.id}" class="danger">🗑 删除这条线</button>`;
+  }
+  /* 浮层菜单：**跟着指针出现**（不是弹窗），点空白/Esc/滚轮就收掉。
+     挂在 #mmBox 里 —— 文档级 click 委派的门禁是 closest("#mmBox, #mmDlg, .mm-head")。 */
+  function hideEdgeMenu() { const m = $("mmEdgeMenu"); if (m) m.classList.add("hidden"); }
+  function hideNodeMenu() { const m = $("mmNodeMenu"); if (m) m.classList.add("hidden"); }
+  document.addEventListener("pointerdown", e => { if (!e.target.closest("#mmNodeMenu")) hideNodeMenu(); });
+  function showNodeMenu(id, cx, cy) {
+    hideEdgeMenu(); hideNodeMenu(); select(id);
+    const box = $("mmBox"); let m = $("mmNodeMenu");
+    if (!m) { m = document.createElement("div"); m.id = "mmNodeMenu"; m.className = "mm-ctx"; box.appendChild(m); }
+    m.innerHTML = `<button data-mm="node-style" data-id="${esc(id)}">🎨 修改样式</button><button data-mm="node-ask" data-id="${esc(id)}">✦ 提问</button>`;
+    m.classList.remove("hidden");
+    const r = box.getBoundingClientRect();
+    m.style.left = Math.max(4, Math.min(cx-r.left, r.width-m.offsetWidth-4)) + "px";
+    m.style.top = Math.max(4, Math.min(cy-r.top, r.height-m.offsetHeight-4)) + "px";
+  }
+  function showEdgeMenu(e, cx, cy) {
+    const box = $("mmBox"); if (!box) return;
+    let m = $("mmEdgeMenu");
+    if (!m) {                                            // 懒创建：不用改外壳模板，重渲染后会自动补回来
+      m = document.createElement("div"); m.id = "mmEdgeMenu"; m.className = "mm-ctx hidden";
+      box.appendChild(m);
+      /* 不要 stopPropagation：菜单项要靠**文档级 click 委派**（data-mm="edir"/"edel"）才生效。
+         它挂在 #mmBox 里、不在 #mmView 的祖先链上，所以画布的 pointerdown 也看不到它。 */
+    }
+    m.innerHTML = edgeMenuHtml(e);
+    m.classList.remove("hidden");
+    const r = box.getBoundingClientRect(), mw = m.offsetWidth || 190, mh = m.offsetHeight || 180;
+    const x = Math.max(4, Math.min(cx - r.left, (r.width || 0) - mw - 4));
+    const y = Math.max(4, Math.min(cy - r.top, (r.height || 0) - mh - 4));   // 别让菜单跑出可视区
+    m.style.left = x + "px"; m.style.top = y + "px";
+  }
+  /* 选中的那条边（selEdge 可能指向已被删掉的边 → 找不到就返回 null） */
+  const selEdgeObj = () => (cur && Array.isArray(cur.edges) ? cur.edges.find((e) => e.id === selEdge) || null : null);
+  function delSelEdge() {
+    const e = selEdgeObj(); if (!e) return false;
+    change(() => { cur.edges = cur.edges.filter((x) => x !== e); selEdge = null; });
+    return true;
+  }
+  /* 【独立版·平级】挂接节点时**同时连一条边** —— 这里的每个调用点都来自"层级操作"
+     （Tab/Enter/新建子主题/新建同级/粘贴/大纲 Enter：新节点与被挂接的节点之间**本来就该有关系**），
+     契约要求这些入口自动出线（层级在边上）。
+     注意**不是**为了"让节点看得见"：没有边的节点本来就可见（见 visibleIds 的孤岛种子），
+     所以双击空白新建那种"自由点"**不**走这里。 */
+  function attachEdge(pid, cid) {
+    if (!cur || !pid || !cid) return null;
+    const sd = (cur.layout === "down") ? { from: "s", to: "n" } : { from: "e", to: "w" };
+    const e = { id: eid(), from: { node: pid, side: sd.from }, to: { node: cid, side: sd.to }, dir: "fwd" };
+    (cur.edges ||= []).push(e);
+    return e;
+  }
+  async function duplicate(id) {    const m = id === (cur && cur.id) ? clone(cur) : lsGet(mapKey(id), null);
     let src = m;
     // [独立版] 云同步已停用：不再从账号取导图（原 mm_get 分支见 git 历史）
     if (!src) { tip("这张图还没下载到这台设备，先打开一次再复制"); return; }
     const c = { ...clone(src), id: uid(), title: (src.title || "导图") + " 副本" };
-    walk(c.root, (n) => { n.id = nid(); }); c.root.text = c.title;
-    storeLocal(c); idxPut({ id: c.id, local: true }); scheduleCloud();
+    /* 【独立版·平级】重发节点 id 的同时**必须重映射导图层**：pos/size/fold 的键 + edges 的端点。
+       不重映射的后果：副本一打开就被 pruneLayer 当孤儿清掉（位置全丢），边指向原图节点（跨图引用）。 */
+    migrateMap(c);                    // 旧格式来源（只有 root）先成容器，否则下面没有可遍历的节点
+    const old2new = new Map();
+    for (const r of (c.nodes || [])) walk(r, (n) => { const nw = nid(); old2new.set(n.id, nw); n.id = nw; });
+    for (const t of LAYER_MAPS) {
+      const d = c[t]; if (!d || typeof d !== "object") continue;
+      const out = {};
+      for (const k of Object.keys(d)) { const nw = old2new.get(k); if (nw) out[nw] = d[k]; }
+      c[t] = out;
+    }
+    if (Array.isArray(c.edges)) {
+      c.edges = c.edges.map((e) => {
+        const a = old2new.get(e && e.from && e.from.node), b = old2new.get(e && e.to && e.to.node);
+        if (!a || !b) return null;
+        return { id: eid(), from: { node: a, side: e.from.side }, to: { node: b, side: e.to.side }, dir: e.dir };
+      }).filter(Boolean);
+    }
+    const c0 = (c.nodes || [])[0]; if (c0) c0.text = c.title;
+    storeLocal(c); idxPut({ id: c.id, title: c.title, local: true }); scheduleCloud();   // 带上标题：不带的话列表里显示旧标题
     closeDlg(); if (cur) openMap(c.id); else renderList(); tip("已复制");
   }
   async function deleteMap(id) {
@@ -824,11 +1392,26 @@
     const text = await file.text();
     if (/\.json$/i.test(file.name)) {
       try {
-        const o = JSON.parse(text); const m = o.root ? o : o.data && o.data.root ? o.data : null;
+        const o = JSON.parse(text); const m = (o.root || Array.isArray(o.nodes)) ? o : (o.data && (o.data.root || Array.isArray(o.data.nodes))) ? o.data : null;
         if (!m) throw new Error();
-        create("blank", null, clone(m.root));
+        /* 容器列表：旧格式（root）与新格式（nodes 数组）都认。
+           **多容器不静默丢** —— 原来只取 [0]，其余容器无声消失（连提示都没有）。现在全部导入，
+           并把"当前版本只画第一个容器"讲清楚（与 openMap 的多容器提示同口径：宁可吵，不要安静丢）。 */
+        const rootsIn = Array.isArray(m.nodes) && m.nodes.length ? m.nodes : (m.root ? [m.root] : []);
+        if (!rootsIn.length) throw new Error();
+        create("blank", null, clone(rootsIn[0]));
+        if (rootsIn.length > 1) {
+          cur.nodes = cur.nodes.concat(rootsIn.slice(1).map((r) => fill(clone(r))));
+          storeLocal(cur);
+          tip("已导入全部节点", 1600);
+        }
         if (m.layout) cur.layout = m.layout; if (m.theme) cur.theme = m.theme; if (m.line) cur.line = m.line;
-        storeLocal(cur); draw(); fit(); return;
+        /* 【独立版】位置/尺寸一起搬回来（只搬树上存在的 id）：备份文件里本来就有 pos/size，
+           不搬 = "导出再导入位置没了"，用户会当成 bug。 */
+        const moved = applyLayer(m);
+        storeLocal(cur); draw(); fit();
+        if (moved) tip("已导入，位置和尺寸也一起恢复了", 1600);
+        return;
       } catch (e) { tip("这个 JSON 不是思维导图备份"); return; }
     }
     const t = parseText(text); if (t.fromTitle) t.root.text = file.name.replace(/\.[^.]+$/, "");
@@ -839,9 +1422,14 @@
   let fi = 0;
   function doFind() {
     q = $("mmFindIn").value.trim().toLowerCase(); found = [];
-    if (q) walk(cur.root, (n) => { if ((n.text + " " + (n.note || "")).toLowerCase().includes(q)) found.push(n.id); });
-    // 搜到的在收起的分支里：展开它的上级
-    for (const id of found) { let r = findNode(id); while (r && r.p) { r.p.fold = false; r = findNode(r.p.id); } }
+    /* 【独立版·平级】搜索覆盖**全部容器**（原来只走 topNode()，第二个容器里的节点永远搜不到）。 */
+    if (q) for (const r of nodesArr()) walk(r, (n) => { if ((n.text + " " + (n.note || "")).toLowerCase().includes(q)) found.push(n.id); });
+    /* 搜到的在收起的分支里：沿路展开它的上级。**必须走 change** —— 写在 change 外的话，
+       这次展开既不进撤销栈、也不落盘（doFind 末尾那两句 draw/storeLocal 拿不到它）。
+       先收集"确实要展开的"，避免一次什么都没改的空 change 白占一格撤销。 */
+    const toOpen = new Set();
+    for (const id of found) for (const f of foldPathTo(cur, id)) toOpen.add(f);   // 按**边**找路，不靠 children 父子链
+    if (toOpen.size) change(() => { for (const fid of toOpen) delete cur.fold[fid]; });
     fi = 0; $("mmFindN").textContent = q ? (found.length ? `1 / ${found.length}` : "没找到") : "";
     draw(); if (found.length) select(found[0], true);
   }
@@ -851,15 +1439,164 @@
   function zoomAt(k, cx, cy) {
     const r = $("mmView").getBoundingClientRect(); cx = cx ?? r.width / 2; cy = cy ?? r.height / 2;
     const nk = Math.max(0.15, Math.min(3, k));
+    /* 【独立版】非有限值必须在这儿挡掉：`Math.min(3, NaN)` 是 NaN，`NaN` 一旦写进 view.x
+       就**永久污染**画布（transform 变成 translate(NaNpx,NaNpx)，之后所有几何命中全落空，
+       而且不会报错、只是"点哪儿都不对"）。多指手势的比值/中心可能退化成非有限值，所以两道都守。 */
+    if (!isFinite(nk) || !isFinite(cx) || !isFinite(cy)) return;
     view.x = cx - (cx - view.x) * (nk / view.k); view.y = cy - (cy - view.y) * (nk / view.k); view.k = nk; applyView();
   }
   function bindCanvas() {
     const vw = $("mmView");
     const pts = new Map(); let drag = null, pinch = null, lastTap = { t: 0, id: null }, press = 0;
     const local = (e) => { const r = vw.getBoundingClientRect(); return { x: (e.clientX - r.left - view.x) / view.k, y: (e.clientY - r.top - view.y) / view.k, cx: e.clientX - r.left, cy: e.clientY - r.top }; };
+    /* 【独立版】八方向缩放的命中判定（全部按**屏幕像素**算，阈值不随 view.k 变形）：
+       优先级：角（短路）→ 边（两边都满足取更近的一条）→ 否则视为内部拖动（返回 null）。
+       小节点保护：m 取屏幕 w/h 的较小者；cornerEff=clamp(round(m*0.25),4,12)、edgeEff=clamp(round(m*0.15),3,8) 且 edgeEff ≤ cornerEff。
+       判定直接使用节点盒的边与角，无需可见手柄。 */
+    const RZ = { edge: 16, corner: 22, slop: 7 };
+    const CURSOR = { n: "ns-resize", s: "ns-resize", e: "ew-resize", w: "ew-resize", nw: "nwse-resize", se: "nwse-resize", ne: "nesw-resize", sw: "nesw-resize" };
+    /* 【独立版】方向光标必须加在**指针下的节点元素**上（用类，不用 #mmView 的行内 style）：
+       .mm-node{cursor:grab} 是 (0,1,0)，而写在 #mmView 上的行内值**赢不了后代自己的选择器**
+       —— 落在节点盒内（正是要缩放的区域）用户只会看到抓手。.mm-node.rz-x 是 (0,2,0)，压得过。
+       顺带把 #mmView 的行内值彻底去掉：它就是"内部区域仍读到上一次 nwse-resize"的来源。 */
+    const RZCLS = ["rz-n", "rz-s", "rz-e", "rz-w", "rz-nw", "rz-ne", "rz-sw", "rz-se"];
+    let rzEl = null;
+    /* 拖动中的连线预览：起点 = 按下那个磁吸点，终点 = 指针（吸附到候选磁吸点时吸附过去）。
+       坐标都在**舞台坐标系**里画（预览 svg 与连线 svg 同一坐标空间），所以缩放变更时不用重算。 */
+    function drawLinkPrev(cx, cy, hover) {
+      const svg = document.querySelector("#mmStage .mm-linkprev");
+      if (!svg || !link || !L) return;
+      const s0 = L.nodes.get(link.from.node); if (!s0) return;
+      const a = magPos(s0, link.from.side);
+      const hs = hover && hover.id !== link.from.node ? L.nodes.get(hover.id) : null;
+      const t = hs ? magPos(hs, hover.side) : local({ clientX: cx, clientY: cy });
+      svg.innerHTML = `<path d="M${a.x},${a.y} L${t.x},${t.y}" stroke="#2f7cf6" stroke-width="2" stroke-dasharray="6 5" fill="none" stroke-linecap="round"/>`
+        + (hs ? `<circle cx="${t.x}" cy="${t.y}" r="4" fill="none" stroke="#2f7cf6" stroke-width="2"/>` : "");   // 目标端空心圆 = "松手就连到这里"
+    }
+    const clearLinkPrev = () => { const svg = document.querySelector("#mmStage .mm-linkprev"); if (svg) svg.innerHTML = ""; };
+    /* 磁吸点的视觉：源节点加 .linking（四个点常亮），当前候选节点加 .hot（高亮）。
+       命中仍然是 magnetAt() 的几何算 —— 这里只改类名。
+       目标选择器是**覆盖层** .mm-magwrap[data-id=…]（圆点不在 .mm-node 里）。 */
+    function markLink(onId, hotId) {
+      for (const el of document.querySelectorAll("#mmStage .mm-magwrap")) {
+        el.classList.toggle("mag-on", !!onId && el.dataset.id === onId);
+        el.classList.toggle("linking", !!onId && el.dataset.id === onId);
+        el.classList.toggle("hot", !!hotId && el.dataset.id === hotId);
+      }
+    }
+    /* 靠近淡入：指针离节点屏幕矩形 MAG_DIST 以内 → 亮出那一个节点的磁吸点。
+       只亮"最近的一个"，否则节点密集时一片圆点同时淡入。 */
+    function hoverMagnets(cx, cy) {
+      if (!L || !cur) return;
+      const r = $("mmView").getBoundingClientRect(), px = cx - r.left, py = cy - r.top;
+      let best = null, bestD = Infinity;
+      for (const s of L.nodes.values()) {
+        if (s.x == null || s.y == null) continue;
+        const x0 = s.x * view.k + view.x, y0 = s.y * view.k + view.y, w = s.w * view.k, h = s.h * view.k;
+        if (px < x0 - MAG_DIST || px > x0 + w + MAG_DIST || py < y0 - MAG_DIST || py > y0 + h + MAG_DIST) continue;
+        const d = Math.hypot(px - (x0 + w / 2), py - (y0 + h / 2));
+        if (d < bestD) { bestD = d; best = s.n.id; }
+      }
+      for (const el of document.querySelectorAll("#mmStage .mm-magwrap.mag-on")) if (el.dataset.id !== best) el.classList.remove("mag-on");
+      if (best) { const el = document.querySelector(`#mmStage .mm-magwrap[data-id="${best}"]`); if (el) el.classList.add("mag-on"); }
+    }
+    function markZone(id, dir) {
+      const el = id ? document.querySelector(`#mmStage .mm-node[data-id="${id}"]`) : null;
+      if (rzEl && rzEl !== el) RZCLS.forEach((c) => rzEl.classList.remove(c));
+      if (!el) { rzEl = null; return; }
+      RZCLS.forEach((c) => el.classList.remove(c));
+      if (dir) el.classList.add("rz-" + dir);
+      rzEl = el;
+    }
+    function zoneAt(cx, cy) {
+      if (!L || !cur) return null;
+      const r = vw.getBoundingClientRect(), px = cx - r.left, py = cy - r.top;
+      const list = [...L.nodes.values()];
+      const si = list.findIndex((s) => s.n.id === sel);
+      if (si > 0) { const s = list.splice(si, 1)[0]; list.unshift(s); }   // 选中节点优先
+      for (const s of list) {
+        if (s.x == null || s.y == null) continue;
+        const x0 = s.x * view.k + view.x, y0 = s.y * view.k + view.y, w = s.w * view.k, h = s.h * view.k;   // 屏幕坐标
+        if (px < x0 - RZ.slop || px > x0 + w + RZ.slop || py < y0 - RZ.slop || py > y0 + h + RZ.slop) continue;
+        const m = Math.min(w, h);
+        /* 短边缩放的**下限抬到 10px**：典型子节点只有 ~40px 高，若下限压到 4–6px，
+           命中区会窄到必须精细挪鼠标（用户在浏览器实测反馈的正是这条）。 */
+        const cornerEff = Math.min(RZ.corner, Math.max(10, Math.round(m * 0.25)));
+        const edgeEff = Math.min(cornerEff, Math.min(RZ.edge, Math.max(10, Math.round(m * 0.15))));
+        const dL = px - x0, dR = x0 + w - px, dT = py - y0, dB = y0 + h - py;
+        if ((dL <= cornerEff || dR <= cornerEff) && (dT <= cornerEff || dB <= cornerEff)) {
+          return { id: s.n.id, dir: (dT <= dB ? "n" : "s") + (dL <= dR ? "w" : "e") };   // 角优先，短路
+        }
+        const cand = [[dL, "w"], [dR, "e"], [dT, "n"], [dB, "s"]].filter((c) => c[0] <= edgeEff).sort((a, b) => a[0] - b[0]);
+        if (cand.length) return { id: s.n.id, dir: cand[0][1] };                          // 边：取更近的那条
+      }
+      return null;
+    }
     vw.addEventListener("pointerdown", (e) => {
-      if (e.target.closest(".mm-zoom, .mm-edit, [data-mm=fold], .mm-ic")) return;
+      if (e.button !== 0) return;
+      hideNodeMenu();
+      /* 【独立版】收起按钮走**指针**路径，不再只靠 click 的 target：
+         click 的 target 是 mousedown / mouseup 的**共同祖先** —— 按下落在按钮上、松手偏一点落到节点上，
+         target 就变成 .mm-node，文档级 click 委托收到时 closest("[data-mm]") 是 null，这次折叠整条丢掉。
+         真实浏览器实测的"第一次点按钮没用、要点第二次"就是这个形态。
+         按下记下来 → 松手没怎么动才算一次点击（拖开 = 取消），折叠在这一步完成。 */
+      const fb = e.target.closest("[data-mm=fold]");
+      hideEdgeMenu();               // 在画布上按下 = 收起浮层菜单（菜单自己的点击不经过这里）
+      vw.classList.remove("mag-pointer");
+      foldDown = null;              // 每次按下都从干净状态开始：万一上一次按下没等到 pointerup（指针跑到窗口外），陈旧值不会误折
+      /* 【独立版】foldSwallow 也是"上一次手势"的残留：指针路径设了它，而紧随的 click 如果没被委派
+         路由到那个按钮（click 的 target 解析成 .mm-node 时 closest("[data-mm]") 是 null，早退），
+         它就**留着吞掉下一次点击**——现象就是"点了没反应、再点一次才折叠"。
+         新的按下 = 新手势开始，这里一并清掉。 */
+      foldSwallow = null;
+      if (fb) {
+        foldDown = { id: fb.dataset.id, sx: e.clientX, sy: e.clientY, moved: false };
+        try { vw.setPointerCapture(e.pointerId); } catch (err) {}
+        e.preventDefault();
+        return;
+      }
+      if (e.target.closest(".mm-zoom, .mm-edit, .mm-edit-preview, .mm-edit-help, .mm-ic")) return;
+      /* 【独立版·平级】磁吸点**优先于缩放**：指针落在某个磁吸点的命中半径内 → 进入连线模式，
+         不触发八方向缩放；出了半径、仍在边缘带内 → 才是缩放（下面那段 zoneAt）。
+         这与 A3/A4 的口径一致：圆内是连线、圆外才是缩放，二者互斥。 */
+      const mg0 = magnetAt(e.clientX, e.clientY);
+      if (mg0) {
+        vw.classList.add("mag-pointer"); markZone(null, null);
+        link = { from: { node: mg0.id, side: mg0.side } };
+        select(mg0.id);                                  // select 会重画（预览 svg 被重建），所以先 select 再画预览
+        markLink(mg0.id, null);
+        drawLinkPrev(e.clientX, e.clientY, null);
+        try { vw.setPointerCapture(e.pointerId); } catch (err) {}
+        e.preventDefault();
+        return;
+      }
+      /* 【独立版】八方向缩放：命中按屏幕几何算（zoneAt） */
+      if (cur) {
+        const hz = zoneAt(e.clientX, e.clientY), s0 = hz && L && L.nodes.get(hz.id);        if (hz && s0) {
+          if (sel !== hz.id) select(hz.id);
+          pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+          drag = { moved: true, resize: { id: hz.id, dir: hz.dir, w0: s0.w, h0: s0.h, x0: s0.x, y0: s0.y,
+            mx: e.clientX, my: e.clientY, snap: JSON.stringify(cur),
+            ratio: s0.w / Math.max(1, s0.h), raf: 0 } };
+          markZone(hz.id, hz.dir);                          // 拖动过程中锁住方向光标（加在节点元素上，离开也不跳回）
+          try { vw.setPointerCapture(e.pointerId); } catch (err) {}
+          return;
+        }
+      }
       vw.focus({ preventScroll: true });
+      /* 【独立版·平级】点空白处**线**：节点优先于边 —— 所以只有在"指针没落在任何节点上"时才问边
+         （落在节点上又想去点边，那是用户自己没对准）。命中带 10px 屏幕像素，线本身仍然只有 2px。 */
+      if (!e.target.closest(".mm-node") && cur) {
+        const eh = edgeAt(e.clientX, e.clientY);
+        if (eh) {
+          selEdge = eh.id; sel = null;
+          document.querySelectorAll("#mmStage .mm-node.sel").forEach((x) => x.classList.remove("sel"));
+          draw();
+          e.preventDefault();
+          return;
+        }
+      }
+      if (selEdge) { selEdge = null; draw(); }               // 点别处 = 取消选中这条线（与节点选中同口径）
       pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (pts.size === 2) { const [a, b] = [...pts.values()]; pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), k: view.k, cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2 }; drag = null; clearTimeout(press); return; }
       const nd = e.target.closest(".mm-node");
@@ -870,41 +1607,164 @@
     });
     vw.addEventListener("pointermove", (e) => {
       if (pts.has(e.pointerId)) pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
-      if (pinch && pts.size >= 2) { const [a, b] = [...pts.values()]; const r = vw.getBoundingClientRect(); zoomAt(pinch.k * Math.hypot(a.x - b.x, a.y - b.y) / pinch.d, pinch.cx - r.left, pinch.cy - r.top); return; }
+      /* 收起按钮：拖开超过阈值就算取消（与节点拖动同一套 6px 阈值） */
+      if (foldDown && !foldDown.moved && Math.hypot(e.clientX - foldDown.sx, e.clientY - foldDown.sy) > 6) foldDown.moved = true;
+      if (pinch && pts.size >= 2 && isFinite(pinch.d) && pinch.d > 0) { const [a, b] = [...pts.values()]; const r = vw.getBoundingClientRect(); zoomAt(pinch.k * Math.hypot(a.x - b.x, a.y - b.y) / pinch.d, pinch.cx - r.left, pinch.cy - r.top); return; }
+      /* 连线拖动中：预览线跟手；落在候选磁吸点上就吸附过去（目标端空心圆提示"会连到这里"） */
+      if (link) {
+        const mg = magnetAt(e.clientX, e.clientY);
+        vw.classList.toggle("mag-pointer", !!mg);
+        markLink(link.from.node, mg && mg.id !== link.from.node ? mg.id : null);
+        drawLinkPrev(e.clientX, e.clientY, mg && mg.id !== link.from.node ? mg : null);
+        return;
+      }
+      if (drag && drag.resize) {
+        const z = drag.resize, k = view.k || 1;
+        const dx = (e.clientX - z.mx) / k, dy = (e.clientY - z.my) / k;
+        const W = z.dir.indexOf("w") >= 0, E = z.dir.indexOf("e") >= 0, N = z.dir.indexOf("n") >= 0, S = z.dir.indexOf("s") >= 0;
+        let w = z.w0 + (E ? dx : W ? -dx : 0);        // 边只改一个维度
+        let h = z.h0 + (S ? dy : N ? -dy : 0);
+        if (e.shiftKey) { if (Math.abs(w - z.w0) >= Math.abs(h - z.h0)) h = w / z.ratio; else w = h * z.ratio; }
+        const s0 = L && L.nodes.get(z.id);
+        const cs = clampSize(w, h, s0 ? s0.measW : z.w0, s0 ? s0.measH : z.h0);
+        curSize()[z.id] = cs;
+        /* 西/北方向：左上角要跟着走，否则是从中心缩、不是从边缘缩。
+           这里在拖动**过程中**写坐标（松手时才由 up 里的 resize 分支落盘 + 进撤销），所以不走 change；但写入口统一走 putLayerPos。 */
+        if (W || N) {
+          const p = curPos()[z.id] || { x: z.x0, y: z.y0 };
+          putLayerPos(z.id, { x: W ? Math.round(z.x0 + (z.w0 - cs.w)) : p.x, y: N ? Math.round(z.y0 + (z.h0 - cs.h)) : p.y });
+        }
+        if (z.raf) cancelAnimationFrame(z.raf);
+        z.raf = requestAnimationFrame(() => { try { draw(); } catch (err) {} });   // 重画：连线端点跟着尺寸一起重锚
+        return;
+      }
+      /* 未在拖动：指针进入某方向命中区就给**那个节点**加方向类（角 > 边；内部维持原光标） */
+      if (!drag) {
+        if (e.target.closest(".mm-zoom, .mm-edit, .mm-edit-preview, .mm-edit-help, .mm-ic")) {
+          vw.classList.remove("mag-pointer"); markZone(null, null); return;
+        }
+        const mg = magnetAt(e.clientX, e.clientY);
+        vw.classList.toggle("mag-pointer", !!mg);
+        const hz = mg ? null : zoneAt(e.clientX, e.clientY);
+        markZone(hz && hz.id, hz && hz.dir);
+        hoverMagnets(e.clientX, e.clientY);
+        /* 边悬停：**节点优先于边** —— 只有指针没落在任何节点上时才看线（与点击同一口径）。 */
+        markEdgeHot(hz || e.target.closest(".mm-node") ? null : (edgeAt(e.clientX, e.clientY) || {}).id || null);
+        return;
+      }
       if (!drag) return;
       const dx = e.clientX - drag.sx, dy = e.clientY - drag.sy;
       if (!drag.moved && Math.hypot(dx, dy) < 6) return;
-      if (!drag.moved) { drag.moved = true; clearTimeout(press); if (drag.id && !drag.touch && drag.id !== cur.root.id) { drag.node = true; startNodeDrag(drag, e); } }
+      if (!drag.moved) { drag.moved = true; clearTimeout(press); if (drag.id && !drag.touch) { drag.node = true; startNodeDrag(drag, e); } }
       if (drag.node) moveNodeDrag(drag, e, local(e));
       else { view.x = drag.vx + dx; view.y = drag.vy + dy; applyView(); vw.classList.add("panning"); }
     });
     const up = (e) => {
       pts.delete(e.pointerId); clearTimeout(press);
+      /* 【独立版·平级】连线：松手位置落在一个磁吸点上就建边（默认单指向 fwd）；
+         松在空白 = 静默取消；松回自己 = addEdge 给一句确定原因的提示（不静默）。
+         一条边一次 change —— 一次撤销撤掉的就是这条边。 */
+      if (link) {
+        const l = link; link = null;
+        clearLinkPrev(); markLink(null, null);
+        if (e.type !== "pointercancel") {
+          const mg = magnetAt(e.clientX, e.clientY);
+          if (mg) addEdge(l.from, { node: mg.id, side: mg.side }, "fwd");
+        }
+        return;
+      }
+      if (foldDown) {                                   // 收起按钮：按下→原地松手 才折叠（拖开/取消都不算）
+        const f = foldDown; foldDown = null;
+        if (e.type === "pointercancel" || f.moved) return;
+        foldSwallow = f.id; toggleFold(f.id);
+        return;
+      }
       if (pinch) { if (pts.size < 2) pinch = null; drag = null; return; }
       if (!drag) return;
       vw.classList.remove("panning");
       const d = drag; drag = null;
+      if (d.resize) {
+        /* 【独立版】松手才落盘：整段拖拽只进一条撤销历史（快照在按下时拍的） */
+        markZone(null, null); vw.style.cursor = "";        // 解锁方向光标（并清掉旧版遗留在 #mmView 上的行内值）
+        hist.push(d.resize.snap); if (hist.length > 120) hist.shift(); redo = [];
+        try { storeLocal(cur); } catch (e) {}
+        try { scheduleCloud(); } catch (e) {}
+        draw();
+        return;
+      }
       if (d.node) { endNodeDrag(d); return; }
       if (d.moved) return;
       if (d.id) {
         const now = Date.now();
-        if (lastTap.id === d.id && now - lastTap.t < 350) { startEdit(d.id); lastTap = { t: 0, id: null }; return; }
-        lastTap = { t: now, id: d.id };
+        // Touch needs a double-tap fallback; mouse editing is handled only by dblclick.
+        if (d.touch && lastTap.id === d.id && now - lastTap.t < 350) { startEdit(d.id); lastTap = { t: 0, id: null }; return; }
+        lastTap = d.touch ? { t: now, id: d.id } : { t: 0, id: null };
         select(d.id);
-      }
+      } else lastTap = { t: 0, id: null };
     };
     vw.addEventListener("pointerup", up); vw.addEventListener("pointercancel", up);
+    vw.addEventListener("pointerleave", () => {
+      vw.classList.remove("mag-pointer");
+      if (!drag && !link) {
+        markZone(null, null);
+        document.querySelectorAll("#mmStage .mm-magwrap.mag-on").forEach(el => el.classList.remove("mag-on"));
+      }
+    });
+    /* 【独立版·平级】右键：只接管**线**上的右键（节点优先于边；别处留给浏览器）。
+       菜单四项写成"→ 指向 XX / ← 指向 XX"，用户不用理解 fwd/rev 这类枚举值。 */
+    vw.addEventListener("contextmenu", (e) => {
+      if (!cur) return;
+      if (e.target.closest(".mm-edit,.mm-edit-preview")) return;
+      const nd = e.target.closest(".mm-node");
+      const p = local(e);
+      const hit = nd ? nd.dataset.id : (L && [...L.nodes.values()].reverse().find(s => p.x >= s.x && p.x <= s.x+s.w && p.y >= s.y && p.y <= s.y+s.h) || {}).n?.id;
+      if (hit) { e.preventDefault(); showNodeMenu(hit, e.clientX, e.clientY); return; }
+      hideNodeMenu();
+      const eh = edgeAt(e.clientX, e.clientY);
+      if (!eh) return;
+      e.preventDefault();
+      selEdge = eh.id; draw();
+      showEdgeMenu(eh, e.clientX, e.clientY);
+    });
     vw.addEventListener("wheel", (e) => {
+      hideNodeMenu(); hideEdgeMenu();
       e.preventDefault();
       const r = vw.getBoundingClientRect();
       if (e.ctrlKey || e.metaKey) zoomAt(view.k * Math.exp(-e.deltaY * 0.0022), e.clientX - r.left, e.clientY - r.top);
       else { view.x -= e.deltaX; view.y -= e.deltaY; applyView(); }
     }, { passive: false });
-    vw.addEventListener("dblclick", (e) => { if (!e.target.closest(".mm-node") && !e.target.closest(".mm-zoom")) { const r = findNode(sel); if (r) addChild(sel); } });
+    /* 【独立版】双击：节点 → 选中并进编辑（不再靠上条 350ms 判定当主路径）；
+       空白 → 在**鼠标位置**新建一个节点（中心落在鼠标点），出生即固化坐标。
+       新节点挂到**根节点**下：数据是纯树、渲染从 topNode() 递归开始，没有父节点的节点不会被画出来；
+       挂根既满足"不挂到当前选中节点下面"（自由画布上到处双击不该都长在选中节点下），又保证它能被渲染。 */
+    vw.addEventListener("dblclick", (e) => {
+      if (e.target.closest(".mm-zoom, .mm-edit, .mm-edit-preview, .mm-edit-help")) return;
+      if (!cur) return;
+      // Pointer capture or a redraw may retarget dblclick to the stage/view.
+      // Use the rendered boxes as well as the DOM target to distinguish nodes from blank canvas.
+      const nd = e.target.closest(".mm-node");
+      const p = local(e);
+      const hit = nd ? nd.dataset.id : (L && [...L.nodes.values()].reverse().find(s => p.x >= s.x && p.x <= s.x + s.w && p.y >= s.y && p.y <= s.y + s.h) || {}).n?.id;
+      if (hit) { e.preventDefault(); select(hit); if (editing !== hit) startEdit(hit); return; }
+      /* 【独立版】盒子必须用 measure() 量出来，不能用 estSize() 的文字估算：
+         estSize("分支主题",1) 给 100×38，实际量出来是 96×40 —— 差 (Δw/2, Δh/2) 就是"中心没落在鼠标点上"的偏差
+         （浏览器实测 dx=-2）。这里和布局用的是同一个 measure()，尺寸完全一致，中心就精确落在鼠标点。
+         坐标换算的基准是 **#mmView 的 rect**（不是 #mmBox）：view.x/view.y 就是相对 #mmView 的，
+         两者之间隔着工具条（实测 47px），基准取错就会整块偏移工具条的高度。 */
+      const k = { id: nid(), text: "", children: [] }, m = measure(k, 1);
+      const at = birthPos(null, { x: Math.round(p.x - m.w / 2), y: Math.round(p.y - m.h / 2) });   // 一次 dblclick 只建一个
+      change(() => {
+        putLayerPos(k.id, at);                     // 坐标写进 change 的 fn 内（与 endNodeDrag 的 putPos 同构）
+        /* **不建边**：双击空白建的是"自由点"，本来就没有边 —— 这是合法状态。
+           （可见性修对之后，没有边的节点照样画得出来；为了"看得见"硬塞一条边等于凭空造关系。） */
+        cur.nodes.push(k);
+      });
+      sel = k.id; draw(); startEdit(k.id, true); editingNew = k.id;
+    });
   }
-  // 拖节点：放到别的主题中间 = 成为它的子主题；放到上 / 下边缘 = 插到它前面 / 后面
+  // 拖节点：**只落坐标**（位置就是数据）。换父子那套已删 —— 层级现在由边表达。
   function startNodeDrag(d, e) {
-    if (d.id === cur.root.id) { d.node = false; return; }
+    if (!findNode(d.id)) return;
     const el = document.querySelector(`#mmStage .mm-node[data-id="${d.id}"]`); if (!el) return;
     d.ghost = el.cloneNode(true); d.ghost.classList.add("ghost"); d.ghost.classList.remove("sel"); $("mmStage").appendChild(d.ghost);
     el.classList.add("dragging"); select(d.id);
@@ -912,63 +1772,52 @@
   function moveNodeDrag(d, e, p) {
     if (!d.ghost) return;
     const s = L.nodes.get(d.id); d.ghost.style.left = p.x - s.w / 2 + "px"; d.ghost.style.top = p.y - s.h / 2 + "px";
-    document.querySelectorAll("#mmStage .drop-in, #mmStage .drop-before, #mmStage .drop-after").forEach((x) => x.classList.remove("drop-in", "drop-before", "drop-after"));
-    d.target = null;
-    for (const t of L.nodes.values()) {
-      if (t.x == null || t.n.id === d.id || isAncestor(d.id, t.n.id)) continue;
-      if (p.x < t.x - 6 || p.x > t.x + t.w + 6 || p.y < t.y - 10 || p.y > t.y + t.h + 10) continue;
-      const rel = (cur.layout === "down" ? (p.x - t.x) / t.w : (p.y - t.y) / t.h), isRoot = !t.parent;
-      const where = isRoot ? "in" : rel < .25 ? "before" : rel > .75 ? "after" : "in";
-      d.target = { id: t.n.id, where };
-      document.querySelector(`#mmStage .mm-node[data-id="${t.n.id}"]`).classList.add("drop-" + where);
-      break;
-    }
   }
   function endNodeDrag(d) {
-    if (d.ghost) d.ghost.remove();
-    /* 【独立版】松手时把坐标落地：拖到哪，位置就是数据（写进导图层 cur.pos，不写节点字段）
-     * 先按拖到的位置记坐标，再走原来的"换父子关系"；最后统一重画。 */
     const g = d.ghost;
+    if (g) g.remove();
+    /* 【独立版·平级】松手只把坐标落地（写进导图层 cur.pos，不写节点字段）。
+       原来那套"拖到节点中间 / 上边缘 = 换父子 / 插到前面"（drop-in / drop-before / drop-after）已删：
+       落点只认磁吸点，改结构只走连线。坐标写入在 change() 的 fn 内，撤销才回得干净。 */
     const px = g ? Math.round(parseFloat(g.style.left) || 0) : null;
     const py = g ? Math.round(parseFloat(g.style.top) || 0) : null;
-    const tg = d.target;
-    const src0 = findNode(d.id);
-    if (px != null && py != null && src0) curPos()[d.id] = { x: px, y: py };
-    if (!tg) { if (px != null) { storeLocal(cur); scheduleCloud(); } draw(); return; }
-    const src = src0, dst = findNode(tg.id);
-    if (!src || !dst || !src.p) { if (px != null) { storeLocal(cur); scheduleCloud(); } draw(); return; }
-    change(() => {
-      src.p.children.splice(src.p.children.indexOf(src.n), 1);
-      if (tg.where === "in") { dst.n.fold = false; (dst.n.children ||= []).push(src.n); }
-      else { const a = dst.p.children, i = a.indexOf(dst.n); a.splice(tg.where === "before" ? i : i + 1, 0, src.n); }
-      delete src.n.side;
-    });
+    if (px != null && py != null) change(() => putLayerPos(d.id, { x: px, y: py }));
+    else draw();
     select(d.id, true);
   }
 
   // ---------------- 键盘 ----------------
   function nav(key) {
-    const s = L && L.nodes.get(sel); if (!s) return;
-    const r = findNode(sel), lay = cur.layout, side = s.side;
-    const toParent = () => r.p && select(r.p.id, true);
-    const toChild = (dir) => { const ks = s.kids.filter((k) => dir == null || (L.nodes.get(k.id) || {}).side === dir); if (ks.length) select(ks[Math.floor((ks.length - 1) / 2)].id, true); };
-    const sib = (d) => { if (!r.p) return; const a = r.p.children.filter((x) => lay !== "mind" || r.p !== cur.root || (L.nodes.get(x.id) || {}).side === side); const i = a.indexOf(r.n); if (a[i + d]) select(a[i + d].id, true); };
-    if (lay === "down") { if (key === "ArrowUp") toParent(); else if (key === "ArrowDown") toChild(); else sib(key === "ArrowLeft" ? -1 : 1); return; }
-    if (key === "ArrowUp" || key === "ArrowDown") { sib(key === "ArrowUp" ? -1 : 1); return; }
-    const right = key === "ArrowRight";
-    if (!r.p) { toChild(right ? 1 : -1); return; }
-    if ((side > 0) === right) { if (r.n.fold) toggleFold(); else toChild(); } else toParent();
+    const a = L && L.nodes.get(sel); if (!a) return;
+    const dx = key === "ArrowRight" ? 1 : key === "ArrowLeft" ? -1 : 0;
+    const dy = key === "ArrowDown" ? 1 : key === "ArrowUp" ? -1 : 0;
+    let best = null, score = Infinity;
+    for (const b of L.nodes.values()) { if (a === b) continue;
+      const x = b.x + b.w / 2 - a.x - a.w / 2, y = b.y + b.h / 2 - a.y - a.h / 2;
+      if (x * dx + y * dy <= 0) continue;
+      const cost = Math.hypot(x,y) + Math.abs(dx ? y : x);
+      if (cost < score) { best = b; score = cost; }
+    } if (best) select(best.n.id, true);
   }
   document.addEventListener("keydown", (e) => {
     if (!cur || currentView() !== "mindmap" || $("mmDlg").open) return;
     const t = e.target;
     if (t.classList && t.classList.contains("mo-in")) { outlineKey(e); return; }
+    if (t.closest && t.closest("#mmShortcuts,#mmAI")) return;
     if (t.closest && t.closest("#mmPanel, #mmFindBar, .mm-tools") && !(e.key === "Escape")) {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f") { e.preventDefault(); openFind(); }
       return;
     }
     if (t.id === "mmTitleIn" || editing || mode === "outline") return;
     const ctrl = e.ctrlKey || e.metaKey, k = e.key;
+    /* 【独立版·平级】Esc：取消正在拖出的连线 / 收起浮层菜单；Delete/Backspace：删掉选中的那条线。 */
+    if (k === "Escape") {
+      if (link) { link = null; clearLinkPrev(); markLink(null, null); return; }
+      const em = $("mmEdgeMenu");
+      const nm = $("mmNodeMenu"); if (nm && !nm.classList.contains("hidden")) { hideNodeMenu(); return; }
+      if (em && !em.classList.contains("hidden")) { hideEdgeMenu(); return; }
+    }
+    if ((k === "Delete" || k === "Backspace") && selEdgeObj()) { e.preventDefault(); delSelEdge(); return; }
     if (ctrl && k.toLowerCase() === "z") { e.preventDefault(); e.shiftKey ? redoIt() : undo(); return; }
     if (ctrl && k.toLowerCase() === "y") { e.preventDefault(); redoIt(); return; }
     if (ctrl && k.toLowerCase() === "f") { e.preventDefault(); openFind(); return; }
@@ -979,48 +1828,36 @@
     if (ctrl && k === "-") { e.preventDefault(); zoomAt(view.k / 1.2); return; }
     if (ctrl && k === "0") { e.preventDefault(); fit(true); return; }
     if (ctrl && k.toLowerCase() === "s") { e.preventDefault(); pushDirty(); tip("已保存", 1200); return; }
-    if (ctrl && k.toLowerCase() === "d") { e.preventDefault(); const r = findNode(sel); if (r && r.p) { const c = clone(r.n); walk(c, (x) => { x.id = nid(); }); change(() => r.p.children.splice(r.p.children.indexOf(r.n) + 1, 0, c)); select(c.id, true); } return; }
+    if (ctrl && k.toLowerCase() === "d") { e.preventDefault(); const r = findNode(sel); if (r) { const c = clone(r.n); c.id = nid(); change(() => cur.nodes.push(c)); select(c.id, true); } return; }
     if (ctrl) return;
-    if (k === "Tab") { e.preventDefault(); if (e.shiftKey) { const r = findNode(sel); if (r && r.p) select(r.p.id, true); } else addChild(); return; }
-    if (k === "Enter") { e.preventDefault(); if (e.shiftKey) addSibling(sel, true); else { const r = findNode(sel); if (r && r.p) addSibling(); else startEdit(sel); } return; }
+    if (k === "Tab") { e.preventDefault(); if (!e.shiftKey) addChild(); return; }
+    if (k === "Enter") { e.preventDefault(); addChild(); return; }
     if (k === "Insert") { e.preventDefault(); addChild(); return; }
-    if (k === "F2") { e.preventDefault(); startEdit(sel); return; }
     if (k === "Delete" || k === "Backspace") { e.preventDefault(); del(); return; }
     if (k === " ") { e.preventDefault(); toggleFold(); return; }
     if (e.altKey && (k === "ArrowUp" || k === "ArrowDown")) { e.preventDefault(); moveSib(k === "ArrowUp" ? -1 : 1); return; }
     if (k.startsWith("Arrow")) { e.preventDefault(); nav(k); return; }
     if (k === "Escape") { if (panelOpen) togglePanel(false); return; }
-    if (k.length === 1 && !e.altKey && sel) { e.preventDefault(); startEdit(sel, false, k); }
   });
   document.addEventListener("paste", (e) => {
     if (!cur || currentView() !== "mindmap" || editing || mode === "outline" || $("mmDlg").open) return;
     const t = e.target; if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) return;
     const text = (e.clipboardData || window.clipboardData).getData("text");
     e.preventDefault();
-    if (text && text.trim() && (!clip || text.trim() !== toText(clip, 0).trim())) pasteTo(sel, text); else if (clip) pasteTo(sel);
+    if (text && text.trim() && (!clip || text.trim() !== clip.text.trim())) pasteTo(sel, text); else if (clip) pasteTo(sel);
   });
-  function openFind() { const b = $("mmFindBar"); b.classList.remove("hidden"); const i = $("mmFindIn"); i.focus(); i.select(); }
+
+  function openFind() {
+    const b = $("mmFindBar"); b.classList.remove("hidden"); const i = $("mmFindIn"); i.focus(); i.select();
+  }
   function togglePanel(on) { panelOpen = on; $("mmPanel").classList.toggle("hidden", !on); if (!isMobile()) lsSet("mm_panel_v1", on); if (on) panel(); }
 
   // 大纲的键盘
   function outlineKey(e) {
-    const id = e.target.dataset.id, r = findNode(id); if (!r) return;
-    if (e.key === "Enter" && !e.isComposing) {
-      e.preventDefault();
-      const k = { id: nid(), text: "", children: [] };
-      change(() => { if (!r.p || (r.n.children.length && !r.n.fold)) r.n.children.unshift(k); else r.p.children.splice(r.p.children.indexOf(r.n) + 1, 0, k); });
-      sel = k.id; outline(k.id);
-    } else if (e.key === "Tab") {
-      e.preventDefault();
-      if (e.shiftKey) { if (!r.p || !findNode(r.p.id).p) return; const gp = findNode(r.p.id).p; change(() => { r.p.children.splice(r.p.children.indexOf(r.n), 1); gp.children.splice(gp.children.indexOf(r.p) + 1, 0, r.n); }); }
-      else { if (!r.p) return; const i = r.p.children.indexOf(r.n); if (i < 1) return; const prev = r.p.children[i - 1]; change(() => { r.p.children.splice(i, 1); prev.fold = false; (prev.children ||= []).push(r.n); }); }
-      outline(id);
-    } else if (e.key === "Backspace" && !e.target.value && r.p && !(r.n.children || []).length) {
-      e.preventDefault();
-      const rows = [...document.querySelectorAll("#mmOutline .mo-in")], i = rows.indexOf(e.target), prev = rows[i - 1];
-      change(() => r.p.children.splice(r.p.children.indexOf(r.n), 1));
-      outline(prev ? prev.dataset.id : null);
-    } else if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+    if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); addChild(e.target.dataset.id); setMode("outline"); outline(sel); }
+    else if (e.key === "Tab") e.preventDefault();
+    else if (e.key === "Backspace" && !e.target.value) { e.preventDefault(); del(e.target.dataset.id); outline(sel); }
+    else if (e.key === "ArrowUp" || e.key === "ArrowDown") {
       const rows = [...document.querySelectorAll("#mmOutline .mo-in")], i = rows.indexOf(e.target), n = rows[i + (e.key === "ArrowUp" ? -1 : 1)];
       if (n) { e.preventDefault(); n.focus(); }
     } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") { e.preventDefault(); undo(); outline(); }
@@ -1028,6 +1865,10 @@
 
   // ---------------- 点击 ----------------
   document.addEventListener("click", async (e) => {
+    /* 【独立版】foldSwallow 是"这一次指针手势的 click 由指针路径处理过了"的一次性标记：
+       任何一次 click（哪怕下面因为 target 落成 .mm-node 而早退）都要把它**消耗掉** ——
+       否则它会留到下一次激活上，把那次折叠吞掉（"点了没反应、要点第二次"）。 */
+    const pendFoldSwallow = foldSwallow; foldSwallow = null;
     const b = e.target.closest("[data-mm]");
     if (!b || !b.closest("#mmBox, #mmDlg, .mm-head")) return;
     const a = b.dataset.mm, id = b.dataset.id;
@@ -1038,7 +1879,7 @@
       case "open": if (!e.target.closest(".mm-more")) openMap(id); break;
       case "menu": mapMenu(id); break;
       case "ren": { const e2 = idxGet(id); closeDlg(); const v = prompt("导图名称", e2.title); if (!v || !v.trim()) break;
-        const m = lsGet(mapKey(id), null); if (m) { m.title = v.trim().slice(0, 80); m.root.text = m.title; lsSet(mapKey(id), m); }
+        const m = lsGet(mapKey(id), null); if (m) { m.title = v.trim().slice(0, 80); const r0 = (m.nodes || [])[0] || m.root; if (r0) r0.text = m.title; lsSet(mapKey(id), m); }
         idxPut({ id, title: v.trim().slice(0, 80), updated: Date.now(), dirty: !!m });
         scheduleCloud();   // [独立版] 云同步已停用：只改本机（原 mm_rename 分支见 git 历史）
         renderList(); break; }
@@ -1049,13 +1890,25 @@
       case "sib": addSibling(); break;
       case "del": del(); break;
       case "foldsel": toggleFold(); break;
-      case "fold": toggleFold(id); break;
+      case "edir": {                                            // 改这条线的指向（走 change：可撤销、落盘）
+        const eg = (cur.edges || []).find((x) => x.id === id);
+        if (eg) { const d2 = b.dataset.dir; change(() => { eg.dir = d2; }); selEdge = eg.id; }
+        hideEdgeMenu(); break;
+      }
+      case "edel": {                                            // 删这条线（一条边一条撤销）
+        const eg = (cur.edges || []).find((x) => x.id === id);
+        if (eg) change(() => { cur.edges = cur.edges.filter((x) => x !== eg); selEdge = null; });
+        hideEdgeMenu(); break;
+      }
+      case "fold": { const sw = pendFoldSwallow === id; if (!sw) toggleFold(id); break; }   // 指针路径已折过就跳过
       case "undo": undo(); break;
       case "redo": redoIt(); break;
+      case "node-style": select(id); hideNodeMenu(); window.MMAI?.close(); window.dispatchEvent(new Event("mm:close-shortcuts")); togglePanel(true); break;
+      case "node-ask": endEdit(); select(id); hideNodeMenu(); togglePanel(false); window.MMAI?.open(id); break;
       case "style": togglePanel(!panelOpen); break;
       case "pclose": togglePanel(false); break;
       case "outline": setMode(mode === "outline" ? "map" : "outline"); break;
-      case "ofold": { const r = findNode(id); if (r) { change(() => { r.n.fold = !r.n.fold; }); outline(id); } break; }
+      case "ofold": { const r = findNode(id); if (r) { change(() => { setFold(r.n, !isFold(r.n)); }); outline(id); } break; }
       case "find": openFind(); break;
       case "fnext": stepFind(1); break;
       case "fprev": stepFind(-1); break;
@@ -1063,14 +1916,14 @@
       case "paste-in": pasteDlg(true); break;
       case "export": exportDlg(); break;
       case "ex-png": closeDlg(); exportPng(); break;
-      case "ex-md": closeDlg(); download(safeName() + ".md", toMarkdown(cur.root), "text/markdown"); break;
-      case "ex-txt": closeDlg(); try { await navigator.clipboard.writeText(toText(cur.root, 0)); tip("大纲已复制，可以直接粘贴"); } catch (err) { download(safeName() + ".txt", toText(cur.root, 0), "text/plain"); } break;
-      case "ex-json": closeDlg(); download(safeName() + ".json", JSON.stringify({ app: "laolao-mindmap", v: 1, ...cur }, null, 1), "application/json"); break;
+      case "ex-md": closeDlg(); download(safeName() + ".md", nodesArr().map(n => window.MMContent && window.MMContent.isRich(n.text) ? n.text : toMarkdown(n)).join("\n\n---\n\n"), "text/markdown"); break;
+      case "ex-txt": { closeDlg(); const text = nodesArr().map(n => n.text).join("\n\n"); try { await navigator.clipboard.writeText(text); tip("节点列表已复制，可以直接粘贴"); } catch (err) { download(safeName() + ".txt", text, "text/plain"); } break; }
+      case "ex-json": closeDlg(); download(safeName() + ".json", JSON.stringify({ app: "laolao-mindmap", ...cur }, null, 1), "application/json"); break;
       case "dup": duplicate(cur.id); break;
       case "zin": zoomAt(view.k * 1.2); break;
       case "zout": zoomAt(view.k / 1.2); break;
       case "fit": fit(true); break;
-      case "lv": { let any = false; walk(cur.root, (n, p, d) => { if (d >= 2 && !n.fold && (n.children || []).length) any = true; }); foldLevel(any ? 2 : 0); break; }
+      case "lv": { let any = false; walk(topNode(), (n, p, d) => { if (d >= 2 && !isFold(n) && (n.children || []).length) any = true; }); foldLevel(any ? 2 : 0); break; }
       case "lv1": foldLevel(1); break;
       case "lv2": foldLevel(2); break;
       case "lv0": foldLevel(0); break;
@@ -1088,7 +1941,7 @@
     const t = e.target; if (!cur && t.id !== "mmFileOpen") return;
     if (t.id === "mmLayout" || t.id === "mmLine" || t.id === "mmTheme") {
       const k = { mmLayout: "layout", mmLine: "line", mmTheme: "theme" }[t.id];
-      change(() => { cur[k] = t.value; if (k === "layout") walk(cur.root, (n) => { delete n.side; }); });
+      change(() => { cur[k] = t.value; if (k === "layout") walk(topNode(), (n) => { delete n.side; }); });
       pref[k] = t.value; lsSet(LS_PREF, pref);
       if (k === "layout") setTimeout(() => fit(true), 20);
     }
@@ -1098,7 +1951,7 @@
   });
   document.addEventListener("input", (e) => {
     const t = e.target;
-    if (t.classList && t.classList.contains("mo-in")) { const r = findNode(t.dataset.id); if (r) { r.n.text = t.value; clearTimeout(outlineTimer); outlineTimer = setTimeout(() => { hist.push(JSON.stringify(cur)); cur.title = (cur.root.text || "未命名导图").slice(0, 80); $("mmTitleIn").value = cur.title; storeLocal(cur); scheduleCloud(); }, 500); } }
+    if (t.classList && t.classList.contains("mo-in")) { const r = findNode(t.dataset.id); if (r) { r.n.text = t.value; clearTimeout(outlineTimer); outlineTimer = setTimeout(() => { hist.push(JSON.stringify(cur)); cur.title = (topNode().text || "未命名导图").slice(0, 80); $("mmTitleIn").value = cur.title; storeLocal(cur); scheduleCloud(); }, 500); } }
     if (t.id === "mmFindIn") { clearTimeout(findTimer); findTimer = setTimeout(doFind, 200); }
     if (t.id === "mmListQ") { listQ = t.value; t.dataset.f = 1; renderList(); const s = $("mmListQ"); if (s) { s.focus(); s.setSelectionRange(s.value.length, s.value.length); } }
   });
@@ -1111,7 +1964,7 @@
   // 改标题 = 改中心主题
   document.addEventListener("focusout", (e) => {
     if (e.target.id !== "mmTitleIn" || !cur) return;
-    const v = e.target.value.trim(); if (v && v !== cur.title) change(() => { cur.root.text = v; });
+    const v = e.target.value.trim(); if (v && v !== cur.title) change(() => { cur.title = v.slice(0, 80); });
   });
   $("mmDlg").addEventListener("click", (e) => { if (e.target === $("mmDlg")) closeDlg(); });
   window.addEventListener("resize", () => { if (cur && currentView() === "mindmap") { fitBox(); applyView(); } });
@@ -1130,7 +1983,7 @@
     Sync.onChange((set) => {
       if (!set || !set.has || !set.has(LS_REV)) return;
       pullList().then(async () => {
-        if (cur) { const e = idxGet(cur.id); if (!e) { tip("这张导图在别的设备上被删了"); closeMap(); return; } if (e.server > (e.version || 0) && !e.dirty) { const s = sel, v = { ...view }; await openMap(cur.id, true); sel = findNode(s) ? s : cur.root.id; view = v; draw(); tip("别的设备改了这张图，已更新", 1800); } }
+        if (cur) { const e = idxGet(cur.id); if (!e) { tip("这张导图在别的设备上被删了"); closeMap(); return; } if (e.server > (e.version || 0) && !e.dirty) { const s = sel, v = { ...view }; await openMap(cur.id, true); sel = findNode(s) ? s : topNode().id; view = v; draw(); tip("别的设备改了这张图，已更新", 1800); } }
         else if (currentView() === "mindmap") renderList();
       });
     });
@@ -1140,5 +1993,21 @@
   setInterval(() => { const u = me() ? me().id : null; if (u !== lastUid) { lastUid = u; if (u) { index.forEach((e) => { if (!e.uid) { e.uid = u; e.dirty = true; } }); idxSave(); pullList(); } if (currentView() === "mindmap" && !cur) renderList(); } }, 2000);
   window.addEventListener("beforeunload", () => { if (index.some((x) => x.dirty) && me()) pushDirty(); });
   ===== [独立版] 云同步停用结束 ===== */
-  window.Mindmap = { parseText, toMarkdown, state: () => ({ cur, sel, index, L }), open: openMap, create };
+  window.Mindmap = {
+    pushAISummary,
+    refresh: () => { if (cur) draw(); },
+    parseText, toMarkdown,
+    /* 【独立版】**"扫哪些表"的唯一真相来源**：del 清理 / 读取容错 / 导入 / 自测台孤儿判据
+       全部读这两个数组（自测台不许再写一份字面量）。加新表只改上面那两行。 */
+    LAYER_MAPS, LAYER_LISTS,
+    state: () => ({ cur, sel, index, L }), open: openMap, create,
+    /* 【独立版】导出给断言读**同一处**：多容器下 findNode 必须能找到非第一个容器里的节点，
+       断言不能自己再写一份遍历（自写遍历只是证明"夹具里有那个节点"，证明不了产品路径）。 */
+    findNode,
+    /* 【独立版】数据形状的唯一权威与"全部容器"的遍历入口：tools/ 下的脚本（含 verify-ui.mjs 的
+       页内片段）一律调它们，不许自己抄 `Array.isArray(...nodes) ? ... : [.root]`。 */
+    nodesOf, liveIds,
+    /* 【独立版·平级】"谁看得见"的唯一权威（同 nodesOf 的地位）：tools 与渲染都读这一处。 */
+    visibleIds, hiddenIds,
+  };
 })();

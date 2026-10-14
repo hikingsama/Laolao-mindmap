@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>捞捞思维导图（独立版）</title>
 <link rel="stylesheet" href="css/mindmap-standalone.css">
+<link rel="stylesheet" href="vendor/katex/katex.min.css">
+<link rel="stylesheet" href="css/node-content.css">
 </head>
 <body>
   <!-- 顶部提示条：原代码的 ResizeObserver 观察它，必须有这个元素 -->
@@ -15,15 +17,28 @@
     <input id="mmTitleIn" class="mm-title-in hidden" maxlength="80" placeholder="导图名称">
     <span id="mmSync" class="mm-sync"></span>
     <span class="mm-head-gap"></span>
+    <button class="mm-b mm-shortcuts-button" id="mmShortcutsButton" type="button" aria-controls="mmShortcuts" aria-expanded="false">补全快捷键</button>
     <a class="mm-head-link" href="README.md">README</a>
   </header>
 
   <main id="mmBox" class="mm-box"></main>
+  <aside id="mmShortcuts" class="mm-shortcuts hidden" aria-labelledby="mmShortcutsTitle">
+    <div class="mm-shortcuts-heading"><b id="mmShortcutsTitle">补全快捷键</b><button id="mmShortcutsClose" class="mm-b ic" type="button" aria-label="关闭补全快捷键">✕</button></div>
+    <div id="mmShortcutsBody"></div>
+  </aside>
 
   <dialog id="mmDlg"><div id="mmDlgBody"></div></dialog>
 
   <script src="js/host-bridge.js"></script>
+  <script src="js/edge-router.js"></script>
+  <script src="vendor/markdown-it/markdown-it.min.js"></script>
+  <script src="vendor/katex/katex.min.js"></script>
+  <script src="vendor/html-to-image/html-to-image.js"></script>
+  <script src="js/math-completion.js"></script>
+  <script src="js/node-content.js"></script>
   <script src="vendor/mindmap.js"></script>
   <script src="js/standalone.js"></script>
+  <script src="js/ai-summary.js"></script>
+  <script src="js/ai-sidebar.js"></script>
 </body>
 </html>

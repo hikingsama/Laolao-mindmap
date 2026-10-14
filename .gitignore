@@ -10,3 +10,7 @@ desktop.ini
 
 # 依赖（本仓库第一版无构建工具链，留作兜底）
 node_modules/
+
+# Generated browser-test screenshots and local publishing scratch files
+tools/*-preview.png
+.publish/
