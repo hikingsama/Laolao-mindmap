@@ -13,8 +13,8 @@
       return p.y > r.y + eps && p.y < r.y + r.h - eps && Math.max(p.x, q.x) > r.x + eps && Math.min(p.x, q.x) < r.x + r.w - eps;
     };
     // Endpoints are fixed: never substitute a different magnet after movement.
-    const p = ports(a).find(v => v.side === (edge && edge.from && edge.from.side)) || ports(a)[1];
-    const q = ports(b).find(v => v.side === (edge && edge.to && edge.to.side)) || ports(b)[3];
+    function endpoint(r,end,fallback){const port=ports(r).find(v=>v.side===end?.side) || ports(r)[fallback],offset=Number.isFinite(end?.offset)?Math.min(.95,Math.max(.05,end.offset)):.5;return {...port,...(port.dx?{y:r.y+r.h*offset}:{x:r.x+r.w*offset})};}
+    const p=endpoint(a,edge?.from,1),q=endpoint(b,edge?.to,3);
     const extension = (port, other) => {
       let distance = Infinity;
       if (port.dx && port.y >= other.y && port.y <= other.y + other.h) {

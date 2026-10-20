@@ -1,0 +1,37 @@
+'use strict';
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),os=require('node:os');
+const {Readable}=require('node:stream'),{EventEmitter}=require('node:events');
+const {readCompletion,partialNodes,redact}=require('../js/ai-stream.cjs');
+let count=0;const check=(name,fn)=>{fn();count++;console.log('PASS '+name);};
+const api=async(service,url,method='GET',data)=>{
+  const req=Readable.from(data===undefined?[]:[Buffer.from(JSON.stringify(data))]);Object.assign(req,{url,method,headers:{host:'127.0.0.1:8894','content-type':'application/json'}});
+  const res=new EventEmitter();res.writeHead=status=>res.status=status;res.end=raw=>{res.raw=raw;res.writableEnded=true;};
+  await service.handle(req,res,8894);return {status:res.status,data:res.raw?JSON.parse(res.raw):null};
+};
+const poll=async(service,id,prefix='/api/ai/jobs/')=>{for(let i=0;i<200;i++){const r=await api(service,prefix+id);if(r.data.status!=='running')return r.data;await new Promise(r=>setTimeout(r,3));}throw Error('job timeout');};
+const tempBase=path.resolve(__dirname,'../tmp');fs.mkdirSync(tempBase,{recursive:true});const temp=fs.mkdtempSync(path.join(tempBase,'mm-ai-v01-'));
+(async()=>{
+  const chunks=['导','数 $x^2$','\n\n解释'];let seen=[];
+  const wire=chunks.map(content=>'data: '+JSON.stringify({choices:[{delta:{content}}]})+'\r\n\r\n').join('')+'data: '+JSON.stringify({choices:[{delta:{},finish_reason:'stop'}]})+'\r\n\r\ndata: [DONE]\r\n\r\n';
+  const encoded=new TextEncoder().encode(wire),body=new ReadableStream({start(c){for(let i=0;i<encoded.length;i+=2)c.enqueue(encoded.slice(i,i+2));c.close();}});
+  const answer=await readCompletion(new Response(body,{headers:{'Content-Type':'text/event-stream'}}),{onText:t=>seen.push(t)});
+  check('SSE survives UTF-8 and CRLF boundaries and reports genuine incremental text',()=>{assert.equal(answer,chunks.join(''));assert.deepEqual(seen,['导','导数 $x^2$','导数 $x^2$\n\n解释']);});
+  await assert.rejects(readCompletion(new Response('data: {"choices":[{"delta":{"content":"部分"}}]}\n\n',{headers:{'Content-Type':'text/event-stream'}})),/中断/);count++;console.log('PASS incomplete SSE is rejected');
+  await assert.rejects(readCompletion(new Response('data: {"error":{"message":"fake-secret"}}\n\n',{headers:{'Content-Type':'text/event-stream'}})),e=>!e.message.includes('fake-secret'));count++;
+  check('Partial summary exposes only complete nodes with escaped JSON strings',()=>{assert.deepEqual(partialNodes('{"nodes":[{"title":"一","text":"括号 } 与 \\\"引号\\\""},{"title":"二","text":"未完'),[{title:'一',text:'括号 } 与 "引号"'}]);assert.equal(partialNodes('{"nodes":[{"title":"a"').length,0);});
+  check('Secret fragments are held back until they can be safely redacted',()=>{assert.equal(redact('回答 fake-sec','fake-secret'),'回答 ');assert.equal(redact('回答 fake-secret 结束','fake-secret'),'回答 [密钥已隐藏] 结束');});
+  const {bootAll,loadInto,fireDelegated}=require('./smoke.js'),b=bootAll(),M=b.Mindmap;loadInto(b.sandbox,'js/ai-summary.js',b.sandbox.window);
+  await M.openDocument({id:'feature-map',title:'临时',flat:true,v:3,nodes:[{id:'q',text:'提问',children:[]}],pos:{q:{x:0,y:0}},edges:[]});
+  const plan={nodes:[{id:'a',title:'定义',text:'单行公式 $x^2$',selected:false},{id:'b',title:'第1次提问：推导',text:'① 展开\n\n② 取极限',selected:true}],edges:[{from:'a',to:'b',kind:'progression'}]};
+  const before=JSON.stringify(M.state().cur),r=M.pushAIPresentation('feature-map','q',plan,'第1次提问：导数是什么？');
+  check('First partial push creates exactly one question entry and no repeated question prefixes',()=>{const m=M.state().cur;assert.equal(m.nodes.length,3);assert.equal(m.nodes.filter(n=>n.text.startsWith('# 第1次提问')).length,1);assert(m.nodes.some(n=>n.text==='# 推导\n\n① 展开\n\n② 取极限'));assert(m.edges.some(e=>e.from.node===r.mapping.__entry && e.to.node===r.mapping.b));});
+  fireDelegated(b.doc.getElementById('mmUndo'),'click',{});check('Entry and first content undo together',()=>assert.equal(JSON.stringify(M.state().cur),before));fireDelegated(b.doc.getElementById('mmRedo'),'click',{});
+  plan.nodes.forEach(n=>n.selected=true);const second=M.pushAIPresentation('feature-map','q',plan,'第1次提问：导数是什么？',{},r.mapping);
+  check('Later text batch reuses the original entry and adds only missing content',()=>{assert.equal(second.ids.length,1);assert.equal(M.state().cur.nodes.filter(n=>n.text.startsWith('# 第1次提问')).length,1);});
+  plan.nodes.forEach(n=>n.selected=false);const images={b:{status:'ready',selected:true,parentPushed:true,media:{id:'image1',name:'image.png',mime:'image/png',sourceMap:'feature-map',width:100,height:100}}};
+  const third=M.pushAIPresentation('feature-map','q',plan,'第1次提问：导数是什么？',images,second.mapping);
+  check('Image can arrive after text, becomes a separate node and links to its exact content',()=>{const m=M.state().cur;assert.equal(third.ids.length,1);assert(m.nodes.some(n=>n.id===third.mapping.__image_b && n.image==='image1'));assert(m.edges.some(e=>e.from.node===third.mapping.b && e.to.node===third.mapping.__image_b && e.label==='示意图'));assert.equal(m.media[0].id,'image1');});
+  fireDelegated(b.doc.getElementById('mmUndo'),'click',{});check('Image batch undoes independently of earlier text and entry',()=>{assert(!M.state().cur.nodes.some(n=>n.image));assert(M.state().cur.nodes.some(n=>n.id===second.mapping.__entry));});
+  const beforeBad=JSON.stringify(M.state().cur);images.b.media.sourceMap='wrong';assert.throws(()=>M.pushAIPresentation('feature-map','q',plan,'第1次提问',images,second.mapping));check('Foreign-map image cannot modify the current document',()=>assert.equal(JSON.stringify(M.state().cur),beforeBad));
+  console.log(count+' streaming/legacy graph checks passed; fake credentials and temporary data only.');
+})().catch(e=>{console.error(e);process.exitCode=1;}).finally(()=>{if(path.dirname(path.resolve(temp))===tempBase && path.basename(temp).startsWith('mm-ai-v01-'))fs.rmSync(temp,{recursive:true,force:true});});

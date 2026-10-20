@@ -14,14 +14,14 @@
     const open = src.startsWith('$$', pos) ? '$$' : src.startsWith('\\(', pos) ? '\\(' : src[pos] === '$' ? '$' : null;
     if (!open) return false;
     const close = open === '\\(' ? '\\)' : open;
-    if (open === '$' && /\s|\$/.test(src[pos + 1] || ' ')) return false;
+    if (open === '$' && src[pos + 1] === '$') return false;
     let end = pos + open.length;
     while ((end = src.indexOf(close, end)) >= 0) {
       let slashes = 0; for (let i = end - 1; i >= 0 && src[i] === '\\'; i--) slashes++;
-      if (!(slashes % 2) && (open !== '$' || (!/\s/.test(src[end - 1]) && !/\d/.test(src[end + 1] || '')))) break;
+      if (!(slashes % 2) && (open !== '$' || (src[end + 1] !== '$' && !/\d/.test(src[end + 1] || '')))) break;
       end += close.length;
     }
-    if (end < 0 || (open === '$' && src.slice(pos + 1, end).includes('\n'))) return false;
+    if (end < 0 || (open === '$' && (src.slice(pos + 1, end).includes('\n') || !src.slice(pos+1,end).trim()))) return false;
     if (!silent) { const token = state.push('node_math', '', 0); token.content = src.slice(pos + open.length, end); token.meta = { display: open === '$$' }; }
     state.pos = end + close.length; return true;
   });
@@ -46,16 +46,24 @@
   md.renderer.rules.node_math = (tokens, i) => `<span class="mm-math${tokens[i].meta.display ? ' mm-math-block' : ''}">${math(tokens[i].content, tokens[i].meta.display)}</span>`;
   md.renderer.rules.node_math_block = (tokens, i) => `<div class="mm-math mm-math-block">${math(tokens[i].content, true)}</div>\n`;
   md.renderer.rules.image = (tokens, i) => `<span class="mm-image-alt">🖼 ${escape(tokens[i].content || '图片')}</span>`;
+  md.inline.ruler.before('emphasis','node_highlight',(state,silent)=>{
+    if(!state.src.startsWith('==',state.pos))return false;let end=state.pos+2;
+    while((end=state.src.indexOf('==',end))>=0){let slashes=0;for(let i=end-1;i>=0&&state.src[i]==='\\';i--)slashes++;if(!(slashes%2))break;end+=2;}
+    if(end<0 || !state.src.slice(state.pos+2,end).trim() || state.src.slice(state.pos+2,end).includes('\n'))return false;
+    if(!silent){const token=state.push('node_highlight','mark',0);token.children=[];state.md.inline.parse(state.src.slice(state.pos+2,end),state.md,state.env,token.children);}state.pos=end+2;return true;
+  });
+  md.renderer.rules.node_highlight=(tokens,i,options,env,self)=>`<mark>${self.renderInline(tokens[i].children,options,env)}</mark>`;
   const originalLink = md.renderer.rules.link_open || ((tokens, i, opts, env, self) => self.renderToken(tokens, i, opts));
   md.renderer.rules.link_open = (tokens, i, opts, env, self) => {
     tokens[i].attrSet('target', '_blank'); tokens[i].attrSet('rel', 'noopener noreferrer'); return originalLink(tokens, i, opts, env, self);
   };
   md.core.ruler.after('inline', 'node_tasks', state => {
     for (const token of state.tokens) if (token.type === 'inline' && token.children && token.children[0]?.type === 'text') {
-      const first = token.children[0], match = /^\[([ xX])\]\s+/.exec(first.content);
+      const first = token.children[0], match = /^\[([ xX])\]\s+/.exec(first.content),line=token.map?.[0];
       if (!match) continue;
+      if(!Number.isInteger(line) || !/^\s*(?:>\s*)*(?:(?:[-+*]|\d+[.)])\s+)?\[[ xX]\]\s+/.test(state.src.split('\n')[line] || ''))continue;
       first.content = first.content.slice(match[0].length);
-      const checkbox = new state.Token('html_inline', '', 0); checkbox.content = `<span class="mm-task">${match[1] === ' ' ? '☐' : '☑'}</span> `;
+      const checkbox = new state.Token('html_inline', '', 0); checkbox.content = `<input class="mm-task" type="checkbox" data-task-line="${line}" aria-label="任务完成状态"${match[1] === ' ' ? '' : ' checked'}> `;
       token.children.unshift(checkbox);
     }
   });
@@ -70,12 +78,14 @@
   const isRich = text => /[$\\`*_[\]#>|~]|^\s*[-+\d]+[.)]?\s|\n|https?:\/\//m.test(text || '');
   let probe;
   const measurements = new Map();
-  function measure(source, font, width) {
-    const key = JSON.stringify([source, font, width]); if (measurements.has(key)) return measurements.get(key);
+  function measure(source, font, width, fit = false) {
+    const theme=root.Mindmap?.state().cur?.theme || "fresh";
+    const key = JSON.stringify([source, font, width, fit,theme]); if (measurements.has(key)) return measurements.get(key);
     if (!probe) { probe = document.createElement('div'); probe.className = 'mm-rich mm-content-measure'; document.body.appendChild(probe); }
-    probe.style.cssText = `position:fixed;left:-10000px;top:0;visibility:hidden;pointer-events:none;width:${width}px;font:${font};line-height:1.5;`;
+    probe.dataset.theme=theme;
+    probe.style.cssText = `position:fixed;left:-10000px;top:0;visibility:hidden;pointer-events:none;width:${fit?'max-content':width+'px'};max-width:${width}px;font:${font};line-height:1.5;`;
     probe.innerHTML = render(source);
-    const result = { w: width, h: Math.ceil(probe.getBoundingClientRect().height) };
+    const result = { w: Math.ceil(probe.getBoundingClientRect().width), h: Math.ceil(probe.getBoundingClientRect().height) };
     if (measurements.size >= 300) measurements.clear(); measurements.set(key, result); return result;
   }
   // Deliberately manual: only Tab expands known snippets inside a math delimiter.

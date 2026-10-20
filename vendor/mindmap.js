@@ -27,8 +27,8 @@
   const LS_IDX = "mm_index_v1", LS_REV = "mm_rev_v1", LS_PREF = "mm_pref_v1", mapKey = (id) => "mm_map_" + id;
   const FONT = "-apple-system, BlinkMacSystemFont, 'PingFang SC', 'HarmonyOS Sans SC', 'Microsoft YaHei', sans-serif";   // 用单引号：要写进 style="…" 里
   const THEMES = {
-    fresh: { name: "清爽", bg: "#f7f9fc", grid: "#e9eef6", root: "#4f63e8", rootText: "#fff", text: "#1f2a3d", sub: "#ffffff", line: 2,
-      colors: ["#4f8df5", "#2bb98a", "#f2a20c", "#8a6cf0", "#f2724b", "#e4589a", "#18a9b8", "#7aa33c"] },
+    fresh: { name: "纸感", bg: "#f4f1e8", grid: "#dedfce", root: "#637747", rootText: "#fffef8", text: "#343b2e", sub: "#fffef9", line: 2,
+      colors: ["#77885e", "#6c8a94", "#b17a63", "#a18db1", "#b39758", "#749385", "#a27c87", "#838d70"] },
     warm: { name: "暖阳", bg: "#fffaf2", grid: "#f6ead6", root: "#e0683a", rootText: "#fff", text: "#3b2a1c", sub: "#fffdf8", line: 2,
       colors: ["#e0683a", "#d99a1e", "#7aa33c", "#c4567a", "#4b8bc9", "#9a6bd3", "#2f9e8f", "#b0743a"] },
     night: { name: "夜空", bg: "#121826", grid: "#1b2335", root: "#7c8cff", rootText: "#0e1220", text: "#e8edf7", sub: "#1b2335", line: 2,
@@ -43,13 +43,7 @@
   const MARK = Object.fromEntries(MARKS.map((m) => [m[0], m[1]]));
   const TEMPLATES = [
     { id: "blank", icon: "⚪", name: "空白导图", tip: "从一个空白节点开始", make: () => ({ text: "", children: [] }) },
-    { id: "course", icon: "📚", name: "课程复习", tip: "章节 → 重点 / 难点 / 例题 / 易错", make: () => T("课程名", [T("第一章", [T("重点"), T("难点"), T("例题"), T("易错点")]), T("第二章", [T("重点"), T("难点")]), T("公式汇总"), T("考试范围")]) },
-    { id: "exam", icon: "🎯", name: "考试准备", tip: "考点、题型、时间安排", make: () => T("期末考试", [T("考试信息", [T("时间"), T("地点"), T("题型分值")]), T("必考知识点"), T("薄弱环节"), T("复习计划", [T("第一周"), T("第二周"), T("考前一天")])]) },
-    { id: "question", icon: "❓", name: "解决一个问题", tip: "问题 → 需要的知识 → 步骤", make: () => T("我遇到的问题", [T("问题是什么"), T("需要先懂的知识", [T("知识点 1"), T("知识点 2")]), T("解决步骤", [T("第一步"), T("第二步")]), T("答案 / 结论"), T("还不懂的")]) },
-    { id: "book", icon: "📖", name: "读书笔记", tip: "作者、主要观点、金句、感想", make: () => T("书名", [T("作者与背景"), T("主要观点", [T("观点 1"), T("观点 2")]), T("精彩句子"), T("我的感想"), T("可以用在哪")]) },
-    { id: "project", icon: "🚀", name: "项目计划", tip: "目标、分工、进度、风险", make: () => T("项目名", [T("目标"), T("分工", [T("成员 A"), T("成员 B")]), T("时间节点"), T("需要的资源"), T("风险")]) },
   ];
-  function T(text, children) { return { text, children: children || [] }; }
 
   // ---------------- 小工具 ----------------
   const uid = () => (crypto.randomUUID ? crypto.randomUUID() : "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => { const r = (Math.random() * 16) | 0; return (c === "x" ? r : (r & 3) | 8).toString(16); }));
@@ -84,10 +78,12 @@
     return { id: uid(), title: title || root.text || "未命名导图", layout: pref.layout, line: pref.line, theme: pref.theme, nodes: [root], fold: {}, edges: [], v: 2 };
   }
   function storeLocal(m) {
+    fileListRevision++;
     const e = idxGet(m.id) || {};
     const ok = lsSet(mapKey(m.id), m);
     idxPut({ id: m.id, title: m.title, updated: Date.now(), nodes: countNodes(m), version: e.version || 0, local: e.local ?? true, dirty: true, uid: me() ? me().id : e.uid || null });
     if (!ok) tip("这台设备的存储空间满了：登录后导图会存到账号里", 4000);
+    window.MMFiles?.queue(m);
   }
 
   /* ===== [独立版] 云同步整段停用 =====
@@ -148,10 +144,77 @@
   function setSync() {}
   function scheduleCloud() {}
   async function pushDirty() {}
-  async function pullList() {}
+  // Reconcile the home list with saved files on every visit. Browser drafts are
+  // kept separately, including when a saved file is removed outside the app.
+  let fileListRequest=null, fileListRevision=0;
+  const recoveryKey=id=>'mm_recovery_v1_'+id;
+  async function mapHash(map){
+    const bytes=new TextEncoder().encode(JSON.stringify(map));
+    return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),x=>x.toString(16).padStart(2,'0')).join('');
+  }
+  async function fileRequest(address,options){
+    const response=await fetch(address,{cache:'no-store',...options});
+    const data=await response.json();if(!response.ok)throw new Error(data.error || '读取本地导图失败');return data;
+  }
+  async function noteFile(map){
+    if(!map?.id)return;
+    const fileBaseHash=await mapHash(map);
+    idxPut({id:map.id,fileBacked:true,fileBaseHash,fileMissing:false});
+  }
+  async function browserDraft(id,baseHash){
+    const map=lsGet(mapKey(id),null),recovery=lsGet(recoveryKey(id),null);
+    const changed=async value=>!!value && (!baseHash || await mapHash(value)!==baseHash);
+    return {map,recovery,changed:await changed(map) || await changed(recovery?.map)};
+  }
+  async function pullList(){
+    if(fileListRequest){fileListRevision++;return fileListRequest;}
+    fileListRequest=(async()=>{
+      let retry=true;
+      while(retry && !cur){
+        retry=false;const serial=openSerial,revision=fileListRevision;
+        const data=await fileRequest('/api/maps');
+        if(!Array.isArray(data.maps))throw new Error('本地导图列表格式无效');
+        const files=await Promise.all(data.maps.map(async entry=>{
+          if(typeof entry.id!=='string' || !/^[a-zA-Z0-9_-]{1,100}$/.test(entry.id))throw new Error('导图编号无效');
+          const info=await fileRequest('/api/maps/'+encodeURIComponent(entry.id)+'/draft');
+          if(info.base?.id!==entry.id || (!Array.isArray(info.base.nodes) && !info.base.root))throw new Error('导图文件格式无效');
+          return {entry,info,hash:await mapHash(info.base)};
+        }));
+        const updates=[],removed=[],present=new Set(files.map(f=>f.entry.id));
+        for(const {entry,info,hash} of files){
+          const old=idxGet(entry.id),local=await browserDraft(entry.id,old?.fileBaseHash || hash);
+          const preserve=local.changed;
+          updates.push({entry:{...old,id:entry.id,title:info.base.title || '未命名导图',nodes:countNodes(info.base),updated:entry.updated || old?.updated || Date.now(),fileBacked:true,fileBaseHash:hash,fileMissing:false,hasDraft:preserve || !!info.recoverable,local:true,dirty:false},map:preserve?null:info.base,recovery:!preserve && info.recoverable && info.draft?{map:info.draft,token:info.token,updated:info.updated}:null});
+        }
+        for(const entry of index){
+          if(present.has(entry.id) || !entry.fileBacked)continue;
+          const local=await browserDraft(entry.id,entry.fileBaseHash);
+          if(local.changed)updates.push({entry:{...entry,fileMissing:true,hasDraft:true},map:null,recovery:null});
+          else removed.push(entry.id);
+        }
+        if(cur)return;
+        if(serial!==openSerial || revision!==fileListRevision){retry=true;continue;}
+        // Apply only after the entire scan succeeded; an offline or invalid file
+        // must never turn an incomplete response into a deletion.
+        for(const update of updates){
+          if(update.map && !lsSet(mapKey(update.entry.id),update.map))throw new Error('浏览器存储空间不足');
+          if(update.recovery && !lsSet(recoveryKey(update.entry.id),update.recovery))throw new Error('浏览器存储空间不足');
+          const i=index.findIndex(e=>e.id===update.entry.id);if(i<0)index.push(update.entry);else index[i]=update.entry;
+        }
+        for(const id of removed){lsDel(mapKey(id));lsDel(recoveryKey(id));}
+        index=index.filter(e=>!removed.includes(e.id)).sort((a,b)=>b.updated-a.updated);idxSave();
+      }
+    })().catch(error=>{console.warn('[local map list]',error);tip('更新本地导图列表失败，原列表和草稿已保留。请检查服务后刷新。',5000);});
+    try{await fileListRequest;}
+    finally{fileListRequest=null;}
+  }
+  function refreshHome(){renderList();pullList().then(()=>{if(!cur && currentView()==='mindmap')renderList();});}
 
   // ---------------- 状态 ----------------
+  const aiBatches=new Set();
   let cur = null, sel = null, editing = null, editingNew = null, hist = [], redo = [], view = { x: 0, y: 0, k: 1 }, mode = "map", q = "", found = [], clip = null, panelOpen = false, listQ = "";
+  let selectedNodes = new Set();
+  let openSerial = 0;
   /* 【独立版】收起按钮的指针路径状态（见 bindCanvas 的 pointerdown / up）：
      foldDown = 按下时命中的收起按钮；foldSwallow = 这次折叠已经由指针路径处理过，
      浏览器随后还会补发一次 click，别在 click 委托里再折一次（否则一按一展开、净效果为零）。 */
@@ -178,20 +241,23 @@
   }
   const isAncestor = (a, b) => { let r = findNode(b); while (r && r.p) { if (r.p.id === a) return true; r = findNode(r.p.id); } return false; };
 
+  // Conversation records survive canvas undo; history stores canvas data only.
+  function historyJSON(map=cur){const snapshot={...map};delete snapshot.aiMemory;return JSON.stringify(snapshot);}
+  function restoreHistory(snapshot){const memory=cur?.aiMemory;cur=JSON.parse(snapshot);if(memory)cur.aiMemory=memory;}
   function change(fn, keepSel) {
     if (!cur) return;
-    hist.push(JSON.stringify(cur)); if (hist.length > 120) hist.shift(); redo = [];
+    hist.push(historyJSON()); if (hist.length > 120) {hist.shift();for(const batch of aiBatches)batch.historyIndex--;} redo = [];
     fn();
     if (!cur.flat) cur.title = String((topNode() || {}).text || "未命名导图").split("\n")[0].slice(0, 80) || "未命名导图";
     storeLocal(cur); scheduleCloud(); draw();
   }
-  function undo() { if (!hist.length) return; redo.push(JSON.stringify(cur)); cur = JSON.parse(hist.pop()); if (!findNode(sel)) sel = topNode() ? topNode().id : null; storeLocal(cur); scheduleCloud(); draw(); tip("已撤销", 1200); }
-  function redoIt() { if (!redo.length) return; hist.push(JSON.stringify(cur)); cur = JSON.parse(redo.pop()); if (!findNode(sel)) sel = topNode() ? topNode().id : null; storeLocal(cur); scheduleCloud(); draw(); }
+  function undo() { window.dispatchEvent(new Event("mm:ai-interrupt")); if (!hist.length) return; redo.push(historyJSON()); restoreHistory(hist.pop()); if (sel && !findNode(sel)) sel = null; storeLocal(cur); scheduleCloud(); draw(); tip("已撤销", 1200); }
+  function redoIt() { window.dispatchEvent(new Event("mm:ai-interrupt")); if (!redo.length) return; hist.push(historyJSON()); restoreHistory(redo.pop()); if (sel && !findNode(sel)) sel = null; storeLocal(cur); scheduleCloud(); draw(); }
 
   // ---------------- 量字 + 布局 ----------------
   const cvs = document.createElement("canvas").getContext("2d");
-  const fontOf = (depth, bold) => depth === 0 ? `700 20px ${FONT}` : depth === 1 ? `${bold ? 800 : 650} 15.5px ${FONT}` : `${bold ? 700 : 400} 14px ${FONT}`;
-  const lineH = (depth) => (depth === 0 ? 28 : depth === 1 ? 22 : 20);
+  const fontOf = (depth, bold, size=16) => `${bold ? 700 : 400} ${Math.min(48,Math.max(10,Number(size)||16))}px ${FONT}`;
+  const lineH = (depth,size=16) => Math.min(48,Math.max(10,Number(size)||16))*1.5;
   function wrapLines(text, font, maxW) {
     cvs.font = font;
     const out = [];
@@ -204,15 +270,20 @@
     }
     return { lines: out, w: Math.max(...out.map((l) => cvs.measureText(l).width)) };
   }
-  function measure(n, depth) {
-    const font = fontOf(depth, n.bold), maxW = depth === 0 ? 300 : depth === 1 ? 260 : 240;
+  function measure(n, depth, fixedWidth = null) {
+    if(n.pdf)return {w:480,h:570,lines:[],font:fontOf(depth,n.bold),padX:4,padY:4,pdf:true};
+    if (n.image) {
+      const media = (cur?.media || []).find(m => m.id === n.image), ratio = media?.width && media?.height ? media.height/media.width : .7;
+      return {w:300,h:Math.min(420,Math.max(100,280*ratio))+20,lines:[],font:fontOf(depth,n.bold),padX:10,padY:10,image:true};
+    }
+    const font = fontOf(depth, n.bold,n.fontSize), maxW = fixedWidth ? Math.max(20,fixedWidth-34) : 326;
     const pre = (n.marks || []).map((m) => MARK[m] || "").join("");
     const wr = wrapLines((pre ? pre + " " : "") + (n.text || " "), font, maxW);
     const extra = (n.note ? 20 : 0) + (n.link ? 20 : 0) + (n.progress ? 22 : 0);
     const padX = depth === 0 ? 22 : depth === 1 ? 14 : 10, padY = depth === 0 ? 12 : depth === 1 ? 8 : 6;
-    if (window.MMContent && window.MMContent.isRich(n.text)) {
-      const rich = window.MMContent.measure(n.text, font, maxW);
-      return { w: rich.w + extra + padX * 2 + 6, h: rich.h + padY * 2 + 2 + (pre ? lineH(depth) : 0), lines: wr.lines, font, padX, padY, rich: true };
+    if (window.MMContent) {
+      const rich = window.MMContent.measure(n.text || ' ', font, maxW, !fixedWidth);
+      return { w: Math.max(60,rich.w + extra + padX * 2 + 6), h: Math.max(40,rich.h + padY * 2 + 4 + (pre ? lineH(depth,n.fontSize) : 0)), lines: wr.lines, font, padX, padY, rich: true };
     }
     // +6：边框和字体渲染的误差，免得最后一个字被挤到下一行
     return { w: Math.ceil(Math.max(depth === 0 ? 90 : 34, wr.w + extra) + padX * 2 + 6), h: wr.lines.length * lineH(depth) + padY * 2 + 2, lines: wr.lines, font, padX, padY };
@@ -234,7 +305,7 @@
     const hid = cur.flat ? new Set() : hiddenIds(cur, all);
     function prep(n, depth, color, parent) {
       if (!hid.has(n.id)) {
-        const m = measure(n, depth);
+        const m = measure(n, depth, curSize()[n.id]?.w);
         const c = n.color || (depth === 0 ? th.root : color);
         /* 【独立版】尺寸在这里合并（measure 之后、nodes.set 之前）：让 span() 的缓存从一开始就按最终尺寸算 */
         const z = curSize()[n.id];
@@ -431,7 +502,7 @@
      · LAYER_LISTS 按**端点**删：过滤掉 from.node / to.node 命中被删集合的**条目**。
        它们没有"按节点 id 的键"，**绝不可当映射去 `delete d[节点id]`** —— 那删的是条目自己的 id，完全删错东西。
      `fold` / `edges` 落地时由这两处自动覆盖，清理代码不用再改。 */
-  const LAYER_MAPS = ["pos", "size", "fold"];
+  const LAYER_MAPS = ["pos", "size", "fold", "sizing", "pdfViews"];
   const LAYER_LISTS = ["edges"];
   /* 【独立版】**唯一的坐标写入口**：全文只有这里出现 `curPos()[…] = …`。
      调用方必须在 change() 的 fn 内调它（change 先快照再执行 fn，写在 fn 外就撤不回去）。 */
@@ -484,6 +555,8 @@
   const LAYER_OK = {
     pos: (v) => !!validPos(v),
     size: (v) => !!v && Number.isFinite(v.w) && Number.isFinite(v.h) && v.w > 0 && v.h > 0,
+    sizing: v => !!v && typeof v === 'object' && (!('w' in v) || typeof v.w === 'boolean') && (!('h' in v) || typeof v.h === 'boolean'),
+    pdfViews: v => !!v && typeof v === 'object' && Number.isSafeInteger(v.page) && v.page>0,
   };
   function applyLayer(src) {
     if (!cur || !src) return 0;
@@ -536,19 +609,23 @@
      绝不写进节点字段（安卓 normalizeNode() 是白名单式过滤，会静默丢掉）。
      不变量：
        1) cur.size 里没有记录的节点，用"现有文本测量结果"落一次盘，之后不再重算（F5 重开不重算）；
-       2) 最小 60×40；最大不超过该节点文本测量尺寸的 4 倍（clampSize 里换算）。 */
-  const SIZE_MIN_W = 60, SIZE_MIN_H = 40, SIZE_MAX_MUL = 4;
+       2) 最小 60×40；单个方向上限 8000，不再按短文本长度限制手动宽度。
+       3) sizing[id].w/h 分别记录手动固定的方向；自动尺寸只在内容编辑/恢复适配时重算。 */
+  const SIZE_MIN_W = 60, SIZE_MIN_H = 40;
   const curSize = () => (cur.size ||= {});
   const finNum = (v, d) => (Number.isFinite(v) ? v : d);   // 显式挡 NaN / Infinity：Math.max(60, NaN) 还是 NaN
-  function clampSize(w, h, measW, measH) {
-    const mw = Number.isFinite(measW) && measW > 0 ? measW : SIZE_MIN_W;
-    const mh = Number.isFinite(measH) && measH > 0 ? measH : SIZE_MIN_H;
-    const maxW = Math.max(SIZE_MIN_W, Math.round(mw * SIZE_MAX_MUL));
-    const maxH = Math.max(SIZE_MIN_H, Math.round(mh * SIZE_MAX_MUL));
+  function clampSize(w, h) {
+    const maxW = 8000, maxH = 8000;
     return {
       w: Math.min(maxW, Math.max(SIZE_MIN_W, Math.round(finNum(w, SIZE_MIN_W)))),
       h: Math.min(maxH, Math.max(SIZE_MIN_H, Math.round(finNum(h, SIZE_MIN_H)))),
     };
+  }
+  function fitNode(id, reset = false) {
+    const n=findNode(id)?.n; if(!n || n.image || n.pdf)return;
+    if(reset && cur.sizing)delete cur.sizing[id];
+    const manual=cur.sizing?.[id] || {},old=curSize()[id] || {},natural=measure(n,1,manual.w ? old.w : null);
+    curSize()[id]=clampSize(manual.w?old.w:natural.w,manual.h?old.h:natural.h,natural.w,natural.h);
   }
   /* 【独立版】尺寸合并点已前移到 measure() 之后、nodes.set 之前（见下方 layoutAuto 的 prep）。
      为什么必须在那里：span() 首次算完会把 s.span 缓存住（`if (s.span != null) return s.span`），
@@ -578,7 +655,14 @@
     }
     let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
     for (const s of lay.nodes.values()) { if (s.x == null) continue; x0 = Math.min(x0, s.x); y0 = Math.min(y0, s.y); x1 = Math.max(x1, s.x + s.w); y1 = Math.max(y1, s.y + s.h); }
-    lay.bounds = { x0, y0, x1, y1 };
+    for (const s of lay.nodes.values()) if (s.n.image) y0=Math.min(y0,s.y-38);
+    for(const s of lay.nodes.values()){
+      const record=cur.aiMemory?.turns?.find(t=>t.id===s.n.aiTurnId),b=window.MMAILearning?.box(s,record);
+      if(b){x0=Math.min(x0,b.x);y0=Math.min(y0,b.y);x1=Math.max(x1,b.x+b.w);y1=Math.max(y1,b.y+b.h);}
+    }
+    lay.bounds = lay.nodes.size ? { x0, y0, x1, y1 } : {x0:0,y0:0,x1:0,y1:0};
+    window.MMCanvasTools?.extendBounds(lay);
+    window.MMGroups?.extendBounds(lay);
     return lay;
   }
 
@@ -710,7 +794,7 @@
   }
   function addEdge(from, to, dir) {
     if (!cur || !from || !to) return null;
-    if (from.node === to.node) { tip("同一个主题的磁吸点之间不能连线"); return null; }
+    if (from.node === to.node && from.side === to.side) { tip("请连接不同的磁吸点"); return null; }
     if (edgeDup(from, to)) { tip("这两个点之间已经有一条线了（换个点连，或先删掉那条）"); return null; }
     const e = { id: eid(), from: { node: from.node, side: from.side }, to: { node: to.node, side: to.side }, dir: dir || "fwd" };
     change(() => { (cur.edges ||= []).push(e); });     // 走 change：可撤销、能落盘
@@ -721,12 +805,12 @@
      【独立版·平级】边怎么画：端点每帧从布局盒现算（magPos），线走直线，箭头画成小三角 `<path>`。
      箭头位置由 dir 决定：fwd = 只在终点（to）、rev = 只在起点、both = 两端、none = 不画。
      `data-end` 标明这一端是哪一头，方便断言与排查。 */
-  const EDGE_COLOR = "#5b6b7c", EDGE_HOT = "#2f7cf6", ARROW = 10;
+  const EDGE_COLOR = "#8b957f", EDGE_HOT = "#637747", ARROW = 10;
   /* 边的三档视觉：常态 2px 灰 / hover 3px 蓝 / 选中 4px 蓝 + 外圈光晕（选中必须比 hover 更明显）。
      命中带跟这个无关 —— 命中一律按屏幕 10px 几何算（EDGE_HIT），线本身多细都点得中。 */
-  function edgeArrow(p, q, end, hot, eid) {
+  function edgeArrow(p, q, end, hot, eid, color=EDGE_COLOR) {
     const deg = Math.atan2(p.y - q.y, p.x - q.x) * 180 / Math.PI;
-    return `<path class="mm-arrow${hot ? " hot" : ""}" data-end="${end}" data-edge="${eid}" d="M0,0 L${-ARROW},${ARROW * 0.45} L${-ARROW},${-ARROW * 0.45} Z" fill="${hot ? EDGE_HOT : EDGE_COLOR}" transform="translate(${p.x},${p.y}) rotate(${deg})"/>`;
+    return `<path class="mm-arrow${hot ? " hot" : ""}" data-end="${end}" data-edge="${eid}" d="M0,0 L${-ARROW},${ARROW * 0.45} L${-ARROW},${-ARROW * 0.45} Z" fill="${hot ? EDGE_HOT : color}" transform="translate(${p.x},${p.y}) rotate(${deg})"/>`;
   }
   function edgeSvg() {
     if (!cur || !Array.isArray(cur.edges)) return [];
@@ -738,10 +822,11 @@
       const routed = window.MMEdgeRouter.route(a, b, e), points = routed.points, p1 = points[0], p2 = points[points.length - 1], dir = e.dir || "fwd";
       const sel2 = e.id === selEdge, hot = !sel2 && e.id === hotEdge;
       const cls = "mm-edge" + (sel2 ? " sel" : hot ? " hot" : "");
-      const col = sel2 || hot ? EDGE_HOT : EDGE_COLOR, wd = sel2 ? 4 : hot ? 3 : 2;
+      const baseColor=/^#[0-9a-f]{6}$/i.test(e.color || "")?e.color:EDGE_COLOR;
+      const col = sel2 || hot ? EDGE_HOT : baseColor, wd = sel2 ? 4 : hot ? 3 : 2;
       out.push(`<path class="${cls}" data-id="${e.id}" d="${routed.path}" stroke="${col}" stroke-width="${wd}" fill="none" stroke-linecap="round" opacity="${sel2 || hot ? 1 : .9}"/>`);
-      if (dir === "fwd" || dir === "both") out.push(edgeArrow(p2, points[points.length - 2], "to", sel2 || hot, e.id));
-      if (dir === "rev" || dir === "both") out.push(edgeArrow(p1, points[1], "from", sel2 || hot, e.id));
+      if (dir === "fwd" || dir === "both") out.push(edgeArrow(p2, points[points.length - 2], "to", sel2 || hot, e.id, baseColor));
+      if (dir === "rev" || dir === "both") out.push(edgeArrow(p1, points[1], "from", sel2 || hot, e.id, baseColor));
     }
     return out;
   }
@@ -754,17 +839,21 @@
       const on = p.dataset.id === id, isSel = p.classList.contains("sel");
       p.classList.toggle("hot", on && !isSel);
       if (on && !isSel) { p.setAttribute("stroke", EDGE_HOT); p.setAttribute("stroke-width", "3"); p.setAttribute("opacity", "1"); }
-      else if (!isSel) { p.setAttribute("stroke", EDGE_COLOR); p.setAttribute("stroke-width", "2"); p.setAttribute("opacity", ".9"); }
+      else if (!isSel) { p.setAttribute("stroke", /^#[0-9a-f]{6}$/i.test((cur.edges || []).find(e=>e.id===p.dataset.id)?.color || "")?(cur.edges || []).find(e=>e.id===p.dataset.id).color:EDGE_COLOR); p.setAttribute("stroke-width", "2"); p.setAttribute("opacity", ".9"); }
     }
     for (const a of document.querySelectorAll("#mmStage .mm-links path.mm-arrow")) {
-      const owner = cur && (cur.edges || []).find((e) => e.id === id);
-      const isHot = !!owner && a.dataset.end && (owner.dir || "fwd") === (a.dataset.end === "to" ? "fwd" : "rev") && !selEdge;
-      a.setAttribute("fill", isHot ? EDGE_HOT : EDGE_COLOR);
+      const owner=cur && (cur.edges || []).find(e=>e.id===a.dataset.edge);
+      const isHot=owner && (owner.id===id || owner.id===selEdge);
+      a.setAttribute("fill",isHot?EDGE_HOT:/^#[0-9a-f]{6}$/i.test(owner?.color || "")?owner.color:EDGE_COLOR);
     }
   }
   const E = (s) => esc(s);
-  function draw() {
+  function draw(transient = false) {
     if (!cur) return;
+    if (sel && !selectedNodes.has(sel)) selectedNodes = new Set([sel]);
+    selectedNodes = new Set([...selectedNodes].filter(id => findNode(id)));
+    if (sel && !selectedNodes.has(sel)) sel = [...selectedNodes].at(-1) || null;
+    if (!sel) selectedNodes.clear();
     if (!cur.flat || nodesArr().some(n => n.children && n.children.length)) {
       seedPos();
       const flat = []; for (const r of nodesArr()) walk(r, n => flat.push(n));
@@ -773,17 +862,26 @@
       storeLocal(cur);
     }
     L = layout();
-    const th = L.th, st = $("mmStage"), svg = [], html = [];
+    const th = L.th, st = $("mmStage"), svg = [], html = [], specs=[];
     for (const s of L.nodes.values()) {
       if (s.x == null) continue;
-      const n = s.n, d = s.depth, isSel = n.id === sel, hit = found.includes(n.id);
-      const style = d === 0 ? `background:${s.color};color:${th.rootText};` : d === 1 ? `background:${mix(s.color, th.sub, .16)};border-color:${s.color};color:${th.text};` : `border-color:${mix(s.color, th.sub, .55)};color:${th.text};background:${th.sub};`;
+      const n = s.n, d = s.depth, isSel = selectedNodes.has(n.id), hit = found.includes(n.id);
+      const paper = cur.theme === 'fresh' && cur.flat;
+      const style = paper ? `background:${mix(s.color,th.sub,.32)};color:${th.text};border-color:${mix(s.color,th.sub,.92)};--mm-node-color:${s.color};` : (d === 0 ? `background:${s.color};color:${th.rootText};` : d === 1 ? `background:${mix(s.color, th.sub, .16)};color:${th.text};` : `color:${th.text};background:${th.sub};`) + `border-color:${s.color};--mm-node-color:${s.color};`;
       const prog = n.progress ? `<svg class="mm-prog" viewBox="0 0 16 16" title="${n.progress}%"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" opacity=".25" stroke-width="2"/><circle cx="8" cy="8" r="6.5" fill="none" stroke="${d === 0 ? "currentColor" : s.color}" stroke-width="2.4" stroke-dasharray="${(n.progress / 100) * 40.8} 41" transform="rotate(-90 8 8)" stroke-linecap="round"/></svg>` : "";
-      html.push(`<div class="mm-node d${Math.min(d, 2)}${isSel ? " sel" : ""}${hit ? " hit" : ""}${n.bold ? " b" : ""}" data-id="${n.id}" style="left:${s.x}px;top:${s.y}px;width:${s.w}px;height:${s.h}px;${style}font:${s.font};line-height:${lineH(d)}px;padding:${s.padY}px ${s.padX}px">`
-        + (s.rich ? `<div class="mm-t mm-rich">${(n.marks || []).length ? `<p>${E(n.marks.map(m => MARK[m] || "").join(""))}</p>` : ""}${window.MMContent.render(n.text)}</div>` : `<span class="mm-t">${E(s.lines.join("\n"))}</span>`)
-        + `${prog}${n.note ? `<b class="mm-ic" data-mm="note" title="${E(n.note.slice(0, 100))}">📝</b>` : ""}${n.link ? `<b class="mm-ic" data-mm="link" title="${E(n.link)}">🔗</b>` : ""}`
-        + ((n.children || []).length && d > 0 || (d === 0 && isFold(n)) ? `<button class="mm-fold${isFold(n) ? " on" : ""} s${s.side}" data-mm="fold" data-id="${n.id}" style="--c:${s.color}" title="${isFold(n) ? "展开" : "收起"}">${isFold(n) ? hidden(n) : "−"}</button>` : "")
-        + `</div>`);
+      const full=()=>n.pdf?window.MMPDF.element(n.id,n.pdf):(n.image ? `<img class="mm-node-image" src="/api/maps/${encodeURIComponent(cur.id)}/media/${encodeURIComponent(n.image)}?draft=1" alt="${E((cur.media || []).find(m=>m.id===n.image)?.name || "图片")}" draggable="false">` : s.rich ? `<div class="mm-t mm-rich"><div class="mm-rich-inner">${(n.marks || []).length ? `<p>${E(n.marks.map(m => MARK[m] || "").join(""))}</p>` : ""}${window.MMContent.render(n.text)}</div></div>` : `<span class="mm-t">${E(s.lines.join("\n"))}</span>`)
+        + `${prog}`
+        + ((n.children || []).length && d > 0 || (d === 0 && isFold(n)) ? `<button class="mm-fold${isFold(n) ? " on" : ""} s${s.side}" data-mm="fold" data-id="${n.id}" style="--c:${s.color}" title="${isFold(n) ? "展开" : "收起"}">${isFold(n) ? hidden(n) : "−"}</button>` : "");
+      const media=(cur.media || []).find(m=>m.id===(n.image || n.pdf));
+      const className=`mm-node d${Math.min(d,2)}${isSel?' sel':''}${hit?' hit':''}${n.bold?' b':''}${n.pdf?' mm-node-pdf':''}`;
+      const css=`left:${s.x}px;top:${s.y}px;width:${s.w}px;height:${s.h}px;${style}font:${s.font};line-height:${lineH(d,n.fontSize)}px;padding:${s.padY}px ${s.padX}px;text-align:left;`;
+      if(window.MMScene)specs.push({id:n.id,isPDF:!!n.pdf,mediaName:media?.name || "PDF文档",className,style:css,box:s,keep:isSel || editing===n.id,key:JSON.stringify([n.text,n.image,n.pdf,n.marks,n.progress,n.bold,media?.name]),summary:n.pdf?'PDF · '+(media?.name || '文档'):n.image?(media?.name || '图片'):String(n.text || '').split('\n').find(line=>line.trim())?.replace(/^\s*#{1,6}\s+/,'').slice(0,100) || '',full});
+      else html.push(`<div class="${className}" data-id="${n.id}" style="${css}">${full()}</div>`);
+      if(n.aiEntry && n.aiTurnId){const record=cur.aiMemory?.turns?.find(t=>t.id===n.aiTurnId),status=record?.status || 'completed';
+        html.push(window.MMAILearning?.render(s,record) || '');
+        html.push(`<button type="button" class="mm-ai-task-badge ${status==='running'?'running':status==='completed'?'complete':'incomplete'}" data-ai-turn="${E(n.aiTurnId)}" title="查看本次提问的方向、参考资料和生成过程" style="left:${s.x}px;top:${s.y-29}px;--ai-chain-color:${E(n.color || '#667e51')}"><span aria-hidden="true">${status==='running'?'◉':status==='completed'?'✓':'○'}</span> ${status==='running'?'生成中':status==='completed'?'查看过程':'未完成 · 查看过程'}</button>`);
+      }
+      if(n.image){const name=media?.name || (n.pdf?'PDF文档':'图片');html.push(`<button type="button" class="mm-image-label${isSel?' sel':''}" data-image-label="${E(n.id)}" title="${E(name)}" style="left:${s.x}px;top:${s.y-34}px;max-width:${s.w}px;--image-color:${s.color}">${E(name)}</button>`);}
     }
     /* 磁吸点画成**独立覆盖层**（在节点之上、不放进 .mm-node 里）：.mm-node 是 overflow:hidden，
        圆点骑在盒子边线上会被裁掉一半。层本身 pointer-events:none —— 命中在 magnetAt 里按几何算。
@@ -798,29 +896,33 @@
     const b = L.bounds, pad = 400;
     /* 预览线（拖磁吸点时那条虚线）与连线同坐标空间：每帧重建，拖动过程中只改它的 innerHTML。 */
     const prevBox = `left:${b.x0 - pad}px;top:${b.y0 - pad}px;width:${b.x1 - b.x0 + pad * 2}px;height:${b.y1 - b.y0 + pad * 2}px" viewBox="${b.x0 - pad} ${b.y0 - pad} ${b.x1 - b.x0 + pad * 2} ${b.y1 - b.y0 + pad * 2}`;
-    st.innerHTML = `<svg class="mm-links" style="${prevBox}">${svg.join("")}${edgeSvg().join("")}</svg><svg class="mm-linkprev" style="${prevBox}"></svg>${html.join("")}${magHtml.join("")}`;
+    const chrome=`<svg class="mm-links" style="${prevBox}">${svg.join("")}${edgeSvg().join("")}</svg><svg class="mm-linkprev" style="${prevBox}"></svg>${html.join("")}${magHtml.join("")}`;
+    if(window.MMScene)window.MMScene.render(st,chrome,specs);else st.innerHTML=chrome;
+    window.MMGroups?.render();
+    window.MMCanvasTools?.render();
     const vw = $("mmView");
     vw.style.background = th.bg; vw.style.setProperty("--grid", th.grid); vw.dataset.theme = cur.theme;
     applyView();
     $("mmTitleIn").value = cur.title;
     toolbarState();
     if (panelOpen) panel();
-    if (mode === "outline") outline();
+    if (!transient) window.MMFiles?.onDraw(cur);
   }
   function mix(hex, base, a) {
     const p = (h) => { h = h.replace("#", ""); if (h.length === 3) h = h.split("").map((c) => c + c).join(""); return [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16)); };
     try { const x = p(hex), y = p(base); return "rgb(" + x.map((v, i) => Math.round(v * a + y[i] * (1 - a))).join(",") + ")"; } catch (e) { return base; }
   }
-  function applyView() { const st = $("mmStage"); if (st) st.style.transform = `translate(${view.x}px,${view.y}px) scale(${view.k})`; const z = $("mmZoom"); if (z) z.textContent = Math.round(view.k * 100) + "%"; syncMagSize(); }
+  function applyView() { const st = $("mmStage"); if (st){st.style.transform = `translate(${view.x}px,${view.y}px) scale(${view.k})`;window.MMScene?.refresh(st);} const z = $("mmZoom"); if (z) z.textContent = Math.round(view.k * 100) + "%"; syncMagSize(); }
   function fit(anim) {
     if (!L) return;
-    const vw = $("mmView"), r = vw.getBoundingClientRect(), b = L.bounds, pad = 40;
-    const w = b.x1 - b.x0 + pad * 2, h = b.y1 - b.y0 + pad * 2;
-    const want = Math.min(r.width / w, r.height / h), minK = isMobile() ? 0.6 : 0.2;
+    const vw = $("mmView"), r = vw.getBoundingClientRect(), b = L.bounds, pad = 85;
+    const w = Math.max(1,b.x1-b.x0), h = Math.max(1,b.y1-b.y0);
+    // Dock clearance is measured in screen pixels, independent of canvas zoom.
+    const want = Math.min(Math.max(80,r.width-pad*2)/w,Math.max(80,r.height-pad*2)/h), minK = isMobile() ? 0.6 : 0.2;
     view.k = Math.max(minK, Math.min(1.4, want));
     if (want < minK) {
       // 手机上整张图放不下：不缩得看不清，以中心主题为准，其余的左右拖着看
-      const s = L.nodes.get(topNode().id), lay = cur.layout;
+      const s = L.nodes.get(topNode()?.id); if (!s) { view.x = r.width / 2 - (b.x0+b.x1)/2*view.k; view.y = r.height / 2 - (b.y0+b.y1)/2*view.k; applyView(); return; } const lay = cur.layout;
       const cx = lay === "right" ? s.x + Math.min(r.width / view.k / 2 - 20, (b.x1 - b.x0) / 2) : s.x + s.w / 2, cy = lay === "down" ? s.y + Math.min(r.height / view.k / 2 - 20, (b.y1 - b.y0) / 2) : s.y + s.h / 2;
       view.x = r.width / 2 - cx * view.k; view.y = r.height / 2 - cy * view.k;
     } else { view.x = r.width / 2 - ((b.x0 + b.x1) / 2) * view.k; view.y = r.height / 2 - ((b.y0 + b.y1) / 2) * view.k; }
@@ -837,7 +939,15 @@
     if (sy < m) dy = m - sy; else if (sy + sh > r.height - m) dy = r.height - m - sy - sh;
     if (dx || dy) { view.x += dx; view.y += dy; const st = $("mmStage"); st.classList.add("anim"); applyView(); setTimeout(() => st.classList.remove("anim"), 260); }
   }
-  function select(id, show) { sel = id; document.querySelectorAll("#mmStage .mm-node.sel").forEach((x) => x.classList.remove("sel")); const el = document.querySelector(`#mmStage .mm-node[data-id="${id}"]`); if (el) el.classList.add("sel"); toolbarState(); if (panelOpen) panel(); if (show) reveal(id); }
+  function selectNodes(ids, show) {
+    selectedNodes = new Set(ids.filter(id => findNode(id))); sel = [...selectedNodes].at(-1) || null; selEdge = null;
+    window.MMGroups?.clearSelection(); window.MMCanvasTools?.clearSelection();
+    document.querySelectorAll("#mmStage .mm-node").forEach(el => el.classList.toggle("sel", selectedNodes.has(el.dataset.id)));
+    document.querySelectorAll('#mmStage .mm-image-label').forEach(el=>el.classList.toggle('sel',selectedNodes.has(el.dataset.imageLabel)));
+    window.MMScene?.refresh($('mmStage'));
+    toolbarState(); if (panelOpen) panel(); if (show && sel) reveal(sel);
+  }
+  function select(id, show) { selectNodes(id ? [id] : [], show); }
   function toolbarState() {
     for (const [id, off] of [["mmSib", !sel], ["mmDel", !sel], ["mmUndo", !hist.length], ["mmRedo", !redo.length], ["mmFold", true]]) { const b = $(id); if (b) b.disabled = off; }
   }
@@ -851,57 +961,252 @@
   }
   function addSibling(id) { addChild(id); }
   function pushAISummary(mapId, sourceId, text) {
+    return pushAISummaries(mapId, sourceId, [text])[0];
+  }
+  function pushAISummaries(mapId, sourceId, texts) {
     if (!cur || cur.id !== mapId || !findNode(sourceId)) throw new Error("提问节点已删除或导图已切换，请重新选择节点。");
-    if (typeof text !== "string" || !text.startsWith("# 第")) throw new Error("总结缺少提问标题，请重新生成。");
+    if (!Array.isArray(texts) || !texts.length || texts.length > 12 || texts.some(text => typeof text !== "string" || !text.startsWith("# 第") || text.length > 21000)) throw new Error("请选择1–12个有效的总结节点后推送。");
     endEdit();
-    const anchor = L.nodes.get(sourceId), node = { id: nid(), text, children: [] };
-    const box = measure(node, 1), p = { x: anchor.x + anchor.w + 80, y: anchor.y };
-    // Scan a column beside A using the full measured Markdown rectangle.
+    const anchor = L.nodes.get(sourceId);
+    if (!anchor) throw new Error("提问节点尚未完成布局，请稍后重试。");
+    const prepared = texts.map(text => { const node = { id: nid(), text, children: [] }; return { node, box: measure(node, 0) }; });
+    const width = Math.max(...prepared.map(item => item.box.w));
     const occupied = [...L.nodes.values()];
-    while (occupied.some(s => p.x < s.x+s.w+24 && p.x+box.w+24 > s.x && p.y < s.y+s.h+24 && p.y+box.h+24 > s.y)) {
-      const hits = occupied.filter(s => p.x < s.x+s.w+24 && p.x+box.w+24 > s.x && p.y < s.y+s.h+24 && p.y+box.h+24 > s.y);
-      p.y = Math.max(...hits.map(s => s.y+s.h+32));
+    // Place only this batch in two columns, measuring real content and avoiding
+    // both existing nodes and earlier rows; the rest of the canvas stays put.
+    let rowY = anchor.y;
+    for (let index = 0; index < prepared.length; index += 2) {
+      const row = prepared.slice(index, index + 2);
+      row.forEach((item, col) => { item.x = anchor.x + anchor.w + 80 + col * (width + 64); });
+      while (true) {
+        const hits = occupied.filter(s => row.some(item => item.x < s.x+s.w+24 && item.x+item.box.w+24 > s.x && rowY < s.y+s.h+24 && rowY+item.box.h+24 > s.y));
+        if (!hits.length) break;
+        rowY = Math.max(...hits.map(s => s.y+s.h+32));
+      }
+      for (const item of row) { item.y = rowY; occupied.push({x:item.x,y:item.y,w:item.box.w,h:item.box.h}); }
+      rowY += Math.max(...row.map(item => item.box.h)) + 40;
     }
+    // A single change records all nodes and edges as one undo operation.
     change(() => {
-      cur.nodes.push(node); putLayerPos(node.id, p); curSize()[node.id] = { w: box.w, h: box.h };
-      (cur.edges ||= []).push({ id: eid(), from: { node: node.id, side: "w" }, to: { node: sourceId, side: "e" }, dir: "fwd" });
+      for (const { node, box, x, y } of prepared) {
+        cur.nodes.push(node); putLayerPos(node.id, {x,y}); curSize()[node.id] = { w: box.w, h: box.h };
+        (cur.edges ||= []).push({ id: eid(), from: { node: node.id, side: "w" }, to: { node: sourceId, side: "e" }, dir: "fwd" });
+      }
     });
-    select(node.id, true); return node.id;
+    const ids = prepared.map(item => item.node.id);
+    selectNodes(ids); reveal(ids[0]); return ids;
   }
   function addParent() {}
+  function pushAIGraph(mapId, sourceId, summary, texts, mapping = {}) {
+    if (!cur || cur.id !== mapId || !findNode(sourceId)) throw new Error("提问节点已删除或导图已切换，请重新选择节点。");
+    const plan = window.MMAISummary.normalizeSummary(summary,{allowEmpty:true});
+    if (!Array.isArray(texts) || texts.length !== plan.nodes.length || texts.some(t=>typeof t!=="string" || !t.startsWith("# 第") || t.length>21000)) throw new Error("节点正文无效。");
+    const graph = window.MMAISummary.layoutGraph(plan, n=>measure({text:texts[plan.nodes.findIndex(v=>v.id===n.id)]},0));
+    const known = new Map(plan.nodes.filter(n=>typeof mapping[n.id]==="string" && findNode(mapping[n.id])).map(n=>[n.id,mapping[n.id]]));
+    const added = graph.nodes.filter(n=>n.selected && !known.has(n.id));
+    if (!added.length) throw new Error("请勾选尚未推送的节点。");
+    if(added.some(n=>!n.title.trim() || !n.text.trim()))throw new Error("所选节点的标题和正文不能为空。");
+    endEdit();
+    const anchor=L.nodes.get(sourceId),previous=graph.nodes.find(n=>known.has(n.id));
+    if(!anchor)throw new Error("提问节点尚未完成布局。");
+    let dx=anchor.x+anchor.w+80,dy=anchor.y;
+    if(previous){const p=L.nodes.get(known.get(previous.id));dx=p.x-previous.x;dy=p.y-previous.y;}
+    else {
+      // Translate the whole plan, never alter the relative graph layout.
+      while(true){const hits=[...L.nodes.values()].filter(s=>added.some(n=>n.x+dx<s.x+s.w+24 && n.x+dx+n.w+24>s.x && n.y+dy<s.y+s.h+24 && n.y+dy+n.h+24>s.y));if(!hits.length)break;dy=Math.max(...hits.map(s=>s.y+s.h+32));}
+    }
+    const fresh=new Set(added.map(n=>n.id)), all=new Map(known);
+    added.forEach(n=>all.set(n.id,nid()));
+    change(()=>{
+      for(const n of added){const id=all.get(n.id);cur.nodes.push({id,text:texts[plan.nodes.findIndex(v=>v.id===n.id)],children:[]});putLayerPos(id,{x:n.x+dx,y:n.y+dy});curSize()[id]={w:n.w,h:n.h};}
+      const edges=cur.edges ||= [];
+      for(const e of graph.edges){if(!all.has(e.from) || !all.has(e.to) || !fresh.has(e.from) && !fresh.has(e.to))continue;
+        const from=all.get(e.from),to=all.get(e.to),label=window.MMAISummary.relationLabels[e.kind];
+        if(!edges.some(v=>v.from.node===from && v.to.node===to && v.label===label))edges.push({id:eid(),from:{node:from,side:"e"},to:{node:to,side:"w"},dir:e.kind==="parallel"?"none":"fwd",label});
+      }
+      if(!known.size){const entry=added.find(n=>!graph.edges.some(e=>e.to===n.id && fresh.has(e.from))) || added[0];edges.push({id:eid(),from:{node:all.get(entry.id),side:"w"},to:{node:sourceId,side:"e"},dir:"fwd",label:"回应"});}
+    });
+    const ids=added.map(n=>all.get(n.id));selectNodes(ids);reveal(ids[0]);return ids;
+  }
+  function pushAIPresentation(mapId,sourceId,summary,entryText,images={},mapping={}){
+    if(!cur || cur.id!==mapId || !findNode(sourceId))throw new Error('提问节点已删除或导图已切换');
+    if(typeof entryText!=='string' || !entryText.trim() || entryText.length>500)throw new Error('提问入口标题无效');
+    const S=window.MMAISummary;
+    const graph=S.presentationGraph(summary,entryText,images,n=>measure({text:S.nodeText(n)},0));
+    const known=new Map(graph.nodes.filter(n=>typeof mapping[n.id]==='string' && findNode(mapping[n.id])).map(n=>[n.id,mapping[n.id]]));
+    const selected=graph.nodes.filter(n=>n.type!=='entry' && n.selected && !known.has(n.id));
+    if(!selected.length)throw new Error('请勾选尚未推送的节点');
+    if(selected.some(n=>n.type==='text' && (!n.title.trim() || !n.text.trim())))throw new Error('所选节点的标题和正文不能为空');
+    for(const n of selected.filter(n=>n.type==='image')){
+      if(!known.has(n.imageFor) && !selected.some(t=>t.id===n.imageFor))throw new Error('请同时选择图片对应的文字节点');
+      if(typeof n.media.id!=='string' || !/^[A-Za-z0-9_-]{1,100}$/.test(n.media.id) || n.media.sourceMap!==mapId)throw new Error('配图文件不属于当前导图，请重新生成');
+    }
+    endEdit();const anchor=L.nodes.get(sourceId);if(!anchor)throw new Error('提问节点尚未完成布局');
+    const added=known.has('__entry')?selected:[graph.nodes[0],...selected];
+    const previous=graph.nodes.find(n=>known.has(n.id));let dx=anchor.x+anchor.w+80,dy=anchor.y;
+    if(previous){const pos=L.nodes.get(known.get(previous.id));dx=pos.x-previous.x;dy=pos.y-previous.y;}
+    else while(true){const hits=[...L.nodes.values()].filter(b=>added.some(n=>n.x+dx<b.x+b.w+24 && n.x+dx+n.w+24>b.x && n.y+dy<b.y+b.h+24 && n.y+dy+n.h+24>b.y));if(!hits.length)break;dy=Math.max(...hits.map(b=>b.y+b.h+32));}
+    const all=new Map(known),fresh=new Set(added.map(n=>n.id));added.forEach(n=>all.set(n.id,nid()));
+    change(()=>{
+      for(const n of added){const id=all.get(n.id),node={id,text:n.type==='image'?'':S.nodeText(n),children:[]};
+        if(n.type==='image'){node.image=n.media.id;if(!(cur.media ||= []).some(m=>m.id===n.media.id))cur.media.push(clone(n.media));}
+        cur.nodes.push(node);putLayerPos(id,{x:n.x+dx,y:n.y+dy});curSize()[id]={w:n.w,h:n.h};
+      }
+      const edges=cur.edges ||= [];
+      function connect(from,to,label,dir='fwd',fromSide='e',toSide='w'){
+        if(!edges.some(e=>e.from.node===from && e.to.node===to && e.label===label))edges.push({id:eid(),from:{node:from,side:fromSide},to:{node:to,side:toSide},dir,label});
+      }
+      for(const e of graph.edges)if(all.has(e.from) && all.has(e.to) && (fresh.has(e.from)||fresh.has(e.to)))connect(all.get(e.from),all.get(e.to),S.relationLabels[e.kind],e.kind==='parallel'?'none':'fwd');
+      // A partial selection still has an entry path, even if its preceding step is omitted.
+      for(const n of graph.nodes)if(n.type==='text' && all.has(n.id) && !edges.some(e=>e.to.node===all.get(n.id) && [...all.values()].includes(e.from.node)))connect(all.get('__entry'),all.get(n.id),'展开');
+      connect(all.get('__entry'),sourceId,'回应','fwd','w','e');
+    });
+    const ids=added.map(n=>all.get(n.id));selectNodes(ids);reveal(ids[0]);
+    return {ids,mapping:Object.fromEntries(all)};
+  }
+  // Complete streamed nodes join one history operation. Later history snapshots
+  // receive only fresh additions, preserving intervening user edits and deletions.
+  function appendAIResult(mapId,sourceId,summary,entryText,batch,final=false){
+    if(!cur || cur.id!==mapId || !findNode(sourceId))throw new Error('提问节点已删除或导图已切换');
+    if(!batch || batch.mapId && (batch.mapId!==mapId || batch.sourceId!==sourceId))throw new Error('生成批次无效');
+    if(typeof entryText!=='string' || !entryText.trim() || entryText.length>500)throw new Error('提问入口标题无效');
+    const S=window.MMAISummary,plan=S.normalizeSummary(summary,{partial:!final});
+    if(!batch.mapping){endEdit();batch.mapping={};batch.mapId=mapId;batch.sourceId=sourceId;
+      if(batch.turnId && window.MMAIBranch){batch.color ||= window.MMAIBranch.color(L.nodes.get(sourceId)?.color,(cur.aiMemory?.turns || []).filter(t=>t.sourceId===sourceId).map(t=>t.color),cur.aiMemory?.turns?.length || 0);batch.sourcePort=window.MMAIBranch.port(sourceId,cur.edges || []);}
+    }
+    const mapping=batch.mapping,anchor=L.nodes.get(sourceId);if(!anchor)throw new Error('提问节点尚未完成布局');
+    if(mapping.__entry && !findNode(mapping.__entry))throw new Error('本次提问入口已删除，生成已停止');
+    const items=[],occupied=[...L.nodes.values()].flatMap(s=>{
+      const record=cur.aiMemory?.turns?.find(t=>t.id===s.n.aiTurnId),b=window.MMAILearning?.box(s,record,true);return b?[s,b]:[s];
+    });
+    function place(key,text,at){
+      const n={id:nid(),text,children:[],...(batch.turnId?{aiTurnId:batch.turnId,aiEntry:key==='__entry',color:batch.color}: {})},box=measure(n,0),p={...at};
+      const reserve=n.aiEntry && window.MMAILearning?{w:Math.max(220,box.w),h:box.h+174}:box;
+      while(true){const hits=occupied.filter(b=>p.x<b.x+b.w+24 && p.x+reserve.w+24>b.x && p.y<b.y+b.h+24 && p.y+reserve.h+24>b.y);if(!hits.length)break;p.y=Math.max(...hits.map(b=>b.y+b.h+40));}
+      mapping[key]=n.id;items.push({node:n,pos:p,size:{w:box.w,h:box.h}});const result={x:p.x,y:p.y,w:box.w,h:box.h};occupied.push({...result,...reserve});return result;
+    }
+    const boxOf=key=>{const id=mapping[key],n=items.find(v=>v.node.id===id);return n?{...n.pos,...n.size}:L.nodes.get(id);};
+    if(!mapping.__entry){const box=measure({text:'# '+entryText},0),side=batch.sourcePort?.side;
+      const at=side==='s'?{x:anchor.x,y:anchor.y+anchor.h+100}:side==='n'?{x:anchor.x,y:anchor.y-box.h-100}:side==='w'?{x:anchor.x-box.w-100,y:anchor.y}:{x:anchor.x+anchor.w+100,y:anchor.y};place('__entry','# '+entryText,at);
+    }
+    for(const n of plan.nodes){
+      if(mapping[n.id])continue; // A user-deleted generated node stays deleted.
+      const parent=plan.edges.find(e=>e.to===n.id && boxOf(e.from)),base=parent?boxOf(parent.from):boxOf('__entry');
+      place(n.id,S.nodeText(n),{x:base.x+base.w+110,y:base.y});
+    }
+    const exists=id=>items.some(v=>v.node.id===id) || !!findNode(id),edges=[];
+    function connect(from,to,label,dir='fwd',fromSide='e',toSide='w',fixed=null){
+      if(!from || !to || !exists(from) || !exists(to))return;
+      if(!(cur.edges || []).some(e=>e.from.node===from && e.to.node===to && e.label===label)){
+        const all=[...(cur.edges || []),...edges],B=batch.turnId && window.MMAIBranch;
+        const a=fixed || (B?B.port(from,all,[fromSide,...['e','s','n','w'].filter(s=>s!==fromSide)]):{side:fromSide}),b=B?B.port(to,all,[toSide,...['w','n','s','e'].filter(s=>s!==toSide)]):{side:toSide};
+        edges.push({id:eid(),from:{node:from,...a},to:{node:to,...b},dir,label,...(batch.color?{color:batch.color}: {})});
+      }
+    }
+    if(batch.turnId)connect(sourceId,mapping.__entry,'提问','fwd',batch.sourcePort?.side || 'e',({e:'w',w:'e',s:'n',n:'s'})[batch.sourcePort?.side] || 'w',batch.sourcePort);else connect(mapping.__entry,sourceId,'回应','fwd','w','e');
+    for(const e of plan.edges)connect(mapping[e.from],mapping[e.to],S.relationLabels[e.kind],e.kind==='parallel'?'none':'fwd');
+    if(final){for(const n of plan.nodes)if(!plan.edges.some(e=>e.to===n.id))connect(mapping.__entry,mapping[n.id],'展开');}
+    else if(plan.nodes[0])connect(mapping.__entry,mapping[plan.nodes[0].id],'展开');
+    if(!items.length && !edges.length)return {ids:[],mapping};
+    function apply(map,current=false){
+      for(const v of items){map.nodes.push(clone(v.node));if(current)putLayerPos(v.node.id,clone(v.pos));else (map.pos ||= {})[v.node.id]=clone(v.pos);(map.size ||= {})[v.node.id]=clone(v.size);}
+      const live=new Set(map.nodes.map(n=>n.id));
+      for(const e of edges)if(live.has(e.from.node) && live.has(e.to.node))(map.edges ||= []).push(clone(e));
+    }
+    if(!batch.before){batch.before=historyJSON();batch.historyIndex=hist.length;aiBatches.add(batch);change(()=>apply(cur,true));const focus=mapping[plan.nodes[0].id];selectNodes([focus]);reveal(focus);}
+    else{
+      const start=Math.max(0,batch.historyIndex+1);
+      for(let i=start;i<hist.length;i++){const snapshot=JSON.parse(hist[i]);apply(snapshot);hist[i]=JSON.stringify(snapshot);}
+      redo=[];apply(cur,true);storeLocal(cur);scheduleCloud();draw();
+    }
+    if(final)aiBatches.delete(batch);return {ids:items.map(v=>v.node.id),mapping};
+  }
   function del(id) {
-    const r = findNode(id || sel); if (!r) return;
-    const index = cur.nodes.indexOf(r.n);
-    change(() => { cur.nodes.splice(index, 1); dropLayer([r.n.id]); dropEdges([r.n.id]); });
-    sel = (cur.nodes[Math.min(index, cur.nodes.length - 1)] || {}).id || null;
-    draw(); if (sel) select(sel, true);
+    const ids = id ? [id] : [...selectedNodes]; if (!ids.length) return;
+    const remove = new Set(ids);
+    change(() => { cur.nodes = cur.nodes.filter(n => !remove.has(n.id)); dropLayer(ids); dropEdges(ids); sel = null; selectedNodes.clear(); });
   }
   function moveSib() {}
   function toggleFold() {}
   function foldLevel() {}
 
-  function setProp(k, v) { const r = findNode(sel); if (!r) return; change(() => { if (v === undefined || v === "" || v === false || v === null) delete r.n[k]; else r.n[k] = v; }); }
+  function setProp(k, v) { const nodes = [...selectedNodes].map(id => findNode(id)?.n).filter(Boolean); if (!nodes.length) return; change(() => { for (const n of nodes) { if (v === undefined || v === "" || v === false || v === null) delete n[k]; else n[k] = clone(v); } }); }
   function toggleMark(m) {
     const r = findNode(sel); if (!r) return;
     change(() => {
-      let a = (r.n.marks || []).slice();
-      if (a.includes(m)) a = a.filter((x) => x !== m);
+      for (const id of selectedNodes) { const n = findNode(id)?.n; if (!n) continue;
+      let a = (n.marks || []).slice();
+      if (selectedNodes.size === 1 && a.includes(m)) a = a.filter((x) => x !== m);
       else { if (/^p\d$/.test(m)) a = a.filter((x) => !/^p\d$/.test(x)); a.unshift(m); }
-      if (a.length) r.n.marks = a; else delete r.n.marks;
+      if (a.length) n.marks = [...new Set(a)]; else delete n.marks;
+      }
     });
   }
-  // 复制 / 粘贴整枝（也能贴到别的导图）；系统剪贴板里是多行文字时，按大纲贴进来
-  function copySel(cut) {
-    const r = findNode(sel); if (!r) return;
-    clip = clone(r.n);
-    try { navigator.clipboard.writeText(r.n.text); } catch (e) {}
-    if (cut) del(r.n.id); else tip("已复制这一枝" + (cut ? "" : "（Ctrl+V 粘贴到别的主题下）"), 1600);
+  const NODE_CLIP_TYPE="application/x-laolao-node+json";
+  function copySel(cut,event) {
+    const groupId=window.MMGroups?.state().selected, group=(cur.groups || []).find(g=>g.id===groupId);
+    const members=group?window.MMGroups.members(group):null;
+    const ids=new Set(group?members.nodes:selectedNodes), groupIds=new Set(group?[group.id,...members.groups]:[]);
+    if(!ids.size && !groupIds.size)return;
+    const nodes=cur.nodes.filter(n=>ids.has(n.id)).map(n=>({...clone(n),children:[]}));
+    const layers={};for(const name of LAYER_MAPS)layers[name]=Object.fromEntries([...ids].filter(id=>cur[name]?.[id]!==undefined).map(id=>[id,clone(cur[name][id])]));
+    const images=new Set(nodes.map(n=>n.image || n.pdf).filter(Boolean));
+    clip={version:2,nodes,layers,edges:clone((cur.edges || []).filter(e=>ids.has(e.from.node)&&ids.has(e.to.node))),groups:clone((cur.groups || []).filter(g=>groupIds.has(g.id))),media:clone((cur.media || []).filter(m=>images.has(m.id))),sourceMap:cur.id};
+    clip.text=nodes.map(n=>n.text || '').join('\n\n') || group?.title || '';
+    // Keep the original one-node payload readable by older app versions.
+    if(nodes.length===1){clip.node=nodes[0];clip.size=clone(curSize()[nodes[0].id] || {});}
+    if(!event?.clipboardData)return;
+    event.clipboardData.setData('text/plain',clip.text);
+    try{event.clipboardData.setData(NODE_CLIP_TYPE,JSON.stringify(clip));}catch{}
+    event.preventDefault();
+    if(cut){change(()=>{cur.nodes=cur.nodes.filter(n=>!ids.has(n.id));dropLayer(ids);dropEdges(ids);cur.groups=(cur.groups || []).filter(g=>!groupIds.has(g.id));sel=null;selectedNodes.clear();window.MMGroups?.clearSelection();});}
+    else tip(group?'已复制分组及内容，Ctrl+V 粘贴':'已复制 '+nodes.length+' 个节点，Ctrl+V 粘贴',1600);
+  }
+  function pasteSelection(payload) {
+    if(!Array.isArray(payload.nodes) || !payload.layers)return;
+    const original=payload.nodes.filter(n=>n && typeof n.id==='string' && typeof n.text==='string');
+    const copiedGroups=(payload.groups || []).filter(g=>g && [g.x,g.y,g.w,g.h].every(Number.isFinite));
+    if(!original.length && !copiedGroups.length)return;
+    const nodeIds=new Map(original.map(n=>[n.id,nid()])),groupIds=new Map(copiedGroups.map(g=>[g.id,eid()]));
+    const nodes=original.map(n=>fill({...clone(n),id:nodeIds.get(n.id),children:[]}));
+    const boxes=original.map(n=>{const p=payload.layers.pos?.[n.id] || {x:0,y:0},z=payload.layers.size?.[n.id] || measure(n,1);return {...p,w:z.w,h:z.h};}).concat(copiedGroups);
+    const bounds={x:Math.min(...boxes.map(b=>b.x)),y:Math.min(...boxes.map(b=>b.y))};bounds.w=Math.max(...boxes.map(b=>b.x+b.w))-bounds.x;bounds.h=Math.max(...boxes.map(b=>b.y+b.h))-bounds.y;
+    const frame=(cur.groups || []).find(g=>g.id===window.MMGroups?.state().selected),anchor=frame || L?.nodes.get(sel) || bounds;
+    const at={x:anchor.x+anchor.w+60,y:anchor.y};
+    const occupied=[...(L?.nodes.values() || []),...(cur.groups || [])];
+    for(;;){const hits=occupied.filter(b=>at.x<b.x+b.w+24 && at.x+bounds.w+24>b.x && at.y<b.y+b.h+24 && at.y+bounds.h+24>b.y);if(!hits.length)break;at.y=Math.max(...hits.map(b=>b.y+b.h+30));}
+    const dx=at.x-bounds.x,dy=at.y-bounds.y;
+    change(()=>{
+      cur.nodes.push(...nodes);
+      for(const name of LAYER_MAPS){const target=(cur[name] ||= {});for(const [old,id] of nodeIds){const value=payload.layers[name]?.[old];if(value!==undefined)target[id]=clone(value);}}
+      for(const [old,id] of nodeIds){const p=payload.layers.pos?.[old] || {x:0,y:0};putLayerPos(id,{x:p.x+dx,y:p.y+dy});}
+      for(const edge of payload.edges || [])if(nodeIds.has(edge.from?.node)&&nodeIds.has(edge.to?.node))(cur.edges ||= []).push({...clone(edge),id:eid(),from:{...edge.from,node:nodeIds.get(edge.from.node)},to:{...edge.to,node:nodeIds.get(edge.to.node)}});
+      (cur.groups ||= []).push(...copiedGroups.map(g=>({...clone(g),id:groupIds.get(g.id),x:g.x+dx,y:g.y+dy})));
+      const images=new Set(nodes.map(n=>n.image || n.pdf).filter(Boolean));
+      for(const media of payload.media || [])if(images.has(media.id)&&!(cur.media || []).some(m=>m.id===media.id))(cur.media ||= []).push({...clone(media),sourceMap:media.sourceMap || payload.sourceMap});
+    });
+    if(copiedGroups.length){const outer=[...copiedGroups].sort((a,b)=>b.w*b.h-a.w*a.h)[0];window.MMGroups.select(groupIds.get(outer.id));}
+    else selectNodes(nodes.map(n=>n.id));
+    window.Mindmap.revealBox({...at,w:bounds.w,h:bounds.h});
+    if(nodes.some(n=>n.image || n.pdf) && window.MMFiles){const map=cur;window.MMFiles.flush(map).then(()=>{if(cur===map){draw();return window.MMFiles.refresh();}}).catch(error=>tip(error.message));}
+  }
+  function pasteNode(payload) {
+    if(!payload?.node || typeof payload.node.text!=="string")return;
+    const node=fill({...clone(payload.node),id:nid(),children:[]}),anchor=L?.nodes.get(sel) || {x:0,y:0,w:150,h:40}, measured=measure(node,1);
+    const size=payload.size && Number.isFinite(payload.size.w) && Number.isFinite(payload.size.h)?clampSize(payload.size.w,payload.size.h,measured.w,measured.h):{w:measured.w,h:measured.h};
+    const at={x:anchor.x+anchor.w+70,y:anchor.y};
+    const occupied=[...(L?.nodes.values() || [])];
+    for(;;) {const hits=occupied.filter(s=>at.x<s.x+s.w+24 && at.x+size.w+24>s.x && at.y<s.y+s.h+24 && at.y+size.h+24>s.y);if(!hits.length)break;at.y=Math.max(...hits.map(s=>s.y+s.h+30));}
+    change(()=>{cur.nodes.push(node);putLayerPos(node.id,at);curSize()[node.id]=size;
+      if(node.image || node.pdf){for(const media of payload.media || [])if(media.id===(node.image || node.pdf) && !(cur.media || []).some(m=>m.id===media.id))(cur.media ||= []).push({...media,sourceMap:media.sourceMap || payload.sourceMap});}
+    });select(node.id,true);
+    if((node.image || node.pdf) && window.MMFiles) {const mapId=cur.id;window.MMFiles.flush(cur).then(()=>{if(cur?.id===mapId)draw();}).catch(error=>tip(error.message));}
   }
   function pasteTo(id, text) {
     const r = findNode(id || sel); if (!r) return;
     let items = null;
     if (text && /\S/.test(text)) { const t = parseText(text); items = t.isRootOnly ? [t.root] : t.root.children.length && t.fromTitle ? t.root.children : [t.root]; }
-    else if (clip) items = [clone(clip)];
+    else if (clip) items = clone(clip.nodes || [clip.node]);
     if (!items || !items.length) return;
     const fresh = items.map((n) => { walk(n, (x) => { x.id = nid(); }); return fill(n); });
     const flat = []; for (const n of fresh) walk(n, x => flat.push(x));
@@ -914,7 +1219,7 @@
   function startEdit(id, selectAll, initial) {
     const s = L && L.nodes.get(id); if (!s || s.x == null) return;
     endEdit(true);
-    editing = id; sel = id; editingNew = null;
+    select(id); editing = id; editingNew = null;
     // 手机上图缩得太小时：先放大到正常大小再改字
     if (isMobile() && view.k < 0.95) { const r = $("mmView").getBoundingClientRect(); view.k = 1; view.x = r.width / 2 - (s.x + s.w / 2); view.y = Math.min(r.height * 0.35, r.height / 2) - (s.y + s.h / 2); applyView(); }
     const el = document.querySelector(`#mmStage .mm-node[data-id="${id}"]`); if (!el) return;
@@ -922,6 +1227,7 @@
     ta.className = "mm-edit"; ta.value = initial != null ? initial : s.n.text; ta.spellcheck = false;
     ta.style.cssText = `left:${s.x}px;top:${s.y}px;min-width:${Math.max(s.w, 80)}px;min-height:${s.h}px;font:${s.font};line-height:${lineH(s.depth)}px;padding:${s.padY}px ${s.padX}px;`;
     $("mmStage").appendChild(ta);
+    const formatbar=window.MMFormat?.mount(id,ta);
     const preview = window.MMContent ? document.createElement("div") : null;
     const help = window.MMContent ? document.createElement("div") : null;
     if (preview) {
@@ -934,10 +1240,13 @@
       const r = $("mmView").getBoundingClientRect(), k = view.k || 1;
       const available = Math.max(160, (r.width - 32) / k), stacked = available < 450;
       const width = Math.min(360, stacked ? available : (available - 16) / 2);
-      const maxHeight = Math.max(90, Math.min(360, (r.height - 112) / k / (stacked ? 2 : 1)));
       const totalWidth = stacked ? width : width * 2 + 16;
+      if(formatbar)formatbar.style.width=totalWidth+'px';const barHeight=formatbar?formatbar.offsetHeight+8:0;
+      const maxHeight = Math.max(90, Math.min(360, ((r.height - 112) / k-barHeight) / (stacked ? 2 : 1)));
       const x = Math.max((16 - view.x) / k, Math.min(s.x, (r.width - 16 - view.x) / k - totalWidth));
-      const y = Math.max((16 - view.y) / k, Math.min(s.y, (r.height - 64 - view.y) / k - maxHeight * (stacked ? 2 : 1)));
+      const top = Math.max((16 - view.y) / k, Math.min(s.y, (r.height - 64 - view.y) / k - maxHeight * (stacked ? 2 : 1)-barHeight)),y=top+barHeight;
+      if(formatbar){formatbar.style.left=x+'px';formatbar.style.top=top+'px';}
+      if(ta._nodeStyle){ta.style.fontSize=ta._nodeStyle.fontSize+'px';ta.style.lineHeight=ta._nodeStyle.fontSize*1.5+'px';}
       ta.style.left = x + "px"; ta.style.top = y + "px";
       ta.style.minWidth = "0"; ta.style.minHeight = "0"; ta.style.width = width + "px";
       ta.style.height = "auto"; ta.style.height = Math.min(maxHeight, Math.max(s.h, ta.scrollHeight, 140)) + "px";
@@ -946,6 +1255,7 @@
         help.textContent = active ? `${active.label}：第 ${active.index}/${active.total} 项 · ${active.field} · Tab 下一项 / Shift+Tab 上一项` : "Enter 换行 · Ctrl+Enter 保存 · Esc 取消 · Tab 补全 / 下一项 · Shift+Tab 上一项";
         help.style.width = totalWidth + "px"; help.style.whiteSpace = "normal";
         preview.innerHTML = `<div class="mm-edit-preview-title">实时预览</div><div class="mm-rich">${window.MMContent.render(ta.value)}</div>`;
+        if(ta._nodeStyle)preview.querySelector('.mm-rich').style.fontSize=ta._nodeStyle.fontSize+'px';
         preview.style.width = width + "px"; preview.style.maxHeight = maxHeight + "px";
         preview.style.left = (stacked ? x : x + width + 16) + "px";
         preview.style.top = (stacked ? y + maxHeight + 12 : y) + "px";
@@ -969,27 +1279,24 @@
     });
     ta.addEventListener("blur", () => setTimeout(() => {
       // A removed editor can blur after a new editor opens on the same node.
-      if (editing === id && document.querySelector("#mmStage .mm-edit") === ta && document.activeElement !== ta && !document.activeElement.closest("#mmShortcuts")) endEdit();
+      if (editing === id && document.querySelector("#mmStage .mm-edit") === ta && document.activeElement !== ta && !document.activeElement.closest("#mmShortcuts,#mmDlg,.mm-formatbar")) endEdit();
     }, 0));
     grow(); ta.focus();
     if (selectAll) ta.select(); else ta.setSelectionRange(ta.value.length, ta.value.length);
   }
   function endEdit(cancel) {
     const ta = document.querySelector("#mmStage .mm-edit"); if (!ta) { editing = null; return; }
-    const id = editing, v = ta.value, fresh = editingNew === id;
+    const id = editing, v = ta.value, fresh = editingNew === id, draftStyle=ta._nodeStyle;
     if (ta._resizeHandler) window.removeEventListener("resize", ta._resizeHandler);
     editing = null; editingNew = null; ta.remove();
-    document.querySelectorAll("#mmStage .mm-edit-preview, #mmStage .mm-edit-help").forEach(el => el.remove());
+    document.querySelectorAll("#mmStage .mm-edit-preview, #mmStage .mm-edit-help,#mmStage .mm-formatbar").forEach(el => el.remove());
     // 刚新建的主题按 Esc：等于没建（撤销掉那一步）
-    if (cancel && fresh && hist.length) { const back = topNode() ? topNode().id : null; redo = []; cur = JSON.parse(hist.pop()); sel = findNode(back) ? back : (topNode() ? topNode().id : null); storeLocal(cur); scheduleCloud(); draw(); $("mmView").focus({ preventScroll: true }); return; }
+    if (cancel && fresh && hist.length) { const back = topNode() ? topNode().id : null; redo = []; restoreHistory(hist.pop()); sel = findNode(back) ? back : (topNode() ? topNode().id : null); storeLocal(cur); scheduleCloud(); draw(); $("mmView").focus({ preventScroll: true }); return; }
     const r = findNode(id);
-    if (!cancel && r && v !== r.n.text) change(() => {
+    if (!cancel && r && (v !== r.n.text || draftStyle && JSON.stringify(window.MMFormat.style(r.n))!==JSON.stringify(draftStyle))) change(() => {
       r.n.text = v;
-      if (window.MMContent && window.MMContent.isRich(v)) {
-        const old = curSize()[id] || {w:300,h:40}, box = measure(r.n, 1), width = Math.max(old.w,box.w);
-        const content = window.MMContent.measure(v, box.font, Math.max(60, width - box.padX * 2));
-        curSize()[id] = { w: width, h: Math.max(old.h, content.h + box.padY * 2 + 4 + ((r.n.marks || []).length ? lineH(1) : 0)) };
-      }
+      if(draftStyle)window.MMFormat.apply(r.n,draftStyle);
+      fitNode(id);
     });
     else draw();
     $("mmView").focus({ preventScroll: true });
@@ -1065,14 +1372,17 @@
       let wrapper;
       try {
         endEdit();
+        await window.MMPDF?.prepareExport();
         await document.fonts.ready;
         const lay = layout(), b = lay.bounds, pad = 48, width = Math.ceil(b.x1 - b.x0 + pad * 2), height = Math.ceil(b.y1 - b.y0 + pad * 2 + 30);
         wrapper = document.createElement("div");
         wrapper.style.cssText = `position:fixed;left:-100000px;top:0;width:${width}px;height:${height}px;background:${lay.th.bg};overflow:hidden;`;
         const stage = $("mmStage").cloneNode(true);
+        window.MMScene?.exportContent(stage);
         stage.style.transform = `translate(${pad - b.x0}px,${pad - b.y0}px)`; stage.style.left = "0"; stage.style.top = "0";
         stage.classList.remove("anim");
-        stage.querySelectorAll(".mm-magwrap,.mm-linkprev,.mm-edit,.mm-edit-preview,.mm-edit-help,.ghost").forEach(el => el.remove());
+        stage.querySelectorAll(".mm-magwrap,.mm-linkprev,.mm-edit,.mm-edit-preview,.mm-edit-help,.mm-formatbar,.ghost,[data-preview],.mm-mark-hit,.mm-group-handle").forEach(el => el.remove());
+        stage.querySelectorAll(".mm-mark.selected,.mm-group-frame.selected,.mm-group-label.selected").forEach(el=>el.classList.remove("selected"));
         stage.querySelectorAll(".sel,.hot,.hit").forEach(el => { el.classList.remove("sel","hot","hit"); });
         stage.querySelectorAll(".mm-edge").forEach(el => {el.setAttribute("stroke", EDGE_COLOR);el.setAttribute("stroke-width","2");});
         stage.querySelectorAll(".mm-arrow").forEach(el => el.setAttribute("fill", EDGE_COLOR));
@@ -1113,8 +1423,9 @@
       if (s.x == null) continue;
       const d = s.depth, n = s.n;
       rr(s.x, s.y, s.w, s.h, d === 0 ? 14 : d === 1 ? 10 : 8);
-      g.fillStyle = d === 0 ? s.color : d === 1 ? mix(s.color, th.sub, .16) : th.sub; g.fill();
-      if (d > 0) { g.strokeStyle = d === 1 ? s.color : mix(s.color, th.sub, .55); g.lineWidth = d === 1 ? 1.6 : 1.2; g.stroke(); }
+      const paper = cur.theme === 'fresh' && cur.flat;
+      g.fillStyle = paper ? mix(s.color,th.sub,.32) : d === 0 ? s.color : d === 1 ? mix(s.color, th.sub, .16) : th.sub; g.fill();
+      if (d > 0) { g.strokeStyle = paper ? mix(s.color,th.sub,.92) : d === 1 ? s.color : mix(s.color, th.sub, .55); g.lineWidth = paper ? 1 : d === 1 ? 1.6 : 1.2; g.stroke(); }
       g.fillStyle = d === 0 ? th.rootText : th.text; g.font = s.font; g.textBaseline = "middle";
       s.lines.forEach((l, i) => g.fillText(l, s.x + s.padX, s.y + s.padY + lineH(d) * (i + .5)));
       let ix = s.x + s.w - s.padX - (n.note ? 18 : 0) - (n.link ? 18 : 0) - (n.progress ? 20 : 0);
@@ -1130,24 +1441,28 @@
   }
 
   // ---------------- 界面：列表 ----------------
+  function homePreview(entry) {
+    const map=lsGet(mapKey(entry.id),null), nodes=Array.isArray(map?.nodes)?map.nodes:map?.root?[map.root]:[];
+    const boxes=nodes.slice(0,60).map((n,i)=>({id:n.id,x:Number.isFinite(map?.pos?.[n.id]?.x)?map.pos[n.id].x:i%4*180,y:Number.isFinite(map?.pos?.[n.id]?.y)?map.pos[n.id].y:Math.floor(i/4)*110,w:Math.max(50,Number(map?.size?.[n.id]?.w)||140),h:Math.max(30,Number(map?.size?.[n.id]?.h)||70),color:/^#[0-9a-f]{6}$/i.test(n.color || '')?n.color:'#77885e'}));
+    if(!boxes.length)return '<span class="mc-preview-empty">从一个想法开始</span>';
+    const x0=Math.min(...boxes.map(b=>b.x)),y0=Math.min(...boxes.map(b=>b.y)),w=Math.max(...boxes.map(b=>b.x+b.w))-x0,h=Math.max(...boxes.map(b=>b.y+b.h))-y0,k=Math.min(274/(w+60),114/(h+40));
+    const X=x=>(300-w*k)/2+(x-x0)*k,Y=y=>(142-h*k)/2+(y-y0)*k,byId=new Map(boxes.map(b=>[b.id,b]));
+    const lines=(map?.edges || []).slice(0,90).map(edge=>{const a=byId.get(edge.from?.node),b=byId.get(edge.to?.node);return a&&b?`<path d="M${X(a.x+a.w/2)} ${Y(a.y+a.h/2)} L${X(b.x+b.w/2)} ${Y(b.y+b.h/2)}"/>`:'';}).join('');
+    return `<svg viewBox="0 0 300 142" aria-hidden="true"><g class="mc-preview-lines">${lines}</g>${boxes.map(b=>`<rect x="${X(b.x)}" y="${Y(b.y)}" width="${b.w*k}" height="${b.h*k}" rx="${Math.min(5,b.h*k/5)}" fill="${b.color}" fill-opacity=".32" stroke="${b.color}" stroke-opacity=".92"/>`).join('')}</svg>`;
+  }
   function listHtml() {
     const kw = listQ.trim().toLowerCase();
     const items = index.filter((e) => !me() || !e.uid || e.uid === me().id).filter((e) => !kw || String(e.title).toLowerCase().includes(kw));
-    return `<div class="mm-list-head"><p>把知识点、问题、计划画成一张图：一个中心，一层层展开。登录后存在账号里，手机电脑都能改。</p>
-      ${index.length > 6 ? `<input id="mmListQ" class="mm-search" placeholder="🔍 找导图" value="${E(listQ)}" maxlength="40">` : ""}</div>
-      <div class="mm-sec"><b>新建</b><span>选一个开头，也可以把 AI 的回答直接粘贴进来</span></div>
-      <div class="mm-tpls">${TEMPLATES.map((t) => `<button class="mm-tpl surface" data-mm="new" data-tpl="${t.id}"><span>${t.icon}</span><b>${t.name}</b><small>${t.tip}</small></button>`).join("")}
-        <button class="mm-tpl surface" data-mm="paste-new"><span>📋</span><b>粘贴文字生成</b><small>AI 回答、Markdown、缩进列表</small></button>
-        <label class="mm-tpl surface"><span>📂</span><b>打开文件</b><small>.json / .md / .txt</small><input type="file" id="mmFileOpen" accept=".json,.md,.markdown,.txt" hidden></label></div>
-      <div class="mm-sec"><b>我的导图</b><span>${items.length ? items.length + " 张" : ""}${me() ? "" : " · 没登录：只存在这台设备"}</span></div>
-      ${items.length ? `<div class="mm-cards">${items.map((e) => `<div class="mm-card surface" data-mm="open" data-id="${e.id}" tabindex="0" role="button">
-          <div class="mc-top"><b>${E(e.title)}</b><button class="mm-more" data-mm="menu" data-id="${e.id}" aria-label="更多">⋯</button></div>
-          <div class="mc-meta">${e.nodes || 1} 个主题 · ${when(e.updated)}${e.dirty && me() ? " · <i>待同步</i>" : ""}</div></div>`).join("")}</div>`
-        : `<div class="mm-empty surface">${kw ? "没有找到" : "还没有导图，从上面选一个开始吧"}</div>`}`;
+    return `<section class="mm-home-hero"><div><span class="mm-home-eyebrow">捞捞 / 学习书桌</span><h1>给知识一点<br>生长的空间。</h1><p>把公式、想法与资料铺在一起，<br>慢慢连成自己的理解。</p><button type="button" class="mm-b pri mm-home-create" data-mm="new" data-tpl="blank"><span aria-hidden="true">＋</span> 新建空白导图 <span aria-hidden="true">↗</span></button></div><div class="mm-home-art" aria-hidden="true"><span class="mm-art-kicker">从记录，到理解</span><span class="mm-art-line one"></span><span class="mm-art-line two"></span><span class="mm-art-note one">一个想法<small>让思考发生</small></span><span class="mm-art-note two">一种联系<small>把知识连接起来</small></span><span class="mm-art-note three">自己的理解<small>慢慢积累，逐渐清晰</small></span><span class="mm-art-footer">A LITTLE ROOM FOR THINKING</span></div></section>
+      <section class="mm-home-library" aria-label="我的导图"><div class="mm-library-head"><div class="mm-sec"><b>我的导图</b><span>${items.length} 张${kw?'匹配':''} · 保存在本机</span></div><input id="mmListQ" class="mm-search" type="search" aria-label="搜索导图" placeholder="搜索导图名称…" value="${E(listQ)}" maxlength="40"></div>
+      ${items.length ? `<div class="mm-cards">${items.map(e=>`<div class="mm-card" data-mm="open" data-id="${E(e.id)}" tabindex="0" role="button" aria-label="打开 ${E(e.title)}"><div class="mc-preview">${homePreview(e)}<span class="mc-open-hint">打开导图 ↗</span></div><div class="mc-details"><div class="mc-top"><b>${E(e.title)}</b><button type="button" class="mm-more" data-mm="menu" data-id="${E(e.id)}" aria-label="更多：${E(e.title)}">⋯</button></div><div class="mc-meta">${e.nodes || 1} 个节点 <span>·</span> ${when(e.updated)}</div>${e.fileMissing || e.hasDraft?`<span class="mc-draft">${e.fileMissing?'文件已移除，草稿已保留':'有未保存草稿'}</span>`:''}</div></div>`).join('')}</div>`:`<div class="mm-empty"><span class="mm-empty-mark" aria-hidden="true">${kw?'⌕':'＋'}</span><b>${kw?'没有找到这张导图':'你的第一张导图，从这里开始'}</b><p>${kw?'试试其他名称，或清空搜索框。':'新建一张空白导图，或导入你已有的笔记。'}</p></div>`}</section>
+      <section class="mm-home-start" aria-label="创建导图"><div class="mm-home-import"><span>已经有内容了？</span><button type="button" class="mm-b" data-mm="paste-new">粘贴文字生成 <span aria-hidden="true">↗</span></button><button type="button" class="mm-b" data-mm="import-home">导入文件 <span aria-hidden="true">↗</span></button><small>支持 JSON、Markdown、TXT</small><input type="file" id="mmFileOpen" accept=".json,.md,.markdown,.txt" hidden></div></section>
+<footer class="mm-home-footer"><span>捞捞 · 留一张画布给思考</span><span>本地保存 / 自由连接</span></footer>`;
   }
   function renderList() {
     const box = $("mmBox"); if (!box) return;
     $("mmHeadTitle").classList.remove("hidden"); $("mmTitleIn").classList.add("hidden"); $("mmSync").classList.add("hidden");
+    $('mmSaveExit')?.classList.add('hidden');$('mmDiscardExit')?.classList.add('hidden');
     box.className = "mm-box list"; box.style.height = "";
     box.innerHTML = listHtml();
     const s = $("mmListQ"); if (s && s.dataset.f) s.focus();
@@ -1155,20 +1470,18 @@
 
   // ---------------- 界面：编辑器 ----------------
   function editorHtml() {
-    return `<div class="mm-tools" role="toolbar">
-        <div class="mm-tg"><button class="mm-b pri" id="mmChild" data-mm="child" title="新建节点（Tab / Enter）">＋ 节点</button><button class="mm-b" id="mmDel" data-mm="del" title="删除（Delete）">删除</button></div>
+    return `<div class="mm-tools" role="toolbar" aria-label="导图操作">
         <div class="mm-tg"><button class="mm-b ic" id="mmUndo" data-mm="undo" title="撤销（Ctrl+Z）">↶</button><button class="mm-b ic" id="mmRedo" data-mm="redo" title="重做（Ctrl+Y）">↷</button></div>
-        <div class="mm-tg"><button class="mm-b" data-mm="outline" id="mmOutBtn" title="大纲视图">☰ 大纲</button><button class="mm-b" data-mm="find" title="搜索（Ctrl+F）">🔍</button></div>
+        <div class="mm-tg"><button class="mm-b" data-mm="find" title="搜索（Ctrl+F）" aria-label="搜索节点">查找</button></div>
         <div class="mm-tg mm-sel">
-          <label title="主题"><select id="mmTheme">${Object.entries(THEMES).map(([k, v]) => `<option value="${k}">${v.name}</option>`).join("")}</select></label></div>
-        <div class="mm-tg"><button class="mm-b" data-mm="paste-in" title="把文字转换成平级节点">📋 粘贴文字</button><button class="mm-b" data-mm="export" title="导出图片 / Markdown / 备份">⬇ 导出</button></div>
+          <label title="画布主题"><select id="mmTheme" aria-label="画布主题">${Object.entries(THEMES).map(([k, v]) => `<option value="${k}">${v.name}</option>`).join("")}</select></label></div>
+        <div class="mm-tg"><button class="mm-b" data-mm="paste-in" title="把文字转换成平级节点">粘贴文字</button><button class="mm-b" data-mm="export" title="导出图片 / Markdown / 备份">导出 ↗</button></div>
       </div>
       <div class="mm-findbar hidden" id="mmFindBar"><input id="mmFindIn" placeholder="搜索主题、备注…" maxlength="60"><span id="mmFindN"></span><button class="mm-b ic" data-mm="fprev">↑</button><button class="mm-b ic" data-mm="fnext">↓</button><button class="mm-b ic" data-mm="fclose">✕</button></div>
       <div class="mm-main">
         <div class="mm-view" id="mmView" tabindex="0" aria-label="思维导图画布"><div class="mm-stage" id="mmStage"></div>
           <div class="mm-zoom"><button data-mm="zout" title="缩小（Ctrl -）">−</button><span id="mmZoom">100%</span><button data-mm="zin" title="放大（Ctrl +）">＋</button><button data-mm="fit" title="适应屏幕（Ctrl 0）">⤢</button></div>
-          <div class="mm-hint" id="mmHint">${isMobile() ? "双击改字 · 长按拖动换位置 · 两指缩放" : "双击节点改字 · Tab / Enter 新建节点 · 拖动节点换位置 · 拖空白处移动画布 · Ctrl+滚轮缩放"}</div></div>
-        <div class="mm-outline hidden" id="mmOutline"></div>
+          <div class="mm-hint" id="mmHint">${isMobile() ? "双击改字 · 长按拖动换位置 · 两指缩放" : "双击建点/改字 · Ctrl+点选多选 · 右键拖动扫选 · 左键拖空白平移 · Ctrl+滚轮缩放"}</div></div>
         <aside class="mm-panel hidden" id="mmPanel"></aside>
       </div>`;
   }
@@ -1177,6 +1490,7 @@
   function renderEditor() {
     const box = $("mmBox");
     $("mmHeadTitle").classList.add("hidden"); $("mmTitleIn").classList.remove("hidden"); $("mmSync").classList.remove("hidden");
+    $('mmSaveExit')?.classList.remove('hidden');$('mmDiscardExit')?.classList.remove('hidden');
     box.className = "mm-box edit";
     box.innerHTML = editorHtml();
     $("mmTheme").value = cur.theme || "fresh";
@@ -1200,37 +1514,25 @@
   }
   const safeUrl = (u) => (/^(https?:)?\/\//i.test(u) ? u : /^[\w.-]+\.[a-z]{2,}/i.test(u) ? "https://" + u : "#");
 
-  // 大纲：像写列表一样编辑（Enter 新一行、Tab 缩进、Shift+Tab 退回、空行退格删除）
-  function outline(focusId) {
-    const box = $("mmOutline"); if (!box) return;
-    /* 【独立版·平级】大纲列**全部容器**（每个容器一棵，容器之间来一条分隔行）。
-       原来只列第一个容器，多容器下第二个容器在大纲里根本看不到。 */
-    const rows = [];
-    const roots18 = nodesArr();
-    const hidO = cur.flat ? new Set() : hiddenIds(cur);          // 可见性唯一权威（大纲与渲染/导出读同一处）
-    for (let ri = 0; ri < roots18.length; ri++) {
-      if (ri) rows.push(`<div class="mo-sep">— 另一个容器 —</div>`);
-      (function w(n, d) { if (!n) return; if (!hidO.has(n.id)) rows.push(`<div class="mo-row" style="--d:${d}" data-id="${n.id}">${(n.children || []).length ? `<button class="mo-tog" data-mm="ofold" data-id="${n.id}">${isFold(n) ? "▸" : "▾"}</button>` : `<span class="mo-dot">•</span>`}<input class="mo-in${d === 0 ? " root" : ""}" data-id="${n.id}" value="${E(n.text.replace(/\n/g, " "))}" maxlength="500"></div>`); for (const c of n.children || []) w(c, d + 1); })(roots18[ri], 0);
-    }
-    box.innerHTML = `<div class="mo-tip">Enter 新建节点 · 空行按退格删除 · ↑↓ 换行</div>` + rows.join("");
-    const f = focusId && box.querySelector(`.mo-in[data-id="${focusId}"]`); if (f) { f.focus(); f.setSelectionRange(f.value.length, f.value.length); }
-  }
-  function setMode(m) {
-    mode = m;
-    $("mmOutline").classList.toggle("hidden", m !== "outline"); $("mmView").classList.toggle("hidden", m === "outline");
-    $("mmOutBtn").classList.toggle("on", m === "outline"); $("mmOutBtn").textContent = m === "outline" ? "🧠 导图" : "☰ 大纲";
-    if (m === "outline") outline(sel); else { draw(); fit(); }
-  }
-
   // ---------------- 打开 / 关闭 ----------------
   async function openMap(id, fromServer) {
+    window.dispatchEvent(new Event("mm:ai-interrupt"));
+    const serial=++openSerial;
     let m = lsGet(mapKey(id), null);
     const e = idxGet(id) || {};
     // [独立版] 云同步已停用：不再从账号取导图，只读本机（原 mm_get 分支及 fromServer 语义见 git 历史）
     if (!m) { tip("这张导图在这台设备上找不到了"); return; }
-    const migrated = migrateMap(m);        // 【独立版·平级】显式迁移：容器成数组 + fold 搬进导图层 + v:2
+    let migrated = migrateMap(m); // Normalize browser-only legacy documents before the file API sees them.
+    try {if(window.MMFiles)m=await window.MMFiles.prepare(m);}catch(error){tip(error.message);return false;}
+    if(!m || serial!==openSerial)return false;
+    migrated = migrateMap(m) || migrated;
         for (const r of m.nodes) fill(r);
     cur = m; cur.layout ||= "mind"; cur.line ||= "curve"; cur.theme ||= "fresh";
+    // Legacy PDF rectangles gain the titlebar once, keeping their reading area.
+    if(cur.pdfTitlebarVersion!==1){
+      for(const node of cur.nodes)walk(node,n=>{if(n.pdf && Number.isFinite(cur.size?.[n.id]?.h))cur.size[n.id].h=Math.min(8000,cur.size[n.id].h+30);});
+      cur.pdfTitlebarVersion=1;migrated=true;
+    }
     if (migrated) { try { storeLocal(cur); } catch (e) {} }
     /* 【独立版】读取容错：旧图上可能已经有"表里有、树里没有"的孤儿条目（本次修复之前删出来的）。
        打开时清一次并落盘（治本在 del 的 dropLayer）。清完再播种，免得"只剩孤儿"时被 seedPos 的
@@ -1238,20 +1540,21 @@
     const pruned = pruneLayer();
     if (pruned) { console.log("[独立版] 打开时清理了 " + pruned + " 条不在树上的导图层条目"); try { storeLocal(cur); } catch (e) {} }
     seedPos();          // 【独立版】旧导图第一次打开：算一遍坐标写进 pos（之后不再重算）
-    sel = topNode() ? topNode().id : null; hist = []; redo = []; found = []; mode = "map"; panelOpen = !isMobile() && lsGet("mm_panel_v1", false);
+    window.MMGroups?.reset(); window.MMCanvasTools?.clearSelection();
+    sel = topNode() ? topNode().id : null; selectedNodes = new Set(sel ? [sel] : []); hist = []; redo = []; aiBatches.clear(); found = []; mode = "map"; panelOpen = false;
     document.body.classList.add("mm-editing");
     renderEditor();
     if (panelOpen) { $("mmPanel").classList.remove("hidden"); panel(); }
     try { save("mm_last_v1", id); } catch (err) {}
   }
-  function closeMap() { endEdit(); cur = null; L = null; document.body.classList.remove("mm-editing"); renderList(); try { save("mm_last_v1", ""); } catch (e) {} }
-  function create(tpl, title, rootObj) {
+  function closeMap(skipEdit) { window.dispatchEvent(new Event("mm:ai-interrupt")); if(skipEdit){const ta=document.querySelector('.mm-edit');if(ta?._resizeHandler)window.removeEventListener('resize',ta._resizeHandler);editing=null;editingNew=null;}else endEdit();window.MMAlign?.clear();window.MMPDF?.close();openSerial++;cur = null; L = null;window.MMAI?.close();window.dispatchEvent(new Event('mm:close-shortcuts'));document.body.classList.remove("mm-editing");refreshHome();try { save("mm_last_v1", ""); } catch (e) {} }
+  async function create(tpl, title, rootObj) {
     const m = newMap(tpl, title);
     if (rootObj) { m.nodes = [fill(rootObj)]; m.title = ((m.nodes[0] || {}).text || "未命名导图").slice(0, 80); }
     storeLocal(m); idxPut({ id: m.id, local: true });
     scheduleCloud();
-    openMap(m.id);
-    if ((tpl !== "blank" || title) && m.nodes[0]) setTimeout(() => startEdit(m.nodes[0].id, true), 120);
+    await openMap(m.id);
+    if ((tpl !== "blank" || title) && m.nodes[0] && cur?.id===m.id) startEdit(m.nodes[0].id, true);
   }
 
   // ---------------- 弹窗 ----------------
@@ -1299,23 +1602,27 @@
     const na = a ? a.n.text.split("\n")[0].slice(0, 14) : "?", nb = b ? b.n.text.split("\n")[0].slice(0, 14) : "?";
     const now = e.dir || "fwd";
     const item = (v, label) => `<button type="button" data-mm="edir" data-id="${e.id}" data-dir="${v}">${now === v ? "✓ " : ""}${label}</button>`;
-    return item("none", "— 没有箭头") + item("fwd", "→ 指向「" + E(nb) + "」") + item("rev", "← 指向「" + E(na) + "」") +
+    return `<button type="button" data-mm="edge-label" data-id="${e.id}">▣ ${e.label ? "修改文字标记" : "添加文字标记"}</button>` + item("none", "— 没有箭头") + item("fwd", "→ 指向「" + E(nb) + "」") + item("rev", "← 指向「" + E(na) + "」") +
       item("both", "↔ 两头都有箭头") + `<button type="button" data-mm="edel" data-id="${e.id}" class="danger">🗑 删除这条线</button>`;
   }
   /* 浮层菜单：**跟着指针出现**（不是弹窗），点空白/Esc/滚轮就收掉。
      挂在 #mmBox 里 —— 文档级 click 委派的门禁是 closest("#mmBox, #mmDlg, .mm-head")。 */
   function hideEdgeMenu() { const m = $("mmEdgeMenu"); if (m) m.classList.add("hidden"); }
   function hideNodeMenu() { const m = $("mmNodeMenu"); if (m) m.classList.add("hidden"); }
+  document.addEventListener("click",e=>{const b=e.target.closest("[data-node-color]");if(b && b.closest("#mmNodeMenu")){setProp("color",b.dataset.nodeColor);hideNodeMenu();}});
   document.addEventListener("pointerdown", e => { if (!e.target.closest("#mmNodeMenu")) hideNodeMenu(); });
   function showNodeMenu(id, cx, cy) {
-    hideEdgeMenu(); hideNodeMenu(); select(id);
+    window.MMContextMenus?.hideAll();hideEdgeMenu(); hideNodeMenu(); if (!selectedNodes.has(id)) select(id);
     const box = $("mmBox"); let m = $("mmNodeMenu");
     if (!m) { m = document.createElement("div"); m.id = "mmNodeMenu"; m.className = "mm-ctx"; box.appendChild(m); }
-    m.innerHTML = `<button data-mm="node-style" data-id="${esc(id)}">🎨 修改样式</button><button data-mm="node-ask" data-id="${esc(id)}">✦ 提问</button>`;
-    m.classList.remove("hidden");
-    const r = box.getBoundingClientRect();
-    m.style.left = Math.max(4, Math.min(cx-r.left, r.width-m.offsetWidth-4)) + "px";
-    m.style.top = Math.max(4, Math.min(cy-r.top, r.height-m.offsetHeight-4)) + "px";
+    const n=findNode(id).n,C=window.MMContextMenus;
+    m.innerHTML = C.branch("颜色",`<button data-mm="color" data-v="">默认颜色</button>`+C.palette('data-node-color',n.color)+`<label class="mm-ctx-custom">自选颜色 <input type="color" id="mmNodeColorPick" value="${/^#[0-9a-f]{6}$/i.test(n.color || "")?n.color:"#4f8df5"}" aria-label="节点自选颜色"></label>`,"node-color")+
+      C.branch("标记",`<div class="mm-ctx-marks">${MARKS.map(([k,ic,nm])=>`<button data-mm="mark" data-v="${k}">${(n.marks || []).includes(k)?"✓ ":""}${ic} ${E(nm)}</button>`).join("")}</div><button class="danger" data-mm="clear-marks">删除所有标记</button>`,"node-marks")+
+      C.branch("进度",[0,25,50,75,100].map(v=>`<button data-mm="prog" data-v="${v}">${(n.progress || 0)===v?"✓ ":""}${v?v+"%":"无进度"}</button>`).join(""),"node-progress")+
+      (window.MMAlign?.menu() || '')+(window.MMFormat?.menu() || '')+
+      (n.image || n.pdf?`<button data-mm="media-rename" data-id="${E(id)}">重命名文件</button>`:'')+
+      `<button data-mm="auto-size">恢复内容自适应</button><button data-mm="new-group">添加到新组</button><button data-mm="node-ask" data-id="${esc(id)}">✦ 提问</button><button class="danger" data-mm="del">删除${selectedNodes.size > 1 ? "选中的 " + selectedNodes.size + " 个节点" : "节点"}</button>`;
+    C.place(m,cx,cy);
   }
   function showEdgeMenu(e, cx, cy) {
     const box = $("mmBox"); if (!box) return;
@@ -1372,19 +1679,42 @@
       c.edges = c.edges.map((e) => {
         const a = old2new.get(e && e.from && e.from.node), b = old2new.get(e && e.to && e.to.node);
         if (!a || !b) return null;
-        return { id: eid(), from: { node: a, side: e.from.side }, to: { node: b, side: e.to.side }, dir: e.dir };
+        return { ...e, id: eid(), from: { ...e.from, node: a }, to: { ...e.to, node: b }, dir: e.dir };
       }).filter(Boolean);
     }
+    if (Array.isArray(c.groups)) c.groups = c.groups.map(g => ({...g, id: eid()}));
     const c0 = (c.nodes || [])[0]; if (c0) c0.text = c.title;
     storeLocal(c); idxPut({ id: c.id, title: c.title, local: true }); scheduleCloud();   // 带上标题：不带的话列表里显示旧标题
     closeDlg(); if (cur) openMap(c.id); else renderList(); tip("已复制");
   }
+  async function renameMap(id,title){
+    await pullList();
+    const entry=idxGet(id);if(!entry)return;
+    fileListRevision++;
+    try{
+      if(entry.fileBacked && !entry.fileMissing){
+        if((await browserDraft(id,entry.fileBaseHash)).changed)throw new Error('此导图有浏览器草稿，请先打开并保存或放弃草稿，再改名');
+        await window.MMFiles?.forget(id);
+        const result=await fileRequest('/api/maps/'+encodeURIComponent(id),{method:'PATCH',headers:{'Content-Type':'application/json','If-Match':entry.fileBaseHash},body:JSON.stringify({title})});
+        if(!lsSet(mapKey(id),result.map))throw new Error('浏览器存储空间不足');
+        lsDel(recoveryKey(id));await noteFile(result.map);
+      }else{
+        const map=lsGet(mapKey(id),null);if(map){map.title=title;lsSet(mapKey(id),map);}
+        const recovery=lsGet(recoveryKey(id),null);if(recovery?.map){recovery.map.title=title;lsSet(recoveryKey(id),recovery);}
+      }
+      idxPut({id,title,updated:Date.now()});refreshHome();
+    }catch(error){tip(error.message,5000);refreshHome();}
+  }
   async function deleteMap(id) {
-    const e = idxGet(id); if (!e || !confirm(`删除「${e.title}」？删除后不能恢复。`)) return;
-    closeDlg();
-    // [独立版] 云同步已停用：删除只作用于本机（原 mm_del 分支见 git 历史）
-    lsDel(mapKey(id)); index = index.filter((x) => x.id !== id); idxSave();
-    if (cur && cur.id === id) closeMap(); else renderList();
+    await pullList();
+    const entry=idxGet(id);if(!entry || !confirm(`删除「${entry.title}」及其导图文件、图片、PDF 和未保存草稿？`))return;
+    closeDlg();fileListRevision++;
+    try{
+      await window.MMFiles?.forget(id);
+      if(entry.fileBacked)await fileRequest('/api/maps/'+encodeURIComponent(id),{method:'DELETE',headers:entry.fileMissing?{}:{'If-Match':entry.fileBaseHash}});
+      lsDel(mapKey(id));lsDel(recoveryKey(id));index=index.filter(e=>e.id!==id);idxSave();
+      if(cur?.id===id)closeMap(true);else refreshHome();
+    }catch(error){tip(error.message,5000);refreshHome();}
   }
   async function readFile(file) {
     if (!file) return;
@@ -1398,19 +1728,12 @@
            **多容器不静默丢** —— 原来只取 [0]，其余容器无声消失（连提示都没有）。现在全部导入，
            并把"当前版本只画第一个容器"讲清楚（与 openMap 的多容器提示同口径：宁可吵，不要安静丢）。 */
         const rootsIn = Array.isArray(m.nodes) && m.nodes.length ? m.nodes : (m.root ? [m.root] : []);
-        if (!rootsIn.length) throw new Error();
-        create("blank", null, clone(rootsIn[0]));
-        if (rootsIn.length > 1) {
-          cur.nodes = cur.nodes.concat(rootsIn.slice(1).map((r) => fill(clone(r))));
-          storeLocal(cur);
-          tip("已导入全部节点", 1600);
-        }
-        if (m.layout) cur.layout = m.layout; if (m.theme) cur.theme = m.theme; if (m.line) cur.line = m.line;
-        /* 【独立版】位置/尺寸一起搬回来（只搬树上存在的 id）：备份文件里本来就有 pos/size，
-           不搬 = "导出再导入位置没了"，用户会当成 bug。 */
-        const moved = applyLayer(m);
-        storeLocal(cur); draw(); fit();
-        if (moved) tip("已导入，位置和尺寸也一起恢复了", 1600);
+        if (!rootsIn.length && !Array.isArray(m.nodes)) throw new Error();
+        const imported={...newMap('blank'),...clone(m),id:uid(),nodes:rootsIn.map(n=>fill(clone(n)))};
+        delete imported.root;imported.title=String(m.title || imported.nodes[0]?.text || '未命名导图').slice(0,80);
+        if(Array.isArray(m.media))imported.media=clone(m.media).map(f=>({...f,sourceMap:f.sourceMap || m.id}));
+        storeLocal(imported);idxPut({id:imported.id,local:true});await openMap(imported.id);
+        tip('已导入导图，节点、位置、分组和媒体引用已保留',1600);
         return;
       } catch (e) { tip("这个 JSON 不是思维导图备份"); return; }
     }
@@ -1445,9 +1768,23 @@
     if (!isFinite(nk) || !isFinite(cx) || !isFinite(cy)) return;
     view.x = cx - (cx - view.x) * (nk / view.k); view.y = cy - (cy - view.y) * (nk / view.k); view.k = nk; applyView();
   }
+  let lastScroll=null,resetScroll=()=>{};
   function bindCanvas() {
     const vw = $("mmView");
+    // Keep a continuous wheel/touchpad gesture with its starting surface. The
+    // transformed canvas can otherwise move an overflowing node under the cursor.
+    let wheelGesture = null;
+    resetScroll=()=>{wheelGesture=null;lastScroll=null;};resetScroll();
+    vw.addEventListener('pointerdown',resetScroll,true);
+    vw.addEventListener('keydown',resetScroll,true);
     const pts = new Map(); let drag = null, pinch = null, lastTap = { t: 0, id: null }, press = 0;
+    vw.addEventListener("keydown", e => {
+      if (!drag || e.target.closest("input,textarea")) return;
+      if (e.key !== "Escape") { e.preventDefault(); e.stopImmediatePropagation(); return; }
+      e.preventDefault(); e.stopImmediatePropagation(); const d = drag; drag = null; pts.clear(); pinch = null; clearTimeout(press);
+      if (d.resize?.raf) cancelAnimationFrame(d.resize.raf);
+      commitPreview(d.resize?.snap || d.snap, true); select(null);
+    }, true);
     const local = (e) => { const r = vw.getBoundingClientRect(); return { x: (e.clientX - r.left - view.x) / view.k, y: (e.clientY - r.top - view.y) / view.k, cx: e.clientX - r.left, cy: e.clientY - r.top }; };
     /* 【独立版】八方向缩放的命中判定（全部按**屏幕像素**算，阈值不随 view.k 变形）：
        优先级：角（短路）→ 边（两边都满足取更近的一条）→ 否则视为内部拖动（返回 null）。
@@ -1468,7 +1805,7 @@
       if (!svg || !link || !L) return;
       const s0 = L.nodes.get(link.from.node); if (!s0) return;
       const a = magPos(s0, link.from.side);
-      const hs = hover && hover.id !== link.from.node ? L.nodes.get(hover.id) : null;
+      const hs = hover && (hover.id !== link.from.node || hover.side !== link.from.side) ? L.nodes.get(hover.id) : null;
       const t = hs ? magPos(hs, hover.side) : local({ clientX: cx, clientY: cy });
       svg.innerHTML = `<path d="M${a.x},${a.y} L${t.x},${t.y}" stroke="#2f7cf6" stroke-width="2" stroke-dasharray="6 5" fill="none" stroke-linecap="round"/>`
         + (hs ? `<circle cx="${t.x}" cy="${t.y}" r="4" fill="none" stroke="#2f7cf6" stroke-width="2"/>` : "");   // 目标端空心圆 = "松手就连到这里"
@@ -1486,11 +1823,12 @@
     }
     /* 靠近淡入：指针离节点屏幕矩形 MAG_DIST 以内 → 亮出那一个节点的磁吸点。
        只亮"最近的一个"，否则节点密集时一片圆点同时淡入。 */
-    function hoverMagnets(cx, cy) {
+    function hoverMagnets(cx, cy, exclude) {
       if (!L || !cur) return;
       const r = $("mmView").getBoundingClientRect(), px = cx - r.left, py = cy - r.top;
       let best = null, bestD = Infinity;
       for (const s of L.nodes.values()) {
+        if (s.n.id === exclude) continue;
         if (s.x == null || s.y == null) continue;
         const x0 = s.x * view.k + view.x, y0 = s.y * view.k + view.y, w = s.w * view.k, h = s.h * view.k;
         if (px < x0 - MAG_DIST || px > x0 + w + MAG_DIST || py < y0 - MAG_DIST || py > y0 + h + MAG_DIST) continue;
@@ -1555,14 +1893,20 @@
         e.preventDefault();
         return;
       }
-      if (e.target.closest(".mm-zoom, .mm-edit, .mm-edit-preview, .mm-edit-help, .mm-ic")) return;
+      if (e.target.closest(".mm-zoom, .mm-edit, .mm-edit-preview, .mm-edit-help, .mm-ic,.mm-formatbar,.mm-task")) return;
+      const imageLabel=e.target.closest('[data-image-label]');
+      const ctrlNode = e.target.closest(".mm-node") || (imageLabel && document.querySelector(`.mm-node[data-id="${imageLabel.dataset.imageLabel}"]`));
+      if ((e.ctrlKey || e.metaKey) && ctrlNode) {
+        const id = ctrlNode.dataset.id, ids = new Set(selectedNodes); ids.has(id) ? ids.delete(id) : ids.add(id);
+        selectNodes([...ids]); vw.focus({preventScroll:true}); e.preventDefault(); return;
+      }
       /* 【独立版·平级】磁吸点**优先于缩放**：指针落在某个磁吸点的命中半径内 → 进入连线模式，
          不触发八方向缩放；出了半径、仍在边缘带内 → 才是缩放（下面那段 zoneAt）。
          这与 A3/A4 的口径一致：圆内是连线、圆外才是缩放，二者互斥。 */
-      const mg0 = magnetAt(e.clientX, e.clientY);
+      const mg0 = imageLabel ? null : magnetAt(e.clientX, e.clientY);
       if (mg0) {
         vw.classList.add("mag-pointer"); markZone(null, null);
-        link = { from: { node: mg0.id, side: mg0.side } };
+        link = { from: { node: mg0.id, side: mg0.side }, sx:e.clientX, sy:e.clientY };
         select(mg0.id);                                  // select 会重画（预览 svg 被重建），所以先 select 再画预览
         markLink(mg0.id, null);
         drawLinkPrev(e.clientX, e.clientY, null);
@@ -1571,7 +1915,7 @@
         return;
       }
       /* 【独立版】八方向缩放：命中按屏幕几何算（zoneAt） */
-      if (cur) {
+      if (cur && !imageLabel) {
         const hz = zoneAt(e.clientX, e.clientY), s0 = hz && L && L.nodes.get(hz.id);        if (hz && s0) {
           if (sel !== hz.id) select(hz.id);
           pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -1586,10 +1930,10 @@
       vw.focus({ preventScroll: true });
       /* 【独立版·平级】点空白处**线**：节点优先于边 —— 所以只有在"指针没落在任何节点上"时才问边
          （落在节点上又想去点边，那是用户自己没对准）。命中带 10px 屏幕像素，线本身仍然只有 2px。 */
-      if (!e.target.closest(".mm-node") && cur) {
+      if (!ctrlNode && cur) {
         const eh = edgeAt(e.clientX, e.clientY);
         if (eh) {
-          selEdge = eh.id; sel = null;
+          select(null); selEdge = eh.id;
           document.querySelectorAll("#mmStage .mm-node.sel").forEach((x) => x.classList.remove("sel"));
           draw();
           e.preventDefault();
@@ -1599,9 +1943,9 @@
       if (selEdge) { selEdge = null; draw(); }               // 点别处 = 取消选中这条线（与节点选中同口径）
       pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (pts.size === 2) { const [a, b] = [...pts.values()]; pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), k: view.k, cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2 }; drag = null; clearTimeout(press); return; }
-      const nd = e.target.closest(".mm-node");
+      const nd = ctrlNode;
       if (editing && (!nd || nd.dataset.id !== editing)) endEdit();
-      drag = { sx: e.clientX, sy: e.clientY, vx: view.x, vy: view.y, id: nd ? nd.dataset.id : null, moved: false, node: false, touch: e.pointerType === "touch" };
+      drag = { sx: e.clientX, sy: e.clientY, vx: view.x, vy: view.y, id: nd ? nd.dataset.id : null, moved: false, node: false, mediaLabel:!!imageLabel,touch: e.pointerType === "touch" };
       if (nd && e.pointerType === "touch") press = setTimeout(() => { if (drag && !drag.moved) { drag.node = true; buzz(15); startNodeDrag(drag, e); } }, 380);
       try { vw.setPointerCapture(e.pointerId); } catch (err) {}
     });
@@ -1614,8 +1958,10 @@
       if (link) {
         const mg = magnetAt(e.clientX, e.clientY);
         vw.classList.toggle("mag-pointer", !!mg);
-        markLink(link.from.node, mg && mg.id !== link.from.node ? mg.id : null);
-        drawLinkPrev(e.clientX, e.clientY, mg && mg.id !== link.from.node ? mg : null);
+        const target=mg && (mg.id!==link.from.node || mg.side!==link.from.side)?mg:null;
+        markLink(link.from.node, target?.id);
+        hoverMagnets(e.clientX,e.clientY,link.from.node);
+        drawLinkPrev(e.clientX, e.clientY, target);
         return;
       }
       if (drag && drag.resize) {
@@ -1628,6 +1974,10 @@
         const s0 = L && L.nodes.get(z.id);
         const cs = clampSize(w, h, s0 ? s0.measW : z.w0, s0 ? s0.measH : z.h0);
         curSize()[z.id] = cs;
+        const manual=((cur.sizing ||= {})[z.id] ||= {});
+        if (E || W || e.shiftKey) manual.w=true;
+        if (N || S || e.shiftKey) manual.h=true;
+        if (!manual.h && !findNode(z.id)?.n.image && !findNode(z.id)?.n.pdf) cs.h=clampSize(cs.w,measure(findNode(z.id).n,1,cs.w).h).h;
         /* 西/北方向：左上角要跟着走，否则是从中心缩、不是从边缘缩。
            这里在拖动**过程中**写坐标（松手时才由 up 里的 resize 分支落盘 + 进撤销），所以不走 change；但写入口统一走 putLayerPos。 */
         if (W || N) {
@@ -1635,12 +1985,13 @@
           putLayerPos(z.id, { x: W ? Math.round(z.x0 + (z.w0 - cs.w)) : p.x, y: N ? Math.round(z.y0 + (z.h0 - cs.h)) : p.y });
         }
         if (z.raf) cancelAnimationFrame(z.raf);
-        z.raf = requestAnimationFrame(() => { try { draw(); } catch (err) {} });   // 重画：连线端点跟着尺寸一起重锚
+        z.raf = requestAnimationFrame(() => { try { draw(true); } catch (err) {} });
         return;
       }
       /* 未在拖动：指针进入某方向命中区就给**那个节点**加方向类（角 > 边；内部维持原光标） */
       if (!drag) {
-        if (e.target.closest(".mm-zoom, .mm-edit, .mm-edit-preview, .mm-edit-help, .mm-ic")) {
+        if(e.target.closest('[data-image-label]')){vw.classList.remove('mag-pointer');markZone(null,null);return;}
+        if (e.target.closest(".mm-zoom, .mm-edit, .mm-edit-preview, .mm-edit-help, .mm-ic,.mm-formatbar,.mm-task")) {
           vw.classList.remove("mag-pointer"); markZone(null, null); return;
         }
         const mg = magnetAt(e.clientX, e.clientY);
@@ -1670,6 +2021,16 @@
         if (e.type !== "pointercancel") {
           const mg = magnetAt(e.clientX, e.clientY);
           if (mg) addEdge(l.from, { node: mg.id, side: mg.side }, "fwd");
+          else {
+            const p=local(e), r=vw.getBoundingClientRect();
+            const occupied=[...L.nodes.values()].some(s=>p.x>=s.x && p.x<=s.x+s.w && p.y>=s.y && p.y<=s.y+s.h);
+            if(!occupied && e.clientX>=r.left && e.clientX<=r.right && e.clientY>=r.top && e.clientY<=r.bottom && Math.hypot(e.clientX-l.sx,e.clientY-l.sy)>8 && !e.target.closest(".mm-zoom,.mm-hint,.mm-edge-label")) {
+              const node={id:nid(),text:"",children:[]}, box=measure(node,1), at={x:Math.round(p.x-box.w/2),y:Math.round(p.y-box.h/2)};
+              const source=L.nodes.get(l.from.node), toSide=Math.abs(p.x-(source.x+source.w/2))>=Math.abs(p.y-(source.y+source.h/2))?(p.x>source.x+source.w/2?"w":"e"):(p.y>source.y+source.h/2?"n":"s");
+              change(()=>{cur.nodes.push(node);putLayerPos(node.id,at);curSize()[node.id]={w:box.w,h:box.h};(cur.edges ||= []).push({id:eid(),from:l.from,to:{node:node.id,side:toSide},dir:"fwd"});});
+              select(node.id);
+            }
+          }
         }
         return;
       }
@@ -1686,21 +2047,19 @@
       if (d.resize) {
         /* 【独立版】松手才落盘：整段拖拽只进一条撤销历史（快照在按下时拍的） */
         markZone(null, null); vw.style.cursor = "";        // 解锁方向光标（并清掉旧版遗留在 #mmView 上的行内值）
-        hist.push(d.resize.snap); if (hist.length > 120) hist.shift(); redo = [];
-        try { storeLocal(cur); } catch (e) {}
-        try { scheduleCloud(); } catch (e) {}
-        draw();
+        if (d.resize.raf) cancelAnimationFrame(d.resize.raf);
+        commitPreview(d.resize.snap, e.type === "pointercancel");
         return;
       }
-      if (d.node) { endNodeDrag(d); return; }
+      if (d.node) { endNodeDrag(d, e.type === "pointercancel"); return; }
       if (d.moved) return;
       if (d.id) {
         const now = Date.now();
         // Touch needs a double-tap fallback; mouse editing is handled only by dblclick.
-        if (d.touch && lastTap.id === d.id && now - lastTap.t < 350) { startEdit(d.id); lastTap = { t: 0, id: null }; return; }
+        if (d.touch && lastTap.id === d.id && now - lastTap.t < 350) { if(d.mediaLabel)window.MMFiles?.renameNode(d.id);else if(findNode(d.id)?.n.pdf)window.MMPDF?.activate(d.id);else if(!findNode(d.id)?.n.image)startEdit(d.id);lastTap = { t: 0, id: null }; return; }
         lastTap = d.touch ? { t: now, id: d.id } : { t: 0, id: null };
         select(d.id);
-      } else lastTap = { t: 0, id: null };
+      } else { lastTap = { t: 0, id: null }; if (!e.ctrlKey && !e.metaKey) select(null); }
     };
     vw.addEventListener("pointerup", up); vw.addEventListener("pointercancel", up);
     vw.addEventListener("pointerleave", () => {
@@ -1715,9 +2074,10 @@
     vw.addEventListener("contextmenu", (e) => {
       if (!cur) return;
       if (e.target.closest(".mm-edit,.mm-edit-preview")) return;
+      e.preventDefault();
       const nd = e.target.closest(".mm-node");
       const p = local(e);
-      const hit = nd ? nd.dataset.id : (L && [...L.nodes.values()].reverse().find(s => p.x >= s.x && p.x <= s.x+s.w && p.y >= s.y && p.y <= s.y+s.h) || {}).n?.id;
+      const hit = e.target.closest('[data-image-label]')?.dataset.imageLabel || (nd ? nd.dataset.id : (L && [...L.nodes.values()].reverse().find(s => p.x >= s.x && p.x <= s.x+s.w && p.y >= s.y && p.y <= s.y+s.h) || {}).n?.id);
       if (hit) { e.preventDefault(); showNodeMenu(hit, e.clientX, e.clientY); return; }
       hideNodeMenu();
       const eh = edgeAt(e.clientX, e.clientY);
@@ -1730,22 +2090,49 @@
       hideNodeMenu(); hideEdgeMenu();
       e.preventDefault();
       const r = vw.getBoundingClientRect();
-      if (e.ctrlKey || e.metaKey) zoomAt(view.k * Math.exp(-e.deltaY * 0.0022), e.clientX - r.left, e.clientY - r.top);
-      else { view.x -= e.deltaX; view.y -= e.deltaY; applyView(); }
+      if (e.ctrlKey || e.metaKey) {resetScroll();zoomAt(view.k * Math.exp(-e.deltaY * 0.0022), e.clientX - r.left, e.clientY - r.top);}
+      else {
+        const findScroll=target=>{
+          const candidates=[],node=target.closest('.mm-node');
+          for(let el=target;el && el!==vw;el=el.parentElement)if(el.matches('.mm-edit,.mm-edit-preview,.mm-rich,pre,.katex-display,.mm-pdf-scroll'))candidates.push(el);
+          const rich=node?.querySelector('.mm-rich');if(rich && !candidates.includes(rich))candidates.push(rich);
+          const horizontal=!!e.deltaX || e.shiftKey;
+          return candidates.find(el=>horizontal?el.scrollWidth>el.clientWidth+1:el.scrollHeight>el.clientHeight+1) || candidates.find(el=>el.scrollHeight>el.clientHeight+1 || el.scrollWidth>el.clientWidth+1);
+        };
+        const now=performance.now();
+        if(!wheelGesture || now-wheelGesture.at>220 || (wheelGesture.owner && !wheelGesture.owner.isConnected)){
+          const first=findScroll(e.target);
+          wheelGesture={at:now,owner:first?.closest('.mm-node,.mm-edit,.mm-edit-preview') || first || null,target:e.target};
+        }
+        wheelGesture.at=now;
+        const owner=wheelGesture.owner;
+        lastScroll={at:now,owner:owner?.closest('.mm-node')?.dataset.id || (owner?'editor':'canvas')};
+        if(owner?.contains(e.target))wheelGesture.target=e.target;
+        const scroll=owner?findScroll(wheelGesture.target):null;
+        if(scroll){
+          const unit=e.deltaMode===1?24:e.deltaMode===2?scroll.clientHeight:1,k=view.k || 1;
+          let dx=e.deltaX*unit/k,dy=e.deltaY*unit/k;if(e.shiftKey && !dx){dx=dy;dy=0;}
+          scroll.scrollTop+=dy;scroll.scrollLeft+=dx;return;
+        }
+        if(owner)return; // A content gesture never chains to the canvas at its boundary.
+        view.x -= e.deltaX; view.y -= e.deltaY; applyView();
+      }
     }, { passive: false });
     /* 【独立版】双击：节点 → 选中并进编辑（不再靠上条 350ms 判定当主路径）；
        空白 → 在**鼠标位置**新建一个节点（中心落在鼠标点），出生即固化坐标。
        新节点挂到**根节点**下：数据是纯树、渲染从 topNode() 递归开始，没有父节点的节点不会被画出来；
        挂根既满足"不挂到当前选中节点下面"（自由画布上到处双击不该都长在选中节点下），又保证它能被渲染。 */
     vw.addEventListener("dblclick", (e) => {
-      if (e.target.closest(".mm-zoom, .mm-edit, .mm-edit-preview, .mm-edit-help")) return;
+      if (e.target.closest(".mm-zoom, .mm-edit, .mm-edit-preview, .mm-edit-help,.mm-formatbar,.mm-task")) return;
       if (!cur) return;
+      const label=e.target.closest('[data-image-label]') || document.elementFromPoint(e.clientX,e.clientY)?.closest('[data-image-label]');
+      if(label){e.preventDefault();const point=document.elementFromPoint(e.clientX,e.clientY);if(label.classList.contains('mm-pdf-titlebar') && !e.target.closest('.mm-pdf-title') && !point?.closest('.mm-pdf-title'))return;select(label.dataset.imageLabel);window.MMFiles?.renameNode(label.dataset.imageLabel);return;}
       // Pointer capture or a redraw may retarget dblclick to the stage/view.
       // Use the rendered boxes as well as the DOM target to distinguish nodes from blank canvas.
       const nd = e.target.closest(".mm-node");
       const p = local(e);
-      const hit = nd ? nd.dataset.id : (L && [...L.nodes.values()].reverse().find(s => p.x >= s.x && p.x <= s.x + s.w && p.y >= s.y && p.y <= s.y + s.h) || {}).n?.id;
-      if (hit) { e.preventDefault(); select(hit); if (editing !== hit) startEdit(hit); return; }
+      const hit = e.target.closest('[data-image-label]')?.dataset.imageLabel || (nd ? nd.dataset.id : (L && [...L.nodes.values()].reverse().find(s => p.x >= s.x && p.x <= s.x + s.w && p.y >= s.y && p.y <= s.y + s.h) || {}).n?.id);
+      if (hit) { e.preventDefault(); select(hit); if(findNode(hit)?.n.pdf){window.MMPDF?.activate(hit);return;}if (!findNode(hit)?.n.image && editing !== hit) startEdit(hit); return; }
       /* 【独立版】盒子必须用 measure() 量出来，不能用 estSize() 的文字估算：
          estSize("分支主题",1) 给 100×38，实际量出来是 96×40 —— 差 (Δw/2, Δh/2) 就是"中心没落在鼠标点上"的偏差
          （浏览器实测 dx=-2）。这里和布局用的是同一个 measure()，尺寸完全一致，中心就精确落在鼠标点。
@@ -1764,26 +2151,26 @@
   }
   // 拖节点：**只落坐标**（位置就是数据）。换父子那套已删 —— 层级现在由边表达。
   function startNodeDrag(d, e) {
-    if (!findNode(d.id)) return;
-    const el = document.querySelector(`#mmStage .mm-node[data-id="${d.id}"]`); if (!el) return;
-    d.ghost = el.cloneNode(true); d.ghost.classList.add("ghost"); d.ghost.classList.remove("sel"); $("mmStage").appendChild(d.ghost);
-    el.classList.add("dragging"); select(d.id);
+    if (!selectedNodes.has(d.id)) select(d.id);
+    d.original = [...selectedNodes].map(id => { const s = L.nodes.get(id); return {id,x:s.x,y:s.y,w:s.w,h:s.h}; });
+    d.snap = JSON.stringify(cur); d.dx = d.dy = 0;
   }
   function moveNodeDrag(d, e, p) {
-    if (!d.ghost) return;
-    const s = L.nodes.get(d.id); d.ghost.style.left = p.x - s.w / 2 + "px"; d.ghost.style.top = p.y - s.h / 2 + "px";
+    if (!d.original) return;
+    d.dx = Math.round((e.clientX-d.sx)/view.k); d.dy = Math.round((e.clientY-d.sy)/view.k);
+    if(window.MMAlign){const aligned=window.MMAlign.snap(d.original,d.dx,d.dy,e.altKey);d.dx=aligned.dx;d.dy=aligned.dy;}
+    for (const s of d.original) putLayerPos(s.id, {x:s.x+d.dx,y:s.y+d.dy});
+    draw(true);
   }
-  function endNodeDrag(d) {
-    const g = d.ghost;
-    if (g) g.remove();
-    /* 【独立版·平级】松手只把坐标落地（写进导图层 cur.pos，不写节点字段）。
-       原来那套"拖到节点中间 / 上边缘 = 换父子 / 插到前面"（drop-in / drop-before / drop-after）已删：
-       落点只认磁吸点，改结构只走连线。坐标写入在 change() 的 fn 内，撤销才回得干净。 */
-    const px = g ? Math.round(parseFloat(g.style.left) || 0) : null;
-    const py = g ? Math.round(parseFloat(g.style.top) || 0) : null;
-    if (px != null && py != null) change(() => putLayerPos(d.id, { x: px, y: py }));
-    else draw();
-    select(d.id, true);
+  function commitPreview(snapshot, cancel) {
+    window.MMAlign?.clear();
+    if (!snapshot || !cur) return;
+    if (cancel) restoreHistory(snapshot);
+    else if (JSON.stringify(cur) !== snapshot) { hist.push(historyJSON(JSON.parse(snapshot))); if (hist.length > 120) {hist.shift();for(const batch of aiBatches)batch.historyIndex--;} redo = []; storeLocal(cur); scheduleCloud(); }
+    draw();
+  }
+  function endNodeDrag(d, cancel) {
+    commitPreview(d.snap, cancel);
   }
 
   // ---------------- 键盘 ----------------
@@ -1802,17 +2189,20 @@
   document.addEventListener("keydown", (e) => {
     if (!cur || currentView() !== "mindmap" || $("mmDlg").open) return;
     const t = e.target;
-    if (t.classList && t.classList.contains("mo-in")) { outlineKey(e); return; }
     if (t.closest && t.closest("#mmShortcuts,#mmAI")) return;
-    if (t.closest && t.closest("#mmPanel, #mmFindBar, .mm-tools") && !(e.key === "Escape")) {
+    if (t.closest && (t.closest("#mmPanel, #mmFindBar,.mm-ctx") || (t.closest(".mm-tools") && t.closest("input,select,textarea"))) && !(e.key === "Escape")) {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f") { e.preventDefault(); openFind(); }
       return;
     }
-    if (t.id === "mmTitleIn" || editing || mode === "outline") return;
+    if (t.id === "mmTitleIn" || editing) return;
     const ctrl = e.ctrlKey || e.metaKey, k = e.key;
     /* 【独立版·平级】Esc：取消正在拖出的连线 / 收起浮层菜单；Delete/Backspace：删掉选中的那条线。 */
     if (k === "Escape") {
-      if (link) { link = null; clearLinkPrev(); markLink(null, null); return; }
+      if (link) {
+        link=null;const preview=document.querySelector('#mmStage .mm-linkprev');if(preview)preview.innerHTML='';
+        document.querySelectorAll('#mmStage .mm-magwrap').forEach(el=>el.classList.remove('linking','mag-on','hot'));
+        $('mmView').classList.remove('mag-pointer');return;
+      }
       const em = $("mmEdgeMenu");
       const nm = $("mmNodeMenu"); if (nm && !nm.classList.contains("hidden")) { hideNodeMenu(); return; }
       if (em && !em.classList.contains("hidden")) { hideEdgeMenu(); return; }
@@ -1821,30 +2211,36 @@
     if (ctrl && k.toLowerCase() === "z") { e.preventDefault(); e.shiftKey ? redoIt() : undo(); return; }
     if (ctrl && k.toLowerCase() === "y") { e.preventDefault(); redoIt(); return; }
     if (ctrl && k.toLowerCase() === "f") { e.preventDefault(); openFind(); return; }
-    if (ctrl && k.toLowerCase() === "c") { e.preventDefault(); copySel(false); return; }
-    if (ctrl && k.toLowerCase() === "x") { e.preventDefault(); copySel(true); return; }
+    if (ctrl && ["c","x"].includes(k.toLowerCase())) return;
     if (ctrl && k.toLowerCase() === "b") { e.preventDefault(); const r = findNode(sel); if (r) setProp("bold", !r.n.bold); return; }
     if (ctrl && (k === "=" || k === "+")) { e.preventDefault(); zoomAt(view.k * 1.2); return; }
     if (ctrl && k === "-") { e.preventDefault(); zoomAt(view.k / 1.2); return; }
     if (ctrl && k === "0") { e.preventDefault(); fit(true); return; }
-    if (ctrl && k.toLowerCase() === "s") { e.preventDefault(); pushDirty(); tip("已保存", 1200); return; }
+    if (ctrl && k.toLowerCase() === "s") { e.preventDefault(); window.MMFiles?.save(); return; }
     if (ctrl && k.toLowerCase() === "d") { e.preventDefault(); const r = findNode(sel); if (r) { const c = clone(r.n); c.id = nid(); change(() => cur.nodes.push(c)); select(c.id, true); } return; }
     if (ctrl) return;
-    if (k === "Tab") { e.preventDefault(); if (!e.shiftKey) addChild(); return; }
-    if (k === "Enter") { e.preventDefault(); addChild(); return; }
+    if (k === "Tab" || k === "Enter") { e.preventDefault(); return; }
     if (k === "Insert") { e.preventDefault(); addChild(); return; }
     if (k === "Delete" || k === "Backspace") { e.preventDefault(); del(); return; }
     if (k === " ") { e.preventDefault(); toggleFold(); return; }
     if (e.altKey && (k === "ArrowUp" || k === "ArrowDown")) { e.preventDefault(); moveSib(k === "ArrowUp" ? -1 : 1); return; }
     if (k.startsWith("Arrow")) { e.preventDefault(); nav(k); return; }
-    if (k === "Escape") { if (panelOpen) togglePanel(false); return; }
+    if (k === "Escape") { select(null); if (panelOpen) togglePanel(false); return; }
+  });
+  for(const action of ["copy","cut"]) document.addEventListener(action,e=>{
+    if(!cur || editing || currentView()!=="mindmap" || $("mmDlg").open || e.target.closest?.("input,textarea,[contenteditable=true],#mmAI,#mmShortcuts,.mm-ctx"))return;
+    copySel(action==="cut",e);
   });
   document.addEventListener("paste", (e) => {
-    if (!cur || currentView() !== "mindmap" || editing || mode === "outline" || $("mmDlg").open) return;
+    if (!cur || currentView() !== "mindmap" || editing || $("mmDlg").open) return;
     const t = e.target; if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) return;
-    const text = (e.clipboardData || window.clipboardData).getData("text");
+    const data=e.clipboardData || window.clipboardData,text=data.getData("text/plain") || data.getData("text");
     e.preventDefault();
-    if (text && text.trim() && (!clip || text.trim() !== clip.text.trim())) pasteTo(sel, text); else if (clip) pasteTo(sel);
+    let payload;try{payload=JSON.parse(data.getData(NODE_CLIP_TYPE));}catch {}
+    if(payload?.version===2 && Array.isArray(payload.nodes))pasteSelection(payload);
+    else if(payload?.node && typeof payload.node.text==="string")pasteNode(payload);
+    else if(clip && String(text).replace(/\r\n/g,"\n")===String(clip.text ?? clip.node?.text).replace(/\r\n/g,"\n")) {if(clip.version===2)pasteSelection(clip);else pasteNode(clip);}
+    else if(text && text.trim())pasteNode({node:{text,children:[]}});
   });
 
   function openFind() {
@@ -1852,18 +2248,6 @@
   }
   function togglePanel(on) { panelOpen = on; $("mmPanel").classList.toggle("hidden", !on); if (!isMobile()) lsSet("mm_panel_v1", on); if (on) panel(); }
 
-  // 大纲的键盘
-  function outlineKey(e) {
-    if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); addChild(e.target.dataset.id); setMode("outline"); outline(sel); }
-    else if (e.key === "Tab") e.preventDefault();
-    else if (e.key === "Backspace" && !e.target.value) { e.preventDefault(); del(e.target.dataset.id); outline(sel); }
-    else if (e.key === "ArrowUp" || e.key === "ArrowDown") {
-      const rows = [...document.querySelectorAll("#mmOutline .mo-in")], i = rows.indexOf(e.target), n = rows[i + (e.key === "ArrowUp" ? -1 : 1)];
-      if (n) { e.preventDefault(); n.focus(); }
-    } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") { e.preventDefault(); undo(); outline(); }
-  }
-
-  // ---------------- 点击 ----------------
   document.addEventListener("click", async (e) => {
     /* 【独立版】foldSwallow 是"这一次指针手势的 click 由指针路径处理过了"的一次性标记：
        任何一次 click（哪怕下面因为 target 落成 .mm-node 而早退）都要把它**消耗掉** ——
@@ -1874,21 +2258,21 @@
     const a = b.dataset.mm, id = b.dataset.id;
     if (b.tagName !== "A") e.preventDefault();
     switch (a) {
-      case "new": create(b.dataset.tpl); break;
+      case "new": await create(b.dataset.tpl); break;
+      case "import-home": $('mmFileOpen')?.click(); break;
       case "paste-new": pasteDlg(false); break;
       case "open": if (!e.target.closest(".mm-more")) openMap(id); break;
       case "menu": mapMenu(id); break;
-      case "ren": { const e2 = idxGet(id); closeDlg(); const v = prompt("导图名称", e2.title); if (!v || !v.trim()) break;
-        const m = lsGet(mapKey(id), null); if (m) { m.title = v.trim().slice(0, 80); const r0 = (m.nodes || [])[0] || m.root; if (r0) r0.text = m.title; lsSet(mapKey(id), m); }
-        idxPut({ id, title: v.trim().slice(0, 80), updated: Date.now(), dirty: !!m });
-        scheduleCloud();   // [独立版] 云同步已停用：只改本机（原 mm_rename 分支见 git 历史）
-        renderList(); break; }
+      case "ren": { const e2=idxGet(id);closeDlg();const v=prompt("导图名称",e2.title);if(v?.trim())await renameMap(id,v.trim().slice(0,80));break; }
       case "dupid": duplicate(id); break;
       case "delmap": deleteMap(id); break;
       case "dclose": closeDlg(); break;
       case "child": addChild(); break;
       case "sib": addSibling(); break;
-      case "del": del(); break;
+      case "del": del(); hideNodeMenu(); break;
+      case "clear-marks": setProp("marks", undefined); hideNodeMenu(); break;
+      case "new-group": window.MMGroups?.create(); hideNodeMenu(); break;
+      case "auto-size": change(()=>{for(const id of selectedNodes)fitNode(id,true);});hideNodeMenu();break;
       case "foldsel": toggleFold(); break;
       case "edir": {                                            // 改这条线的指向（走 change：可撤销、落盘）
         const eg = (cur.edges || []).find((x) => x.id === id);
@@ -1900,15 +2284,15 @@
         if (eg) change(() => { cur.edges = cur.edges.filter((x) => x !== eg); selEdge = null; });
         hideEdgeMenu(); break;
       }
+      case "edge-label": hideEdgeMenu(); window.MMCanvasTools?.editEdgeLabel(id); break;
       case "fold": { const sw = pendFoldSwallow === id; if (!sw) toggleFold(id); break; }   // 指针路径已折过就跳过
       case "undo": undo(); break;
       case "redo": redoIt(); break;
-      case "node-style": select(id); hideNodeMenu(); window.MMAI?.close(); window.dispatchEvent(new Event("mm:close-shortcuts")); togglePanel(true); break;
+      case "node-style": break;
+      case "media-rename": hideNodeMenu();window.MMFiles?.renameNode(id);break;
       case "node-ask": endEdit(); select(id); hideNodeMenu(); togglePanel(false); window.MMAI?.open(id); break;
       case "style": togglePanel(!panelOpen); break;
       case "pclose": togglePanel(false); break;
-      case "outline": setMode(mode === "outline" ? "map" : "outline"); break;
-      case "ofold": { const r = findNode(id); if (r) { change(() => { setFold(r.n, !isFold(r.n)); }); outline(id); } break; }
       case "find": openFind(); break;
       case "fnext": stepFind(1); break;
       case "fprev": stepFind(-1); break;
@@ -1916,7 +2300,10 @@
       case "paste-in": pasteDlg(true); break;
       case "export": exportDlg(); break;
       case "ex-png": closeDlg(); exportPng(); break;
-      case "ex-md": closeDlg(); download(safeName() + ".md", nodesArr().map(n => window.MMContent && window.MMContent.isRich(n.text) ? n.text : toMarkdown(n)).join("\n\n---\n\n"), "text/markdown"); break;
+      case "ex-md": closeDlg(); download(safeName() + ".md", nodesArr().map(n => {
+        const text=window.MMContent && window.MMContent.isRich(n.text)?n.text:toMarkdown(n),record=n.aiEntry && cur.aiMemory?.turns?.find(t=>t.id===n.aiTurnId);
+        return text+(record && window.MMAILearning?'\n\n'+window.MMAILearning.markdown(record.learning):'');
+      }).join("\n\n---\n\n"), "text/markdown"); break;
       case "ex-txt": { closeDlg(); const text = nodesArr().map(n => n.text).join("\n\n"); try { await navigator.clipboard.writeText(text); tip("节点列表已复制，可以直接粘贴"); } catch (err) { download(safeName() + ".txt", text, "text/plain"); } break; }
       case "ex-json": closeDlg(); download(safeName() + ".json", JSON.stringify({ app: "laolao-mindmap", ...cur }, null, 1), "application/json"); break;
       case "dup": duplicate(cur.id); break;
@@ -1927,18 +2314,19 @@
       case "lv1": foldLevel(1); break;
       case "lv2": foldLevel(2); break;
       case "lv0": foldLevel(0); break;
-      case "color": setProp("color", b.dataset.v || undefined); break;
+      case "color": setProp("color", b.dataset.v || undefined); hideNodeMenu(); break;
       case "bold": { const r = findNode(sel); if (r) setProp("bold", !r.n.bold); break; }
-      case "mark": toggleMark(b.dataset.v); break;
-      case "prog": setProp("progress", +b.dataset.v || undefined); break;
+      case "mark": toggleMark(b.dataset.v); hideNodeMenu(); break;
+      case "prog": setProp("progress", +b.dataset.v || undefined); hideNodeMenu(); break;
       case "parent": addParent(); break;
       case "side": { const r = findNode(sel), s = L.nodes.get(sel); if (r) change(() => { r.n.side = s.side > 0 ? "l" : "r"; }); break; }
-      case "back": if (cur) closeMap(); else showView("tools"); break;
+      case "back": if (cur && window.MMFiles) window.MMFiles.exit(true); else if(cur)closeMap(); else showView("tools"); break;
       case "note": case "link": { const nd = b.closest(".mm-node"); if (nd) { select(nd.dataset.id); if (a === "link") { const n = findNode(nd.dataset.id).n; window.open(safeUrl(n.link), "_blank", "noopener"); } else togglePanel(true); } break; }
     }
   });
   document.addEventListener("change", (e) => {
     const t = e.target; if (!cur && t.id !== "mmFileOpen") return;
+    if(t.id==="mmNodeColorPick") {setProp("color",t.value);hideNodeMenu();}
     if (t.id === "mmLayout" || t.id === "mmLine" || t.id === "mmTheme") {
       const k = { mmLayout: "layout", mmLine: "line", mmTheme: "theme" }[t.id];
       change(() => { cur[k] = t.value; if (k === "layout") walk(topNode(), (n) => { delete n.side; }); });
@@ -1951,15 +2339,14 @@
   });
   document.addEventListener("input", (e) => {
     const t = e.target;
-    if (t.classList && t.classList.contains("mo-in")) { const r = findNode(t.dataset.id); if (r) { r.n.text = t.value; clearTimeout(outlineTimer); outlineTimer = setTimeout(() => { hist.push(JSON.stringify(cur)); cur.title = (topNode().text || "未命名导图").slice(0, 80); $("mmTitleIn").value = cur.title; storeLocal(cur); scheduleCloud(); }, 500); } }
     if (t.id === "mmFindIn") { clearTimeout(findTimer); findTimer = setTimeout(doFind, 200); }
     if (t.id === "mmListQ") { listQ = t.value; t.dataset.f = 1; renderList(); const s = $("mmListQ"); if (s) { s.focus(); s.setSelectionRange(s.value.length, s.value.length); } }
   });
-  let outlineTimer = 0, findTimer = 0;
+  let findTimer = 0;
   document.addEventListener("keydown", (e) => {
     if (e.target.id === "mmFindIn") { if (e.key === "Enter") { e.preventDefault(); stepFind(e.shiftKey ? -1 : 1); } if (e.key === "Escape") { e.preventDefault(); $("mmFindBar").classList.add("hidden"); found = []; draw(); $("mmView").focus(); } }
     if (e.target.id === "mmTitleIn" && e.key === "Enter") { e.preventDefault(); e.target.blur(); }
-    if (e.target.classList && e.target.classList.contains("mm-card") && e.key === "Enter") e.target.click();
+    if (e.target.classList && e.target.classList.contains("mm-card") && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); e.target.click(); }
   }, true);
   // 改标题 = 改中心主题
   document.addEventListener("focusout", (e) => {
@@ -1974,10 +2361,11 @@
   // ---------------- 进入 / 离开这个页面；别的设备改了 ----------------
   window.renderMindmap = () => {
     if (cur) { document.body.classList.add("mm-editing"); setTimeout(() => { fitBox(); draw(); }, 30); return; }
-    renderList();
-    pullList().then(() => { if (!cur && currentView() === "mindmap") renderList(); });
+    refreshHome();
   };
   window.mmLeave = () => { document.body.classList.remove("mm-editing"); if (cur) { endEdit(); pushDirty(); } };
+  window.addEventListener('focus',()=>{if(!cur && currentView()==='mindmap')refreshHome();});
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden && !cur && currentView()==='mindmap')refreshHome();});
   /* ===== [独立版] 云同步停用：跨设备变更订阅（Sync.onChange）+ 登录后自动上传 =====
   try {
     Sync.onChange((set) => {
@@ -1994,13 +2382,65 @@
   window.addEventListener("beforeunload", () => { if (index.some((x) => x.dirty) && me()) pushDirty(); });
   ===== [独立版] 云同步停用结束 ===== */
   window.Mindmap = {
+    noteFile,
+    finishEditing: () => {window.dispatchEvent(new Event("mm:ai-interrupt"));window.MMPDF?.capture();const title=$('mmTitleIn')?.value;endEdit();if(cur && title?.trim() && title.trim()!==cur.title)change(()=>{cur.title=title.trim().slice(0,80);});},
+    editingSnapshot: () => {if(!cur)return null;const map=clone(cur),ta=document.querySelector('.mm-edit');if(ta && editing){const node=map.nodes.find(n=>n.id===editing);if(node){node.text=ta.value;if(ta._nodeStyle)window.MMFormat.apply(node,ta._nodeStyle);}}const title=$('mmTitleIn')?.value?.trim();if(title)map.title=title;return map;},
+    fitNode,
+    scrollGesture:()=>lastScroll,
+    resetScroll:()=>resetScroll(),
+    toggleTask: (id,line,checked) => {const n=findNode(id)?.n;if(!n || n.image || n.pdf || !Number.isInteger(line))return;const text=window.MMFormat.taskText(n.text,line,checked);if(text!==n.text)change(()=>{n.text=text;fitNode(id);});},
+    replaceDocument: map => {cur=clone(map);storeLocal(cur);draw();},
+    leaveDocument: map => {if(map){cur=clone(map);storeLocal(cur);}closeMap(true);},
+    zoom: zoomAt,
+    editMap: fn => change(fn),
+    syncMedia: files => {
+      if(!cur)return;let dirty=false;
+      for(const file of files){let old=(cur.media ||= []).find(m=>m.id===file.id);if(!old){cur.media.push(clone(file));dirty=true;}
+        else {const next={...old,...file};if(JSON.stringify(old)!==JSON.stringify(next)){Object.assign(old,next);dirty=true;}}
+      }
+      if(dirty){storeLocal(cur);draw();}
+    },
+    selectNode: id => select(id,true),
+    selectNodes: ids => selectNodes(ids),
+    commitPreview,
+    preview: () => draw(true),
+    revealBox: box => { const r=$("mmView").getBoundingClientRect(); view.x=r.width/2-(box.x+box.w/2)*view.k; view.y=r.height/2-(box.y+box.h/2)*view.k; applyView(); },
+    ensureVisible: box => {const r=$("mmView").getBoundingClientRect(),left=view.x+box.x*view.k,top=view.y+box.y*view.k,right=left+box.w*view.k,bottom=top+box.h*view.k;view.x+=left<12?12-left:right>r.width-12?r.width-12-right:0;view.y+=top<12?12-top:bottom>r.height-12?r.height-12-bottom:0;applyView();},
+    view: () => ({...view}),
+    clientPoint: (cx,cy) => {const r=$("mmView").getBoundingClientRect();return {x:(cx-r.left-view.x)/view.k,y:(cy-r.top-view.y)/view.k};},
+    openDocument: m => { if(!m || !m.id || !Array.isArray(m.nodes)) throw new Error("无效的导图文件"); storeLocal(m); return openMap(m.id); },
+    addImage: (media,at) => {
+      const node={id:nid(),text:"",image:media.id,children:[]};
+      change(()=>{const files=(cur.media ||= []);if(!files.some(m=>m.id===media.id)) files.push(media);cur.nodes.push(node);putLayerPos(node.id,at || {x:0,y:0});});select(node.id,true);return node.id;
+    },
+    addPDF: (media,at) => {const node={id:nid(),text:'',pdf:media.id,children:[]};change(()=>{if(!(cur.media ||= []).some(m=>m.id===media.id))cur.media.push(media);cur.nodes.push(node);putLayerPos(node.id,at || {x:0,y:0});(cur.pdfViews ||= {})[node.id]={page:1,scale:'page-width'};});select(node.id,true);return node.id;},
+    updatePDFView: (id,value) => {if(!cur || !findNode(id)?.n.pdf)return;const views=(cur.pdfViews ||= {});if(JSON.stringify(views[id])===JSON.stringify(value))return;views[id]=clone(value);storeLocal(cur);},
     pushAISummary,
+    pushAISummaries,
+    pushAIGraph,
+    pushAIPresentation,
+    appendAIResult,
+    endAIBatch: batch => aiBatches.delete(batch),
+    saveAIRecord: (record,ownership) => {
+      if(!cur || !window.MMAIMemory)return;
+      window.MMAIMemory.merge(cur,record,ownership);
+      storeLocal(cur);scheduleCloud();draw();
+    },
+    setAILearning: (turnId,patch) => {
+      const record=cur?.aiMemory?.turns?.find(t=>t.id===turnId);if(!record || !patch || !window.MMAILearning)return false;
+      const state=window.MMAILearning.normalize(record.learning);
+      if(typeof patch.expanded==='boolean')state.expanded=patch.expanded;
+      if(Array.isArray(patch.checked))state.checked=window.MMAILearning.normalize(patch).checked;
+      if(JSON.stringify(record.learning)===JSON.stringify(state))return true;
+      record.learning=state;storeLocal(cur);scheduleCloud();draw();return true;
+    },
+    measureAINode: text => measure({text},0),
     refresh: () => { if (cur) draw(); },
     parseText, toMarkdown,
     /* 【独立版】**"扫哪些表"的唯一真相来源**：del 清理 / 读取容错 / 导入 / 自测台孤儿判据
        全部读这两个数组（自测台不许再写一份字面量）。加新表只改上面那两行。 */
     LAYER_MAPS, LAYER_LISTS,
-    state: () => ({ cur, sel, index, L }), open: openMap, create,
+    state: () => ({ cur, sel, selected: [...selectedNodes], editing, mode, index, L }), open: openMap, create,
     /* 【独立版】导出给断言读**同一处**：多容器下 findNode 必须能找到非第一个容器里的节点，
        断言不能自己再写一份遍历（自写遍历只是证明"夹具里有那个节点"，证明不了产品路径）。 */
     findNode,

@@ -20,6 +20,11 @@
 .mm-task { color: #487de0; }
 .mm-image-alt { color: #7f899b; }
 .mm-node .mm-rich { height: 100%; overflow: auto; scrollbar-width: thin; }
+.mm-node.b .mm-rich { font-weight:700; }
+.mm-image-label { position:absolute;z-index:3;height:28px;padding:3px 9px;box-sizing:border-box;border:1px solid var(--image-color);border-radius:5px;background:var(--image-color);color:#fff;line-height:20px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font:400 12px/20px 'Microsoft YaHei',sans-serif;cursor:grab;box-shadow:0 1px 3px #26354a18; }
+.mm-image-label.sel { outline:2px solid var(--image-color);outline-offset:2px; }
+.mm-node .mm-node-image { height:100%;margin-top:0; }
+.mm-node .mm-rich,.mm-edit,.mm-edit-preview { overscroll-behavior:contain; }
 .mm-edit { font-family: Consolas,'Microsoft YaHei',monospace !important; font-weight: 400 !important; overflow: auto; max-height: 480px; }
 .mm-edit-preview { position: absolute; z-index: 6; width: 320px; max-height: 480px; overflow: auto; padding: 14px; background: #fff; color: #1f2a3d; border: 1px solid #c7d1e6; border-radius: 10px; box-shadow: 0 8px 24px #17234026; font: 15px/1.5 'Microsoft YaHei',sans-serif; }
 .mm-edit-preview-title { font-size: 11px; color: #7e8aa0; margin-bottom: 8px; }
@@ -44,3 +49,9 @@
 .mm-shortcuts-keys { display: grid; grid-template-columns: max-content 1fr; gap: 10px 12px; }
 .mm-shortcuts-keys dt,.mm-shortcuts-keys dd { margin: 0; } .mm-shortcuts-keys dd { color: #65728a; }
 @media(max-width:720px) { .mm-shortcuts { width: min(350px,100vw); box-shadow: -8px 0 28px #17234020; } .mm-shortcuts-open .mm-box { margin-right: 0; } .mm-shortcuts-button { padding: 0 8px; font-size: 12px; } }
+
+/* The live node wrapper uses the same outer margins as the measurement probe. */
+.mm-rich-inner > :first-child { margin-top:0; }
+.mm-rich-inner > :last-child { margin-bottom:0; }
+
+.mm-content-measure[data-theme=fresh] :is(h1,h2,h3),.mm-ai-graph[data-theme=fresh] .mm-rich :is(h1,h2,h3) { font-family:"Songti SC",SimSun,serif;font-weight:600; }

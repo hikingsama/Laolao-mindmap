@@ -270,6 +270,7 @@ function boot() {
     _handlers: {},
     addEventListener(t, f) { (this._handlers[t] || (this._handlers[t] = [])).push(f); },
     removeEventListener() {},
+    dispatchEvent(event) { this.fire(event.type,event); return true; },
     fire(t, ev) { for (const f of (this._handlers[t] || []).slice()) f(Object.assign({ type: t }, ev || {})); },
     matchMedia: () => ({ matches: false }),
     scrollTo() {}, open() {},

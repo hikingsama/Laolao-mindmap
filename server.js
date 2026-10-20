@@ -1,18 +1,14 @@
 #!/usr/bin/env node
-/* =========================================================================
- * server.js —— 本地静态服务器（零依赖，只用 Node 内置模块）
- *
- * 启动：node server.js        （或在仓库根目录 npm start）
- * 地址：http://127.0.0.1:8788  ← README 里写死的固定端口，不随参数变化
- * 端口可以用环境变量 MM_PORT 覆盖，但 README 和验收一律用 8788。
- * ========================================================================= */
+// Local server. Default port: 8794. MM_PORT can override it.
+// Tests must use temporary storage and a separate port.
 "use strict";
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
 const ai = require("./js/ai-server.cjs");
+const mapFiles = require("./js/map-files.cjs");
 
-const PORT = Number(process.env.MM_PORT || 8788);
+const PORT = Number(process.env.MM_PORT || 8794);
 const HOST = "127.0.0.1";
 const ROOT = __dirname;
 
@@ -20,6 +16,10 @@ const TYPES = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
   ".mjs": "text/javascript; charset=utf-8",
+  ".wasm": "application/wasm",
+  ".bcmap": "application/octet-stream",
+  ".pfb": "application/octet-stream",
+  ".ttf": "font/ttf",
   ".css": "text/css; charset=utf-8",
   ".json": "application/json; charset=utf-8",
   ".md": "text/plain; charset=utf-8",
@@ -31,11 +31,12 @@ const TYPES = {
 };
 
 const server = http.createServer((req, res) => {
+  if (req.url === "/api/maps" || req.url.startsWith("/api/maps/")) return mapFiles.handle(req,res,PORT);
   if (req.url.startsWith("/api/ai/")) return ai.handle(req, res, PORT);
   let rel;
   try { rel = decodeURIComponent(new URL(req.url, "http://x").pathname); } catch (e) { rel = "/"; }
   // Only public assets are served; server modules and local configuration stay private.
-  if (rel.split(/[\\/]/).some(part => part.startsWith(".")) || /\.(?:cjs|local)$/i.test(rel) || rel === "/server.js" || rel.startsWith("/tools/")) {
+  if (rel.split(/[\\/]/).some(part => part.startsWith(".")) || /\.(?:cjs|local)$/i.test(rel) || rel === "/server.js" || rel.startsWith("/tools/") || rel.startsWith("/storage/")) {
     res.writeHead(403, { "Content-Type": "text/plain; charset=utf-8" }); return res.end("403 非公开文件");
   }
   // 禁止浏览器读取 .env、.git 等以点开头的私有文件或目录
@@ -68,6 +69,4 @@ const server = http.createServer((req, res) => {
 server.listen(PORT, HOST, () => {
   console.log("捞捞思维导图（独立版）已启动 → http://" + HOST + ":" + PORT);
   console.log("按 Ctrl+C 停止");
-
-
-});
+  });

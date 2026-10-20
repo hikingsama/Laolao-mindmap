@@ -1,0 +1,28 @@
+"use strict";
+const assert=require("node:assert/strict"),{normalizeSummary,parseSummary}=require("../js/ai-summary.cjs");
+const {bootAll,fireDelegated}=require("./smoke.js");
+let count=0;const test=(name,fn)=>{fn();count++;console.log("PASS "+name);};
+test("old single summary migrates to one selected text card",()=>{const s=normalizeSummary({title:"旧标题",text:"保留 $x^2$"});assert.equal(s.nodes.length,1);assert.equal(s.nodes[0].title,"旧标题");assert(s.nodes[0].selected);assert.equal(s.text,"保留 $x^2$");});
+const raw={nodes:[{id:"concept",title:"# 概念",text:"概念 $x$"},{id:"example",type:"text",title:"例题",text:"解题步骤",selected:false},{title:"结论",text:"结论内容"}]};
+test("multiple cards preserve order, math and selection",()=>{const s=parseSummary('```json\n'+JSON.stringify(raw)+'\n```');assert.equal(s.nodes.length,3);assert.equal(s.nodes[0].title,"概念");assert.equal(s.nodes[0].text,"概念 $x$");assert.equal(s.nodes[1].selected,false);assert.equal(s.nodes[2].id,"node-3");});
+test("editable empty draft survives but cannot be pushed as a valid summary",()=>{const draft=normalizeSummary({nodes:[{title:"",text:""}]},{allowEmpty:true});assert.equal(draft.nodes[0].text,"");assert.throws(()=>normalizeSummary(draft));});
+test("invalid and excessive generated plans are rejected",()=>{for(const value of [null,[],{nodes:[]},{nodes:Array.from({length:13},()=>({text:"x"}))},{nodes:[{id:"same",text:"a"},{id:"same",text:"b"}]},{nodes:[{text:4}]},{nodes:[{type:"image",text:"fake image"}]},{nodes:[{text:"x".repeat(20001)}]},{nodes:[{title:"x".repeat(161),text:"x"}]}])assert.throws(()=>normalizeSummary(value));});
+test("reserved object keys cannot become card identifiers",()=>{for(const id of ["__proto__","constructor","prototype"])assert.equal(normalizeSummary({nodes:[{id,text:"safe"}]}).nodes[0].id,"node-1");});
+(async()=>{
+  const b=bootAll(),M=b.Mindmap;
+  await M.openDocument({id:"ai-batch-fixture",title:"批量推送测试",v:3,flat:true,theme:"fresh",layout:"mind",nodes:[{id:"a",text:"原问题",children:[]},{id:"blocker",text:"已有内容",children:[]}],pos:{a:{x:0,y:0},blocker:{x:240,y:0}},size:{a:{w:160,h:80},blocker:{w:350,h:280}},edges:[{id:"old-edge",from:{node:"a",side:"e"},to:{node:"blocker",side:"w"},dir:"fwd"}]});
+  const before=JSON.stringify(M.state().cur);
+  test("invalid batch and stale map do not modify document",()=>{for(const list of [[],["bad"],["# 第1次提问：有效","bad"],Array.from({length:13},()=>"# 第1次提问：x")])assert.throws(()=>M.pushAISummaries("ai-batch-fixture","a",list));assert.throws(()=>M.pushAISummaries("other-map","a",["# 第1次提问：x"]));assert.throws(()=>M.pushAISummaries("ai-batch-fixture","deleted",["# 第1次提问：x"]));assert.equal(JSON.stringify(M.state().cur),before);});
+  const texts=["概念","公式","例题","结论"].map((title,i)=>"# 第1次提问："+title+"\n\n"+"说明 $x^2$。".repeat(i+1));
+  const ids=M.pushAISummaries("ai-batch-fixture","a",texts),after=JSON.stringify(M.state().cur);
+  test("batch creates all selected peer nodes with requested contents",()=>{assert.equal(ids.length,4);assert.equal(new Set(ids).size,4);assert.equal(M.state().cur.nodes.length,6);ids.forEach((id,i)=>{assert.equal(M.findNode(id).n.text,texts[i]);assert.deepEqual(M.findNode(id).n.children,[]);});assert.deepEqual(M.state().selected,ids);});
+  test("all new arrows point to original question and old arrow remains",()=>{const edges=M.state().cur.edges;assert.equal(edges.length,5);for(const id of ids)assert(edges.some(e=>e.from.node===id && e.to.node==="a" && e.dir==="fwd"));assert(edges.some(e=>e.id==="old-edge"));});
+  test("new nodes avoid existing and each other with valid separate position maps",()=>{const boxes=[...M.state().L.nodes.values()];for(const id of ids){const a=M.state().L.nodes.get(id);assert(Number.isFinite(a.x)&&Number.isFinite(a.y));for(const other of boxes){if(other.n.id===id)continue;assert(!(a.x<other.x+other.w && a.x+a.w>other.x && a.y<other.y+other.h && a.y+a.h>other.y));}assert(!Object.hasOwn(M.findNode(id).n,"x"));assert(M.state().cur.pos[id]);assert(M.state().cur.size[id]);}});
+  fireDelegated(b.doc.getElementById("mmUndo"),"click",{});
+  test("one undo reverts the whole batch",()=>assert.equal(JSON.stringify(M.state().cur),before));
+  fireDelegated(b.doc.getElementById("mmRedo"),"click",{});
+  test("one redo restores whole batch and original node IDs",()=>assert.equal(JSON.stringify(M.state().cur),after));
+  const b2=bootAll(),M2=b2.Mindmap;await M2.openDocument({id:"legacy-push-fixture",title:"单节点兼容",flat:true,v:3,nodes:[{id:"q",text:"问题",children:[]}],pos:{q:{x:0,y:0}},size:{q:{w:150,h:70}},edges:[]});
+  test("old single-push helper remains compatible",()=>{const id=M2.pushAISummary("legacy-push-fixture","q","# 第1次提问：旧调用\n\n正文");assert.equal(typeof id,"string");assert.equal(M2.state().cur.nodes.length,2);});
+  console.log(count+" summary and actual-canvas batch checks passed; in-memory documents only.");
+})().catch(e=>{console.error(e);process.exitCode=1;});

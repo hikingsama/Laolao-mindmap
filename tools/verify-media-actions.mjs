@@ -1,0 +1,38 @@
+import {createPDF} from './pdf-fixture.cjs';
+export async function run({ev,send,sleep,mouse,clickSel,check,writeFileSync}){
+  const id='media-actions-'+Date.now(),wait=async expression=>{for(let i=0;i<80;i++){if(await ev(expression))return true;await sleep(60);}return false;};
+  const center=async selector=>{await sleep(300);return ev(`(()=>{const r=document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2};})()`);};
+  const dbl=async selector=>{const p=await center(selector);for(const count of [1,2]){await mouse('mousePressed',p.x,p.y,count,1);await mouse('mouseReleased',p.x,p.y,count,0);}await wait(`document.getElementById('mmDlg').open`);};
+  const submit=async name=>{await ev(`document.getElementById('mmMediaRenameName').value=${JSON.stringify(name)}`);await clickSel('#mmMediaRenameConfirm');};
+  const right=async selector=>{const p=await center(selector);for(const type of ['mousePressed','mouseReleased'])await send('Input.dispatchMouseEvent',{type,...p,button:'right',buttons:type==='mousePressed'?2:0,clickCount:1});};
+  await ev(`Mindmap.openDocument({id:'${id}',title:'媒体标签改名',v:3,flat:true,nodes:[{id:'text',text:'普通文字',children:[]}],pos:{text:{x:0,y:200}},size:{text:{w:160,h:80}},edges:[]})`);
+  await ev(`(async()=>{const c=document.createElement('canvas');c.width=160;c.height=80;c.getContext('2d').fillRect(0,0,160,80);window.__imageBlob=await new Promise(r=>c.toBlob(r));await MMFiles.insertFiles([new File([window.__imageBlob],'图片.png',{type:'image/png'})],{x:0,y:0});window.__pic=Mindmap.state().cur.nodes.find(n=>n.image).id;window.__media=Mindmap.findNode(window.__pic).n.image;window.__oldName=Mindmap.state().cur.media.find(f=>f.id===window.__media).name;Mindmap.addImage({...Mindmap.state().cur.media[0],width:160,height:80},{x:260,y:0});await MMFiles.save();Mindmap.zoom(1);Mindmap.revealBox({x:0,y:0,w:500,h:300});window.__pos=JSON.stringify(Mindmap.state().cur.pos);})()`);
+  const pic=await ev(`window.__pic`),label=`[data-image-label="${pic}"]`;
+  await dbl(label);
+  check('真实双击图片标签打开改名，不创建节点或编辑正文',await ev(`!!document.getElementById('mmMediaRenameName') && !document.querySelector('.mm-edit') && Mindmap.state().cur.nodes.length===3`));
+  check('默认只选中文件主名，后缀单独且只读',await ev(`(()=>{const a=document.getElementById('mmMediaRenameName'),e=document.getElementById('mmMediaRenameExt');return a.value===window.__oldName.slice(0,-4)&&a.selectionStart===0&&a.selectionEnd===a.value.length&&e.readOnly&&e.value==='.png';})()`));
+  await submit('曲率示意');await wait(`!document.getElementById('mmDlg').open`);
+  check('改名同步所有同文件标签及媒体栏，位置与节点数量不变',await ev(`[...document.querySelectorAll('.mm-image-label')].every(e=>e.textContent==='曲率示意.png') && document.getElementById('mmMediaList').textContent.includes('曲率示意.png')&&JSON.stringify(Mindmap.state().cur.pos)===window.__pos&&Mindmap.state().cur.nodes.length===3`));
+  check('改名保留文件编号及图片引用，图片仍可读取',await wait(`Mindmap.state().cur.nodes.filter(n=>n.image===window.__media).length===2&&[...document.querySelectorAll('.mm-node-image')].every(i=>i.naturalWidth===160)`));
+  check('未明确保存前，实际正式文件名称保持原名',await ev(`(async()=>{const m=await (await fetch('/api/maps/${id}')).json();return m.media.find(f=>f.id===window.__media).name===window.__oldName;})()`));
+  await ev(`MMFiles.save()`);
+  check('正式保存后文件名和下载文件头一起更新，后缀保留',await ev(`(async()=>{const m=await (await fetch('/api/maps/${id}')).json(),r=await fetch('/api/maps/${id}/media/'+window.__media);return m.media.find(f=>f.id===window.__media).name==='曲率示意.png'&&decodeURIComponent(r.headers.get('content-disposition')).includes('曲率示意.png');})()`));
+  await dbl(label);await ev(`document.getElementById('mmMediaRenameName').value='不应保存的名称'`);await clickSel('#mmMediaRenameCancel');
+  check('取消重命名保留原名',await ev(`document.querySelector(${JSON.stringify(label)}).textContent==='曲率示意.png'`));
+  await right(label);check('媒体标签右键有重命名文件选项',await ev(`!!document.querySelector('#mmNodeMenu [data-mm="media-rename"]')`));await clickSel('[data-mm="media-rename"]');
+  await submit('../非法名称');check('非法主名保留窗口并显示错误，不改动现有文件',await ev(`document.getElementById('mmDlg').open&&document.getElementById('mmMediaRenameError').textContent.includes('有效')&&Mindmap.state().cur.media.find(f=>f.id===window.__media).name==='曲率示意.png'`));
+  await submit('曲率图.png');await wait(`!document.getElementById('mmDlg').open`);check('粘贴包含原后缀的名称不会重复追加后缀',await ev(`document.querySelector(${JSON.stringify(label)}).textContent==='曲率图.png'`));
+  await ev(`MMFiles.save()`);await ev(`MMFiles.insertFiles([new File([window.__imageBlob],'另一张.png',{type:'image/png'})],{x:500,y:0})`);
+  const other=await ev(`Mindmap.state().cur.nodes.filter(n=>n.image).at(-1).id`);await ev(`Mindmap.revealBox(Mindmap.state().L.nodes.get('${other}'))`);await dbl(`[data-image-label="${other}"]`);await submit('曲率图');
+  check('重名时不覆盖文件，保留输入窗口方便修改',await wait(`document.getElementById('mmDlg').open&&document.getElementById('mmMediaRenameError').textContent.includes('同名')`));await clickSel('#mmMediaRenameCancel');
+  const pdf=createPDF(2).toString('base64');await ev(`MMFiles.insertFiles([new File([Uint8Array.from(atob('${pdf}'),c=>c.charCodeAt(0))],'讲义.pdf',{type:'application/pdf'})],{x:800,y:0})`);
+  const pdfNode=await ev(`Mindmap.state().cur.nodes.find(n=>n.pdf).id`);await ev(`Mindmap.zoom(.75);Mindmap.revealBox(Mindmap.state().L.nodes.get('${pdfNode}'))`);await dbl(`[data-image-label="${pdfNode}"]`);
+  check('双击PDF标签改名，不进入PDF阅读或创建节点',await ev(`document.getElementById('mmMediaRenameExt').value==='.pdf'&&document.getElementById('mmMediaRenameExt').readOnly&&!MMPDF.isActive('${pdfNode}')&&Mindmap.state().cur.nodes.length===5`));
+  await submit('线代讲义');await wait(`!document.getElementById('mmDlg').open`);await ev(`MMFiles.save()`);
+  check('PDF改名同步标签、媒体与正式文件，保留.pdf',await ev(`(async()=>{const m=await (await fetch('/api/maps/${id}')).json(),n=m.nodes.find(n=>n.id==='${pdfNode}'),r=await fetch('/api/maps/${id}/media/'+n.pdf);return m.media.find(f=>f.id===n.pdf).name==='线代讲义.pdf'&&document.querySelector('[data-image-label="${pdfNode}"]').textContent==='线代讲义.pdf'&&r.headers.get('content-type').includes('application/pdf');})()`));
+  await right(`[data-id="${pdfNode}"]`);check('PDF节点本体右键也提供文件改名',await ev(`!!document.querySelector('#mmNodeMenu [data-mm="media-rename"]')`));await ev(`MMContextMenus.hideAll()`);
+  await ev(`Mindmap.revealBox(Mindmap.state().L.nodes.get('text'))`);await right('[data-id="text"]');check('普通文字节点不显示文件改名',await ev(`!document.querySelector('#mmNodeMenu [data-mm="media-rename"]')`));await ev(`MMContextMenus.hideAll()`);
+  check('重复保存成功',await ev(`MMFiles.save()`));await clickSel('#mmSaveExit');await clickSel('[data-session-choice="confirm"]');await wait(`!Mindmap.state().cur`);check('保存后无修改直接保存退出成功',await ev(`!Mindmap.state().cur`));
+  await ev(`Mindmap.open('${id}')`);await ev(`MMFiles.save()`);await clickSel('#mmSaveExit');await clickSel('[data-session-choice="cancel"]');check('取消退出仍保留当前导图',await ev(`Mindmap.state().cur?.id==='${id}'`));
+  await clickSel('#mmSaveExit');await clickSel('[data-session-choice="confirm"]');await wait(`!Mindmap.state().cur`);check('再次确认可正常退出，文件名保持已保存值',await ev(`(async()=>{const m=await (await fetch('/api/maps/${id}')).json();return !Mindmap.state().cur&&m.media.some(f=>f.name==='线代讲义.pdf')&&m.media.some(f=>f.name==='曲率图.png');})()`));
+}
