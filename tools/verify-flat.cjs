@@ -48,7 +48,7 @@ async function run() {
   });
   test('删除一个节点不会连带删除原来的子节点', () => {
     // open selects r1; deleting r1 must leave its seven peers.
-    click('mmDel');
+    fireDelegated(b.doc.getElementById('mmView'), 'keydown', {key:'Delete'});
     assert.equal(M.state().cur.nodes.length, 7); assert.ok(M.findNode('a1x'));
     assert.ok(!M.state().cur.pos.r1);
     assert.ok(M.state().cur.edges.every(e => e.from.node !== 'r1' && e.to.node !== 'r1'));
@@ -56,7 +56,7 @@ async function run() {
   });
   test('新增节点不建立父子关系或自动连线', () => {
     const edges = M.state().cur.edges.length;
-    click('mmChild');
+    fireDelegated(b.doc.getElementById('mmView'), 'keydown', {key:'Insert'});
     assert.equal(M.state().cur.nodes.length, 9);
     assert.equal(M.state().cur.edges.length, edges);
     assert.ok(M.state().cur.nodes.every(n => n.children.length === 0));

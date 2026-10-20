@@ -1,0 +1,14 @@
+'use strict';
+const assert=require('node:assert/strict'),F=require('../js/ai-note-format.js'),S=require('../js/ai-summary.cjs'),{partialNodes}=require('../js/ai-stream.cjs');
+let checks=0;const test=(name,fn)=>{fn();checks++;console.log('PASS '+name);};
+const blocks=[{type:'text',text:'令 $L$ 为原式，先取对数。'},{type:'math',latex:'\\ln L=\\lim_{x\\to0}\\frac{\\ln(1+u)}{x^2}'},{type:'text',text:'利用对数等价关系：'},{type:'math',latex:'\\ln(1+u)\\sim u'}];
+test('Structured steps preserve separate explanations and display formulas',()=>{const p=S.parseSummary(JSON.stringify({nodes:[{id:'a',title:'取对数',blocks}]}));assert.equal((p.text.match(/\$\$/g)||[]).length,4);assert(p.text.includes('令 $L$'));assert(p.text.includes('$$\n\\ln(1+u)\\sim u\n$$'));assert(!p.nodes[0].blocks);});
+test('Legacy generated paragraphs promote significant inline formulas but retain variables',()=>{const p=S.parseSummary(JSON.stringify({title:'步骤',text:'令 $L$ 为极限，则 $\\ln L=0$，所以 $L=1$。变量 $x$ 保留。'}));assert(p.text.includes('$$\n\\ln L=0\n$$'));assert(p.text.includes('$$\nL=1\n$$'));assert(p.text.includes('变量 $x$'));});
+test('Existing display math, matrix breaks, code fences and code spans remain intact',()=>{const source='```latex\n$x=1$\n```\n\n`$x=2$`\n\n$$\n\\begin{pmatrix}1&2\\\\3&4\\end{pmatrix}\n$$';assert.equal(F.displayMainMath(source),source);});
+test('Parenthesized main equations become display blocks',()=>assert.equal(F.displayMainMath('因此 \\(x=1\\)。'),'因此 \n\n$$\nx=1\n$$\n\n。'));
+test('Blank lines inside code and display-math blocks are preserved exactly',()=>{const text='```txt\n$x=1$\n\n\n代码\n```\n\n$$\nx=1\n\n\ny=2\n$$';assert.equal(F.displayMainMath(text),text);assert.throws(()=>F.blocksToText([{type:'math',latex:'$$'}]));});
+test('Edited and saved node text is not automatically reformatted by draft normalization',()=>{const p=S.normalizeSummary({title:'手动',text:'手动保留 $x=1$'},{allowEmpty:true});assert.equal(p.text,'手动保留 $x=1$');});
+test('Normalization remains idempotent and edited text wins after initial structured conversion',()=>{const p=S.parseSummary(JSON.stringify({title:'步骤',blocks}));p.nodes[0].text='修改后的 $x$';assert.equal(S.normalizeSummary(p,{allowEmpty:true}).nodes[0].text,'修改后的 $x$');});
+test('Malformed or oversized structured blocks are rejected',()=>{for(const blocks of [[],[{type:'html',text:'bad'}],[{type:'math',latex:''}],Array.from({length:41},()=>({type:'text',text:'a'})),[{type:'text',text:'a'.repeat(20001)}]])assert.throws(()=>F.blocksToText(blocks));});
+test('Completed structured nodes are available during streaming before edges arrive',()=>{const raw=JSON.stringify({nodes:[{title:'一步',blocks}]}).slice(0,-1);const nodes=partialNodes(raw);assert.equal(nodes.length,1);assert(nodes[0].text.includes('$$\n'));});
+console.log(checks+' note-format checks passed.');

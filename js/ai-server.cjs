@@ -1,16 +1,15 @@
 "use strict";
-// Provider-neutral placeholder. No local CLI, login, API key or model is used.
-const unavailable = "当前版本尚未接入 AI 模型。节点提问和总结推送界面已保留，等待后续 API 接入。";
-function json(res, code, data) {
-  res.writeHead(code, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
-  res.end(JSON.stringify(data));
-}
-exports.handle = (req, res, port) => {
-  if (!["127.0.0.1:"+port,"localhost:"+port].includes(req.headers.host)) return json(res,403,{error:"仅允许本机访问"});
-  if (req.headers.origin && !["http://127.0.0.1:"+port,"http://localhost:"+port].includes(req.headers.origin)) return json(res,403,{error:"请求来源不允许"});
-  if (req.url === "/api/ai/status" && req.method === "GET") return json(res,200,{available:false,provider:null,protocol:"jobs-v1",message:unavailable});
-  if (req.url === "/api/ai/chat" && req.method === "POST") {
-    req.resume(); return json(res,503,{code:"AI_NOT_CONFIGURED",error:unavailable});
-  }
-  return json(res,404,{error:"AI 任务不存在：当前版本尚未接入模型。"});
+const json=(res,status,value)=>{res.writeHead(status,{"Content-Type":"application/json; charset=utf-8","Cache-Control":"no-store"});res.end(JSON.stringify(value));};
+exports.createHandler=({settings=require("./ai-config.cjs").createService(),chat}={})=>{
+  chat ||= require("./ai-chat.cjs").createService({getConfig:()=>settings.active()});
+  return async(req,res,port)=>{
+    if(!["127.0.0.1:"+port,"localhost:"+port].includes(req.headers.host) || req.headers.origin && !["http://127.0.0.1:"+port,"http://localhost:"+port].includes(req.headers.origin)){req.resume();return json(res,403,{error:"仅允许本机页面访问"});}
+    try{
+      if(await settings.handle(req,res,port))return;
+      if(req.url==="/api/ai/status" && req.method==="GET"){const state=settings.status();return json(res,200,{...state,protocol:"jobs-v1",features:{workflow:"roles-v1",memory:"tree-v1"},message:state.available?"使用已保存的模型配置；图片和PDF需要视觉模型":"请先在顶部大模型 API 接入中保存完整配置"});}
+      if(await chat.handle(req,res))return;
+      req.resume();json(res,404,{error:"AI接口或任务不存在"});
+    }catch(e){req.resume();if(!res.destroyed)json(res,e.status || 500,{error:e.status?e.message:"本机AI服务异常"});}
+  };
 };
+exports.handle=exports.createHandler();

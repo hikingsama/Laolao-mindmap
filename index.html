@@ -7,18 +7,30 @@
 <link rel="stylesheet" href="css/mindmap-standalone.css">
 <link rel="stylesheet" href="vendor/katex/katex.min.css">
 <link rel="stylesheet" href="css/node-content.css">
+<link rel="stylesheet" href="vendor/pdfjs/web/pdf_viewer.css">
+<link rel="stylesheet" href="css/pdf-nodes.css">
+<link rel="stylesheet" href="css/editor-format.css">
+<link rel="stylesheet" href="css/ai-settings.css">
+<link rel="stylesheet" href="css/paper-studio.css">
+<link rel="stylesheet" href="css/ai-workflow.css">
 </head>
 <body>
   <!-- 顶部提示条：原代码的 ResizeObserver 观察它，必须有这个元素 -->
   <div id="banner"></div>
 
   <header class="mm-head">
-    <b id="mmHeadTitle" class="mm-head-title">捞捞思维导图</b>
+    <div class="mm-brand" aria-label="捞捞思维导图"><span class="mm-brand-symbol" aria-hidden="true">捞</span><span>捞捞</span></div>
+    <span class="mm-head-divider" aria-hidden="true"></span>
+    <b id="mmHeadTitle" class="mm-head-title">学习书桌</b>
     <input id="mmTitleIn" class="mm-title-in hidden" maxlength="80" placeholder="导图名称">
+    <button class="mm-b pri hidden" id="mmSaveExit" type="button">保存并退出</button>
+    <button class="mm-b hidden" id="mmDiscardExit" type="button">不保存退出</button>
     <span id="mmSync" class="mm-sync"></span>
     <span class="mm-head-gap"></span>
+    <button class="mm-b" id="mmOpenLocal" type="button">本地导图</button>
+    <button class="mm-b" id="mmAPISettingsButton" type="button" aria-haspopup="dialog" aria-controls="mmAPISettingsDialog">大模型 API 接入</button>
     <button class="mm-b mm-shortcuts-button" id="mmShortcutsButton" type="button" aria-controls="mmShortcuts" aria-expanded="false">补全快捷键</button>
-    <a class="mm-head-link" href="README.md">README</a>
+    <a class="mm-head-link" href="docs/user-manual/index.html" target="_blank" rel="noopener">使用指南 ↗</a>
   </header>
 
   <main id="mmBox" class="mm-box"></main>
@@ -29,6 +41,7 @@
 
   <dialog id="mmDlg"><div id="mmDlgBody"></div></dialog>
 
+  <script src="js/zoom-guard.js"></script>
   <script src="js/host-bridge.js"></script>
   <script src="js/edge-router.js"></script>
   <script src="vendor/markdown-it/markdown-it.min.js"></script>
@@ -36,9 +49,25 @@
   <script src="vendor/html-to-image/html-to-image.js"></script>
   <script src="js/math-completion.js"></script>
   <script src="js/node-content.js"></script>
+  <script src="js/context-menus.js"></script>
+  <script src="js/scene-renderer.js"></script>
+  <script src="js/pdf-nodes.js"></script>
+  <script src="js/node-align.js"></script>
+  <script src="js/editor-format.js"></script>
+  <script src="js/ai-settings.js"></script>
   <script src="vendor/mindmap.js"></script>
   <script src="js/standalone.js"></script>
+  <script src="js/spatial-groups.js"></script>
+  <script src="js/canvas-tools.js"></script>
+  <script src="js/media-files.js"></script>
+  <script src="js/ai-note-format.js"></script>
   <script src="js/ai-summary.js"></script>
+  <script src="js/ai-media.js"></script>
+  <script src="js/ai-memory.js"></script>
+  <script src="js/ai-learning.js"></script>
+  <script src="js/ai-branch.js"></script>
+  <script src="js/ai-workflow.js"></script>
   <script src="js/ai-sidebar.js"></script>
+  <script src="js/style-chrome.js"></script>
 </body>
 </html>

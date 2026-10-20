@@ -1,0 +1,37 @@
+'use strict';
+const assert=require('node:assert/strict'),learning=require('../js/ai-learning.js');
+const {bootAll,loadInto,fireDelegated}=require('./smoke.js');let count=0;
+const check=(name,fn)=>{fn();count++;console.log('PASS '+name);};
+(async()=>{
+  check('Learning labels are exact and the final item has only six characters',()=>{assert.deepEqual(learning.labels,['阅览','提炼','亲笔推导','对比权威答案']);assert.equal(learning.labels.at(-1).length,6);});
+  check('New and previously untouched records start expanded without inferring learning completion',()=>{assert.deepEqual(learning.normalize(),{expanded:true,checked:[false,false,false,false]});assert.equal(learning.progress({status:'completed'}),0);});
+  check('Only four actual booleans count as completed tasks',()=>{assert.deepEqual(learning.normalize({checked:[true,'true',1,true,true],expanded:'true'}),{checked:[true,false,false,true],expanded:true});});
+  check('Portable Markdown preserves the exact labels and manual checkbox states',()=>assert.equal(learning.markdown({checked:[true,false,true,false]}),'- [x] 阅览\n- [ ] 提炼\n- [x] 亲笔推导\n- [ ] 对比权威答案'));
+  const b=bootAll(),M=b.Mindmap;for(const file of ['js/ai-summary.js','js/ai-memory.js','js/ai-branch.js','js/ai-learning.js'])loadInto(b.sandbox,file,b.sandbox.window);
+  const map={id:'learning-test',title:'临时',flat:true,v:3,nodes:[{id:'a',text:'定义',children:[]}],pos:{a:{x:0,y:0}},edges:[]};await M.openDocument(map);
+  const record={id:'turn1',treeId:'tree-a',sourceId:'a',number:1,question:'解释',answer:'',status:'running',generatedIds:[]};M.saveAIRecord(record);
+  const batch={turnId:'turn1',treeId:'tree-a'},one={nodes:[{id:'n1',title:'第一步',text:'说明'}],edges:[]};M.appendAIResult(map.id,'a',one,'第1次提问',batch);
+  let entry=M.state().cur.nodes.find(n=>n.aiEntry),box=M.state().L.nodes.get(entry.id),r=M.state().cur.aiMemory.turns[0];
+  check('One attached card is drawn without adding a knowledge node or modifying the question',()=>{assert.equal(M.state().cur.nodes.length,3);assert.equal(entry.text,'# 第1次提问');assert.equal((b.doc.getElementById('mmStage').innerHTML.match(/class="mm-ai-learning/g) || []).length,1);});
+  const closed=learning.box(box,{...r,learning:{expanded:false}}),reserved=learning.box(box,r,true);
+  check('Collapsed card follows its entry and reserves room for its expanded list',()=>{assert.equal(closed.y,box.y+box.h+12);assert.equal(closed.h,34);assert.equal(reserved.h,162);assert(M.state().L.bounds.y1>=closed.y+closed.h);});
+  const text=entry.text,poses=JSON.stringify(M.state().cur.pos);M.setAILearning('turn1',{expanded:true,checked:[true,false,false,false]});
+  check('Manual learning changes preserve node text and existing geometry',()=>{assert.equal(M.state().cur.nodes.find(n=>n.id===entry.id).text,text);assert.equal(JSON.stringify(M.state().cur.pos),poses);assert.equal(M.state().cur.aiMemory.turns[0].learning.checked[0],true);});
+  M.saveAIRecord({...record,status:'running',answer:'第一段'});
+  check('Streaming updates cannot overwrite already checked learning tasks',()=>{const state=M.state().cur.aiMemory.turns[0].learning;assert.equal(state.checked[0],true);assert.equal(state.expanded,true);});
+  const two={nodes:[...one.nodes,{id:'n2',title:'第二步',text:'推导'}],edges:[{from:'n1',to:'n2',kind:'progression'}]};M.appendAIResult(map.id,'a',two,'第1次提问',batch,true);M.saveAIRecord({...record,status:'completed',answer:'最终回答',generatedIds:Object.values(batch.mapping)});
+  check('AI completion leaves the remaining learning tasks unchecked',()=>assert.equal(learning.progress(M.state().cur.aiMemory.turns[0].learning),1));
+  const saved=JSON.parse(JSON.stringify(M.state().cur));await M.openDocument(saved);
+  check('Learning state and fold state survive JSON serialization and reopening',()=>{const state=M.state().cur.aiMemory.turns[0].learning;assert.equal(state.checked[0],true);assert.equal(state.expanded,true);});
+  M.setAILearning('turn1',{checked:[true,true,true,true],expanded:false});
+  check('All four manual checks produce a compact completion indicator',()=>{assert(b.doc.getElementById('mmStage').innerHTML.includes('本轮学习完成'));assert.equal(learning.progress(M.state().cur.aiMemory.turns[0].learning),4);});
+  M.saveAIRecord({...record,id:'turn2',question:'另一个问题'});M.setAILearning('turn2',{checked:[false,false,true,false]});
+  check('Each question has independent learning progress',()=>{assert.equal(learning.progress(M.state().cur.aiMemory.turns[0].learning),4);assert.equal(learning.progress(M.state().cur.aiMemory.turns[1].learning),1);});
+  const current=M.state().cur;const batch2={turnId:'turn2',treeId:'tree-a'};M.appendAIResult(current.id,'a',one,'第2次提问',batch2,true);M.setAILearning('turn2',{expanded:true});
+  fireDelegated(b.doc.getElementById('mmUndo'),'click',{});
+  check('Learning clicks add no canvas undo step and completed batch still undoes as one',()=>{assert(!M.state().cur.nodes.some(n=>n.aiTurnId==='turn2'));assert.equal(learning.progress(M.state().cur.aiMemory.turns.find(t=>t.id==='turn2').learning),1);});
+  fireDelegated(b.doc.getElementById('mmRedo'),'click',{});
+  check('Redo restores its attached card with the same saved learning state',()=>{assert(M.state().cur.nodes.some(n=>n.aiTurnId==='turn2' && n.aiEntry));assert.equal(M.state().cur.aiMemory.turns.find(t=>t.id==='turn2').learning.expanded,true);});
+  console.log(count+' learning progress checks passed; in-memory maps only.');
+})().catch(e=>{console.error(e);process.exitCode=1;});
+

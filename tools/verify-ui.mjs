@@ -45,6 +45,7 @@ const EDGE_ARG = argOf("edge", process.env.MM_BROWSER || "");
 const CHROME_ARG = argOf("chrome", "");
 const TIMEOUT = Number(argOf("timeout", "60000"));
 const KEEP = argv.includes("--keep");
+const UI_MAP="ui-flat-"+Date.now();
 
 if (typeof WebSocket !== "function") {
   console.error("这个脚本需要 Node ≥ 22（用到内置 WebSocket）。当前 " + process.version +
@@ -164,14 +165,20 @@ const main = async () => {
     process.exit(3);
   }
   await openBrowser();
+  if(argv.includes('--media-actions') || argv.includes('--pdf-position') || argv.includes('--format-align') || argv.includes('--canvas-features') || argv.includes('--context-features') || argv.includes('--groups') || argv.includes('--fixes') || argv.includes('--sessions') || argv.includes('--wheel') || argv.includes('--pdf')) {
+    for(let i=0;i<40;i++){if(await ev("document.readyState==='complete' && !!window.MMFiles && !!window.MMCanvasTools"))break;await sleep(100);}
+    const {run}=await import(argv.includes('--media-actions')?'./verify-media-actions.mjs':argv.includes('--pdf-position')?'./verify-pdf-position.mjs':argv.includes('--format-align')?'./verify-format-align.mjs':argv.includes('--pdf')?'./verify-pdf.mjs':argv.includes('--wheel')?'./verify-wheel.mjs':argv.includes('--sessions')?'./verify-sessions.mjs':argv.includes('--fixes')?'./verify-fixes.mjs':argv.includes('--groups')?'./verify-groups.mjs':argv.includes('--context-features')?'./verify-interactions.mjs':'./verify-canvas.mjs');
+    await run({ev,send,sleep,clickSel,mouse,check,writeFileSync});
+    const bad=RESULTS.filter(r=>!r.ok);console.log(`\n结果：${RESULTS.length-bad.length} 通过 / ${bad.length} 失败`);return bad.length?1:0;
+  }
   if (!argv.includes('--legacy')) {
     for (let i = 0; i < 40; i++) { if (await ev("document.readyState === 'complete' && !!window.Mindmap")) break; await sleep(200); }
     await clickSel('#mmShortcutsButton');
     check('右上角按钮打开右侧补全表，内容与实际规则一致', await ev(`document.getElementById('mmShortcutsButton').getAttribute('aria-expanded')==='true' && !document.getElementById('mmShortcuts').classList.contains('hidden') && document.querySelectorAll('.mm-shortcuts-table tbody tr').length===MMContent.snippetHelp.length && document.getElementById('mmShortcutsBody').textContent.includes('Ctrl / Cmd + Enter')`));
     await clickSel('#mmShortcutsClose');
     await ev(`(() => {
-      const m = { id: 'ui-flat', title: '连线测试', v: 3, flat: true, layout: 'mind', theme: 'fresh', nodes: [{id:'a',text:'节点 A',children:[]},{id:'b',text:'节点 B',children:[]}], pos:{a:{x:0,y:0},b:{x:300,y:160}}, size:{a:{w:140,h:60},b:{w:140,h:60}}, edges:[{id:'test-edge',from:{node:'a',side:'w'},to:{node:'b',side:'e'},dir:'both'}],fold:{} };
-      localStorage.setItem('mm_map_ui-flat',JSON.stringify(m)); return Mindmap.open('ui-flat');
+      const m = { id: '${UI_MAP}', title: '连线测试', v: 3, flat: true, layout: 'mind', theme: 'fresh', nodes: [{id:'a',text:'节点 A',children:[]},{id:'b',text:'节点 B',children:[]}], pos:{a:{x:0,y:0},b:{x:300,y:160}}, size:{a:{w:140,h:60},b:{w:140,h:60}}, edges:[{id:'test-edge',from:{node:'a',side:'w'},to:{node:'b',side:'e'},dir:'both'}],fold:{} };
+      localStorage.setItem('mm_map_${UI_MAP}',JSON.stringify(m)); return Mindmap.open('${UI_MAP}');
     })()`);
     await sleep(300);
     const key = async (name, code, text, value, modifiers=0) => {
@@ -195,7 +202,7 @@ const main = async () => {
     await clickSel('#mmShortcutsClose');
     check('关闭侧栏恢复画布且不结束节点编辑', await ev(`document.getElementById('mmShortcuts').classList.contains('hidden') && document.getElementById('mmShortcutsButton').getAttribute('aria-expanded')==='false' && !!document.querySelector('.mm-edit')`));
     await ev(`document.querySelector('.mm-edit').select()`); await send('Input.insertText',{text:'修改后的 A'}); await key('Enter','Enter',null,13,2);
-    check('双击后可修改并保存当前节点文字', await ev(`!document.querySelector('.mm-edit') && Mindmap.findNode('a').n.text==='修改后的 A' && JSON.parse(localStorage.getItem('mm_map_ui-flat')).nodes.find(n=>n.id==='a').text==='修改后的 A'`));
+    check('双击后可修改并保存当前节点文字', await ev(`!document.querySelector('.mm-edit') && Mindmap.findNode('a').n.text==='修改后的 A' && JSON.parse(localStorage.getItem('mm_map_${UI_MAP}')).nodes.find(n=>n.id==='a').text==='修改后的 A'`));
     await clickSel('#mmUndo');
     await ev(`(() => {const r=document.querySelector('.mm-node[data-id="a"]').getBoundingClientRect();document.getElementById('mmView').dispatchEvent(new MouseEvent('dblclick',{clientX:r.left+r.width/2,clientY:r.top+r.height/2,bubbles:true}));})()`);
     check('双击事件落在画布时仍按坐标命中节点，不误建新节点', await ev(`document.querySelector('.mm-edit')?.value==='节点 A' && Mindmap.state().cur.nodes.length===2`), await ev(`JSON.stringify({value:document.querySelector('.mm-edit')?.value,nodes:Mindmap.state().cur.nodes.length})`));
@@ -232,8 +239,8 @@ const main = async () => {
     await key('Enter','Enter','\r',13);
     check('Enter 保留编辑模式并换行', await ev(`!!document.querySelector('.mm-edit') && document.querySelector('.mm-edit').value.endsWith(${JSON.stringify('\n')})`), await ev(`JSON.stringify({value:document.querySelector('.mm-edit')?.value,focus:document.activeElement.className})`));
     await key('Enter','Enter',null,13,2);
-    check('保存后节点显示 Markdown 与公式，源码和尺寸一起落盘', await ev(`(() => {const n=Mindmap.findNode('a').n,d=JSON.parse(localStorage.getItem('mm_map_ui-flat'));return !!document.querySelector('.mm-node[data-id="a"] h1') && document.querySelectorAll('.mm-node[data-id="a"] .katex').length===2 && n.text===${JSON.stringify(richSource+'\n')} && d.nodes.find(n=>n.id==='a').text===n.text && d.size.a.h>60;})()`), await ev(`JSON.stringify({text:Mindmap.findNode('a').n.text,size:Mindmap.state().cur.size.a,math:document.querySelectorAll('.mm-node[data-id="a"] .katex').length})`));
-    await ev(`Mindmap.open('ui-flat')`);
+    check('保存后节点显示 Markdown 与公式，源码和尺寸一起落盘', await ev(`(() => {const n=Mindmap.findNode('a').n,d=JSON.parse(localStorage.getItem('mm_map_${UI_MAP}'));return !!document.querySelector('.mm-node[data-id="a"] h1') && document.querySelectorAll('.mm-node[data-id="a"] .katex').length===2 && n.text===${JSON.stringify(richSource+'\n')} && d.nodes.find(n=>n.id==='a').text===n.text && d.size.a.h>60;})()`), await ev(`JSON.stringify({text:Mindmap.findNode('a').n.text,size:Mindmap.state().cur.size.a,math:document.querySelectorAll('.mm-node[data-id="a"] .katex').length})`));
+    await ev(`Mindmap.open('${UI_MAP}')`);
     check('重新打开仍保留 Markdown 源码和公式渲染', await ev(`Mindmap.findNode('a').n.text===${JSON.stringify(richSource+'\n')} && document.querySelectorAll('.mm-node[data-id="a"] .katex').length===2`));
     await doubleAt(await rectOf('.mm-node[data-id="b"]'));
     await ev('document.querySelector(".mm-edit").select()'); await send('Input.insertText',{text:'$frac$'}); await ev('document.querySelector(".mm-edit").setSelectionRange(5,5)'); await key('Tab','Tab',null,9);
@@ -275,13 +282,13 @@ const main = async () => {
     if (png) writeFileSync(new URL('../tools/flat-export-preview.png',import.meta.url),Buffer.from(png.split(',')[1],'base64'));
     const capture = await send('Page.captureScreenshot',{format:'png'});
     writeFileSync(new URL('../tools/flat-ui-preview.png',import.meta.url),Buffer.from(capture.data,'base64'));
-    await ev(`Mindmap.open('ui-flat')`); await sleep(150);
+    await ev(`Mindmap.open('${UI_MAP}')`); await sleep(150);
     const rightNode = async id => { const r=await rectOf('.mm-node[data-id="'+id+'"]'); await send('Input.dispatchMouseEvent',{type:'mousePressed',x:r.x,y:r.y,button:'right',buttons:2,clickCount:1}); await send('Input.dispatchMouseEvent',{type:'mouseReleased',x:r.x,y:r.y,button:'right',buttons:0,clickCount:1}); };
     const beforeMenu=await ev(`JSON.stringify(Mindmap.state().cur)`);
     await rightNode('a');
     check('真实右键节点出现样式和提问菜单，不移动节点或建立连线',await ev(`!document.getElementById('mmNodeMenu').classList.contains('hidden') && document.querySelector('[data-mm="node-ask"]') && !document.querySelector('.mm-tools [data-mm="style"]') && JSON.stringify(Mindmap.state().cur)===${JSON.stringify(beforeMenu)}`));
-    await clickSel('[data-mm="node-style"]');
-    check('节点右键样式入口打开原样式面板',await ev(`!document.getElementById('mmPanel').classList.contains('hidden') && Mindmap.state().sel==='a'`));
+    const colorMenu=await rectOf('#mmNodeMenu [data-submenu="node-color"]');await mouse('mouseMoved',colorMenu.x,colorMenu.y,0,0);
+    check('节点颜色悬停展开子菜单，不打开侧栏',await ev(`document.getElementById('mmPanel').classList.contains('hidden') && getComputedStyle(document.querySelector('#mmNodeMenu [data-submenu="node-color"] .mm-ctx-submenu')).display!=='none' && Mindmap.state().sel==='a'`));
     await rightNode('a'); await clickSel('[data-mm="node-ask"]');
     check('提问打开对应节点侧栏并关闭样式面板',await ev(`!document.getElementById('mmAI').classList.contains('hidden') && document.getElementById('mmPanel').classList.contains('hidden') && document.getElementById('mmAIContext').textContent.includes('当前节点')`));
     await ev(`window.__realFetch=window.fetch;window.fetch=async(url,options)=>{window.__chatPayload=JSON.parse(options.body);return {ok:true,json:async()=>({reply:'**测试回答**：$x^2$'})};}`);
