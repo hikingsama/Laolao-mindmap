@@ -342,7 +342,7 @@ function bootAll() {
   b.sandbox.showBanner = (msg) => { b.banners.push(String(msg == null ? "" : msg)); return realShowBanner(msg); };
   b.sandbox.window.showBanner = b.sandbox.showBanner;
   b.localStorage.setItem("mm_map_legacy-map", JSON.stringify(LEGACY));
-  b.localStorage.setItem("mm_index_v1", JSON.stringify([{ id: "legacy-map", title: "旧导图", updated: Date.now(), nodes: 9, version: 0, local: true, dirty: false }]));
+  b.localStorage.setItem("mm_index_v1", JSON.stringify([{ id: "legacy-map", title: "旧导图", updated: Date.now(), nodes: 8, version: 0, local: true, dirty: false }]));
   b.Mindmap = loadInto(b.sandbox, "vendor/mindmap.js", b.sandbox.window);
   return b;
 }
