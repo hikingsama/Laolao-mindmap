@@ -1,0 +1,58 @@
+{
+  "396a4147-a236-48a6-bf07-bb06bfedce60": {
+    "id": "396a4147-a236-48a6-bf07-bb06bfedce60",
+    "name": "01-07 0201导数的概念.pdf",
+    "mime": "application/pdf",
+    "bytes": 646246,
+    "sourceMap": "701dfc4c-df5e-427e-894d-68354c38c42e"
+  },
+  "ec035cd5-c455-4123-8834-9db71c5d81a3": {
+    "id": "ec035cd5-c455-4123-8834-9db71c5d81a3",
+    "name": "02-05 0202函数的求导法则.pdf",
+    "mime": "application/pdf",
+    "bytes": 403666,
+    "sourceMap": "701dfc4c-df5e-427e-894d-68354c38c42e"
+  },
+  "3a42f336-c062-4152-a14a-b7a5c2bac84e": {
+    "id": "3a42f336-c062-4152-a14a-b7a5c2bac84e",
+    "name": "01-04 0203高阶导数.pdf",
+    "mime": "application/pdf",
+    "bytes": 332147,
+    "sourceMap": "701dfc4c-df5e-427e-894d-68354c38c42e"
+  },
+  "fa001e5d-9835-4cb6-8891-013038667acd": {
+    "id": "fa001e5d-9835-4cb6-8891-013038667acd",
+    "name": "02-01 0204隐函数的求导法.pdf",
+    "mime": "application/pdf",
+    "bytes": 279555,
+    "sourceMap": "701dfc4c-df5e-427e-894d-68354c38c42e"
+  },
+  "bae9b89b-5f99-4443-b0ac-6042cbdb7b9c": {
+    "id": "bae9b89b-5f99-4443-b0ac-6042cbdb7b9c",
+    "name": "02-07 020501参数方程的求导法.pdf",
+    "mime": "application/pdf",
+    "bytes": 694464,
+    "sourceMap": "701dfc4c-df5e-427e-894d-68354c38c42e"
+  },
+  "c68681ab-2e95-4f97-98f5-9c37ebafb089": {
+    "id": "c68681ab-2e95-4f97-98f5-9c37ebafb089",
+    "name": "03-01 0206参数方程的求导法.pdf",
+    "mime": "application/pdf",
+    "bytes": 257273,
+    "sourceMap": "701dfc4c-df5e-427e-894d-68354c38c42e"
+  },
+  "24b7b0b6-8fe5-4fdf-83ea-0cb2c4a92bca": {
+    "id": "24b7b0b6-8fe5-4fdf-83ea-0cb2c4a92bca",
+    "name": "04-06 0207函数的微分.pdf",
+    "mime": "application/pdf",
+    "bytes": 302294,
+    "sourceMap": "701dfc4c-df5e-427e-894d-68354c38c42e"
+  },
+  "b4ae528a-c950-48bd-8fa4-dd4f8e0b8f1c": {
+    "id": "b4ae528a-c950-48bd-8fa4-dd4f8e0b8f1c",
+    "name": "05-01 0208第二章单元总结.pdf",
+    "mime": "application/pdf",
+    "bytes": 446825,
+    "sourceMap": "701dfc4c-df5e-427e-894d-68354c38c42e"
+  }
+}

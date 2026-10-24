@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { createServer } from "node:net";
+import { isDeepStrictEqual } from "node:util";
 
 /* ---------------- 参数 ---------------- */
 const argv = process.argv.slice(2);
@@ -235,7 +236,7 @@ try{
  const finished=await ev('JSON.stringify(Mindmap.state().cur)');await undo();
  check('One undo removes only second question batch',JSON.stringify(await ev('Mindmap.state().cur.nodes.map(n=>n.id)'))===JSON.stringify(firstIDs));await undo();
  check('Earlier streamed batch also undoes in one step',await ev('Mindmap.state().cur.nodes.length===2 && Mindmap.state().cur.edges.length===0'));await redo();await redo();
- check('Redo restores both complete batches',await ev('JSON.stringify(Mindmap.state().cur)')===finished);
+ check('Redo restores both complete batches',isDeepStrictEqual(JSON.parse(await ev('JSON.stringify(Mindmap.state().cur)')),JSON.parse(finished)));
  await ev('MMFiles.save()');
  check('Explicit save persists generated nodes and links',await ev("(async()=>{const m=await(await fetch('/api/maps/direct-map')).json();return m.nodes.length===11 && m.edges.some(e=>e.label==='递进')})()"));
  await ev("MMAI.close();MMAI.open('a')");await sleep(300);

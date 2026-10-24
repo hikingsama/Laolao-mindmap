@@ -55,6 +55,7 @@
           <input id="mmAPIModel" name="model" type="text" spellcheck="false" autocapitalize="none" placeholder="填写平台提供的模型 ID" aria-describedby="mmAPIModelHelp">
           <small id="mmAPIModelHelp">从平台的模型说明中复制准确名称；不同服务商的模型名称不通用。</small>
         </div>
+        <div class="mm-api-field"><label for="mmAPIMaxOutput">单次输出上限（tokens）</label><input id="mmAPIMaxOutput" type="number" min="1024" max="131072" step="1" value="32768" required><small>默认32768。填写所选模型支持的值；平台可能另有限制，token不是字数。各环节可使用更小预算，长任务仍会分批处理。</small></div>
         <p class="mm-api-protocol">接口格式：OpenAI 兼容聊天接口。配置仅供本 AI 副本使用，密钥以明文保存在本机 .local 文件夹中。</p>
       </div>
       <div class="mm-api-footer">
@@ -72,7 +73,7 @@
 
   const $ = id => document.getElementById(id);
   const form = $("mmAPISettingsForm"), provider = $("mmAPIProvider");
-  const baseURL = $("mmAPIBaseURL"), apiKey = $("mmAPIKey"), model = $("mmAPIModel");
+  const baseURL = $("mmAPIBaseURL"), apiKey = $("mmAPIKey"), model = $("mmAPIModel"),maxOutput = $("mmAPIMaxOutput");
   const toggle = $("mmAPIKeyToggle");
   const testButton=$("mmAPITest"),saveButton=$("mmAPISave"),clearButton=$("mmAPIKeyClear"),result=$("mmAPIResult");
   let drafts=null,selected="deepseek",revision=null,session=0,pending=null,operation="",loaded=false;
@@ -80,7 +81,7 @@
   function report(message,kind="") {result.textContent=message;result.dataset.kind=kind;}
   function busy(kind="") {
     operation=kind;
-    for(const el of [provider,baseURL,apiKey,model,toggle,clearButton])el.disabled=!!kind;
+    for(const el of [provider,baseURL,apiKey,model,maxOutput,toggle,clearButton])el.disabled=!!kind;
     testButton.disabled=saveButton.disabled=!!kind || !loaded;
     $("mmAPISettingsClose").disabled=$("mmAPISettingsCancel").disabled=kind==="save";
     testButton.textContent=kind==="test"?"测试中…":"测试连接";
@@ -96,16 +97,16 @@
   }
   function accept(config) {
     revision=config.revision;selected=provider.value=config.activeProvider;
-    drafts=Object.fromEntries(Object.keys(providers).map(id=>{const p=config.profiles[id];return [id,{url:p.baseURL,model:p.model,key:"",hasKey:p.hasKey,clearKey:false}];}));
+    drafts=Object.fromEntries(Object.keys(providers).map(id=>{const p=config.profiles[id];return [id,{url:p.baseURL,model:p.model,maxOutputTokens:p.maxOutputTokens??32768,key:"",hasKey:p.hasKey,clearKey:false}];}));
     loaded=true;showProvider();
   }
-  function remember() {if(!drafts)return;Object.assign(drafts[selected],{url:baseURL.value,model:model.value,key:apiKey.value});}
+  function remember() {if(!drafts)return;Object.assign(drafts[selected],{url:baseURL.value,model:model.value,maxOutputTokens:Number(maxOutput.value),key:apiKey.value});}
   function keyState() {
     const d=drafts[selected];
     apiKey.placeholder=d.clearKey?"保存后将删除旧密钥；也可填写新密钥":d.hasKey?"已保存密钥；留空保留，填写可替换":"填写对应平台的 API Key";
     clearButton.hidden=!d.hasKey || d.clearKey;
   }
-  const payload=d=>({baseURL:d.url,model:d.model,apiKey:d.key,clearKey:d.clearKey});
+  const payload=d=>({baseURL:d.url,model:d.model,maxOutputTokens:d.maxOutputTokens,apiKey:d.key,clearKey:d.clearKey});
 
   function concealKey() {
     apiKey.type = "password";
@@ -116,7 +117,7 @@
     const draft = drafts[selected];
     baseURL.value = draft.url;
     apiKey.value = draft.key;
-    model.value = draft.model;
+    model.value = draft.model;maxOutput.value=draft.maxOutputTokens;
     keyState();
     concealKey();
   }
@@ -139,7 +140,7 @@
   button.addEventListener("pointerdown", event => event.preventDefault());
   button.addEventListener("click", async () => {
     if (dialog.open || document.querySelector("dialog[open]")) return;
-    drafts = Object.fromEntries(Object.entries(providers).map(([id, preset]) => [id, { url: preset.url, key: "", model: "",hasKey:false,clearKey:false }]));
+    drafts = Object.fromEntries(Object.entries(providers).map(([id, preset]) => [id, { url: preset.url, key: "", model: "",maxOutputTokens:32768,hasKey:false,clearKey:false }]));
     selected = provider.value = "deepseek";
     showProvider();
     dialog.showModal();
@@ -156,7 +157,7 @@
     report("修改后点击保存配置才会生效。测试连接不会自动保存。");
   });
   clearButton.addEventListener("click",()=>{drafts[selected].clearKey=true;apiKey.value="";drafts[selected].key="";concealKey();keyState();report("旧密钥将在保存后删除；取消关闭则保留原配置。");});
-  for(const field of [baseURL,apiKey,model])field.addEventListener("input",()=>report("有未保存的修改。测试连接使用当前填写内容，不会自动保存。"));
+  for(const field of [baseURL,apiKey,model,maxOutput])field.addEventListener("input",()=>report("有未保存的修改。测试连接使用当前填写内容，不会自动保存。"));
   toggle.addEventListener("click", () => {
     const visible = apiKey.type === "password";
     apiKey.type = visible ? "text" : "password";
@@ -173,7 +174,7 @@
     try {
       const reply=await request(kind==="save"?"/api/ai/config":"/api/ai/test",{method:kind==="save"?"PUT":"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(data)},controller.signal);
       if(session!==token || !dialog.open)return;
-      if(kind==="save"){accept(reply);report("配置已保存到本机，将用于后续的节点提问。","success");window.dispatchEvent(new Event("mm:ai-config-saved"));}
+      if(kind==="save"){accept(reply);report("配置已保存到本机，将用于后续的节点提问和 AI 导图生成。","success");window.dispatchEvent(new Event("mm:ai-config-saved"));}
       else report(reply.message+" 用时 "+(reply.latencyMs/1000).toFixed(1)+" 秒。测试没有保存配置。","success");
     }catch(error){if(session===token && error.name!=="AbortError")report(error.message,"error");}
     finally{if(session===token && dialog.open){pending=null;busy();}}

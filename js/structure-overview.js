@@ -1,0 +1,22 @@
+(function(root){
+ 'use strict';
+ const T=typeof module==='object' && module.exports?require('./topic-layout.js'):root.MMTopicLayout,L=typeof module==='object' && module.exports?require('./module-learning.js'):root.MMModuleLearning;
+ const plain=s=>String(s || '').replace(/\$\$[\s\S]*?\$\$/g,'').replace(/\\\[[\s\S]*?\\\]/g,'').replace(/\$([^$\n]+)\$/g,(_,v)=>/\\|[_^{}]/.test(v)?'相关表达式':v).replace(/\\\([\s\S]*?\\\)/g,'相关表达式').replace(/\\[A-Za-z]+(?:\{[^}]*\})?/g,'').replace(/[#*_`]/g,'').replace(/\s+/g,' ').trim();
+ function build(map){
+   const d=T.describe(map),learning=L?.summary(map,d.groups),text=d.nodes.filter(n=>!n.pdf && !n.image && !n.mapLink),rootNode=d.center;
+   if(!rootNode)return{nodes:[],edges:[],bounds:{x:0,y:0,w:0,h:0}};
+   const groups=d.groups.length?d.groups:text.filter(n=>n.id!==rootNode.id && n.layoutRole!=='document').map(n=>({key:n.id,title:T.title(n),center:n,nodes:[n]})),visible=groups.some(g=>g.reviewed)?groups:groups.slice(0,12),extra=groups.some(g=>g.reviewed)?[]:groups.slice(12);
+   const cards=[],edges=[],rootId='overview-root';
+   const note=n=>plain(n.brief).slice(0,280),head=n=>plain(T.title(n));
+   cards.push({id:rootId,title:plain(d.rootView?.title || map.title || head(rootNode)),text:plain(d.rootView?.summary) || note(rootNode) || (groups.length?'包含'+groups.map(g=>plain(g.title)).slice(0,5).join('、')+(groups.length>5?'等主题':'')+'。':'查看本节点的详细内容。'),nodeIds:d.rootView?.nodeIds || [rootNode.id],centerId:rootNode.id,color:rootNode.color || '#637747',root:true,...(learning?.modules?{learningSummary:learning}:{}),w:270,h:156,x:-135,y:-78});
+   function card(g,i){const ids=g.nodes.map(n=>n.id),stored=(Array.isArray(map.topicGroups)?map.topicGroups:[]).find(v=>v.key===g.key || v.nodeIds?.includes(g.center.id)),titles=[...new Set(g.nodes.filter(n=>n.id!==g.center.id).map(head).filter(t=>t && t!==plain(g.title)))];return{id:'overview-'+i,title:(Number.isInteger(g.order)?String(g.order).padStart(2,'0')+' · ':'')+plain(g.title),...(g.reviewed && L?{learning:{key:g.key,...L.state(map,g)}}:{}),...(Number.isInteger(g.order)?{order:g.order}:{}),text:plain(g.summary) || note(g.center) || (titles.length?'涉及'+titles.slice(0,3).join('、')+(titles.length>3?'等内容。':'。'):'查看本主题的详细内容。'),nodeIds:ids,centerId:g.center.id,color:stored?.color || g.center.color || T.palette[i%T.palette.length],w:300,h:166,level:2,children:(g.subgroups || []).map((c,j)=>({id:'overview-'+i+'-'+j,title:plain(c.title),text:plain(c.summary),nodeIds:c.nodeIds,centerId:c.centerId,color:stored?.color || g.center.color || T.palette[i%T.palette.length],w:280,h:144,level:3}))};}
+   const branches=visible.map(card);if(extra.length)branches.push({id:'overview-more',title:'其他主题（'+extra.length+'项）',text:extra.slice(0,6).map(g=>plain(g.title)).join('、')+(extra.length>6?'等':'')+'。',nodeIds:extra.flatMap(g=>g.nodes.map(n=>n.id)),centerId:extra[0].center.id,color:'#7c8d59',w:300,h:166});
+   for(const n of [...cards,...branches,...branches.flatMap(n=>n.children || [])])n.h=Math.max(n.h,65+Math.ceil(n.title.length/14)*28+Math.ceil(n.text.length/17)*25)+(n.learning?(n.learning.expanded?216:52):n.learningSummary?64:0);
+   cards[0].y=-cards[0].h/2;
+   for(const n of branches)n.span=Math.max(n.h,(n.children || []).reduce((v,c)=>v+c.h+48,0)-48);
+   const split=Math.ceil(branches.length/2),left=branches.slice(0,split),right=branches.slice(split);
+   for(const [side,list]of [['left',left],['right',right]]){let top=-list.reduce((v,n)=>v+n.span+64,0)/2+32;for(let i=0;i<list.length;i++){const n=list[i];n.x=side==='left'?-650:350;n.y=top+(n.span-n.h)/2;cards.push(n);const fromSide=side==='left'?'w':'e',toSide=side==='left'?'e':'w';edges.push({id:'link-'+n.id,from:{node:rootId,side:fromSide,offset:(i+1)/(list.length+1)},to:{node:n.id,side:toSide},dir:'fwd',style:'curve',color:n.color});let childY=top;for(const [j,c]of (n.children || []).entries()){c.x=side==='left'?-1100:820;c.y=childY;cards.push(c);edges.push({id:'link-'+c.id,from:{node:n.id,side:fromSide,offset:(j+1)/(n.children.length+1)},to:{node:c.id,side:toSide},dir:'fwd',style:'curve',color:c.color});childY+=c.h+48;}top+=n.span+64;}}
+   const b=T.extent(cards);return{nodes:cards,edges,readingOrder:branches.map(n=>n.id),bounds:{x:b.x-40,y:b.y-40,w:b.w+80,h:b.h+80}};
+ }
+ const api={build,plain};if(typeof module==='object' && module.exports)module.exports=api;else root.MMStructureOverview=api;
+})(typeof window==='object'?window:globalThis);

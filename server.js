@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Local server. Default port: 8794. MM_PORT can override it.
+// Local server. Default port: 8796. MM_PORT can override it.
 // Tests must use temporary storage and a separate port.
 "use strict";
 const http = require("http");
@@ -8,7 +8,7 @@ const path = require("path");
 const ai = require("./js/ai-server.cjs");
 const mapFiles = require("./js/map-files.cjs");
 
-const PORT = Number(process.env.MM_PORT || 8794);
+const PORT = Number(process.env.MM_PORT || 8796);
 const HOST = "127.0.0.1";
 const ROOT = __dirname;
 
@@ -31,6 +31,7 @@ const TYPES = {
 };
 
 const server = http.createServer((req, res) => {
+  if(req.url === "/api/library") return require("./js/map-library.cjs").handle(req,res,PORT);
   if (req.url === "/api/maps" || req.url.startsWith("/api/maps/")) return mapFiles.handle(req,res,PORT);
   if (req.url.startsWith("/api/ai/")) return ai.handle(req, res, PORT);
   let rel;
@@ -70,3 +71,6 @@ server.listen(PORT, HOST, () => {
   console.log("捞捞思维导图（独立版）已启动 → http://" + HOST + ":" + PORT);
   console.log("按 Ctrl+C 停止");
   });
+
+// The console launcher owns shutdown; direct `node server.js` remains supported.
+module.exports=server;

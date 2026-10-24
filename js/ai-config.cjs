@@ -1,7 +1,7 @@
 "use strict";
 const fs = require("node:fs"), path = require("node:path"), crypto = require("node:crypto");
 const PRESETS = {deepseek:"https://api.deepseek.com",glm:"https://open.bigmodel.cn/api/paas/v4",kimi:"https://api.moonshot.cn/v1",custom:""};
-const IDS = Object.keys(PRESETS);
+const IDS = Object.keys(PRESETS),capacity=require("./capacity.js");
 function fail(message, status=400) { return Object.assign(new Error(message), {status}); }
 function text(value, max, label) {
   if(typeof value!=="string" || value.length>max || /[\x00-\x1f\x7f]/.test(value)) throw fail(label+"格式不正确");
@@ -33,14 +33,15 @@ exports.createService = ({configFile=process.env.MM_AI_CONFIG_FILE || path.join(
     }catch{throw fail("本机 AI 配置文件损坏；为避免覆盖，请先备份并检查该文件",500);}
   }
   function publicConfig(config) {
-    return {activeProvider:config.activeProvider,revision:config.revision,profiles:Object.fromEntries(IDS.map(id=>{const p=config.profiles[id];return [id,{baseURL:p.baseURL,model:p.model,hasKey:!!p.apiKey}];}))};
+    return {activeProvider:config.activeProvider,revision:config.revision,profiles:Object.fromEntries(IDS.map(id=>{const p=config.profiles[id];return [id,{baseURL:p.baseURL,model:p.model,maxOutputTokens:capacity.outputTokens(p),hasKey:!!p.apiKey}];}))};
   }
   function profile(input,old) {
     if(!input || typeof input!=="object" || Array.isArray(input))throw fail("服务商配置格式不正确");
     const baseURL=address(input.baseURL),model=text(input.model,200,"模型名称"),typedKey=text(input.apiKey===undefined?"":input.apiKey,4096,"密钥");
     if(input.clearKey!==undefined && typeof input.clearKey!=="boolean")throw fail("清除密钥选项格式不正确");
     if(!typedKey && !input.clearKey && old.apiKey && baseURL!==address(old.baseURL))throw fail("接口地址已改变，请重新填写密钥或先清除已保存密钥");
-    return {baseURL,model,apiKey:typedKey || (input.clearKey?"":old.apiKey)};
+    const maxOutputTokens=input.maxOutputTokens??old.maxOutputTokens??capacity.defaultOutputTokens;if(!Number.isInteger(maxOutputTokens)||maxOutputTokens<capacity.minOutputTokens||maxOutputTokens>capacity.maxOutputTokens)throw fail("单次输出上限应为1024–131072之间的整数；实际范围还需模型支持");
+    return {baseURL,model,maxOutputTokens,apiKey:typedKey || (input.clearKey?"":old.apiKey)};
   }
   function save(input) {
     const old=load();if(input.revision!==old.revision)throw fail("配置已被另一个窗口修改，请关闭后重新打开再保存",409);
@@ -72,10 +73,10 @@ exports.createService = ({configFile=process.env.MM_AI_CONFIG_FILE || path.join(
   return {active() {
     const config=load(),provider=config.activeProvider,p=config.profiles[provider];
     if(!p.baseURL || !p.model || !p.apiKey)throw fail("请先在顶部大模型 API 接入中填写并保存完整配置",503);
-    return {provider,baseURL:address(p.baseURL),model:p.model,apiKey:p.apiKey};
+    return {provider,baseURL:address(p.baseURL),model:p.model,maxOutputTokens:capacity.outputTokens(p),apiKey:p.apiKey};
   },status() {
     const config=load(),p=config.profiles[config.activeProvider];
-    return {available:!!(p.baseURL && p.model && p.apiKey),provider:config.activeProvider,model:p.model};
+    return {available:!!(p.baseURL && p.model && p.apiKey),provider:config.activeProvider,model:p.model,maxOutputTokens:capacity.outputTokens(p)};
   },async handle(req,res,port) {
     if(!["/api/ai/config","/api/ai/test"].includes(req.url))return false;
     if(!["127.0.0.1:"+port,"localhost:"+port].includes(req.headers.host) || req.headers.origin && !["http://127.0.0.1:"+port,"http://localhost:"+port].includes(req.headers.origin)){req.resume();json(res,403,{error:"仅允许本机页面访问"});return true;}

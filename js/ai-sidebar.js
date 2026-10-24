@@ -1,7 +1,7 @@
 (() => {
   "use strict";
   const sidebar=document.createElement('aside');sidebar.id='mmAI';sidebar.className='mm-ai hidden';sidebar.setAttribute('aria-label','节点 AI 对话');
-  sidebar.innerHTML=`<div class="mm-ai-resizer" role="separator" tabindex="0" aria-label="调整提问侧栏宽度" aria-orientation="vertical" title="拖动调宽；方向键微调，双击恢复默认"></div><div class="mm-ai-heading"><b>✦ 节点提问</b><button class="mm-b" id="mmAIClose" aria-label="关闭 AI 对话">✕</button></div><div id="mmAIContext"></div><div id="mmAIMessages" role="log" aria-live="polite"></div><form id="mmAIForm"><details class="mm-ai-options"><summary>回答方向与参考范围</summary><label>本次方向<input id="mmAIDirection" type="text" maxlength="2000" placeholder="自动判断；也可指定解释依据、举例或另一种解法"></label><label>参考范围<select id="mmAIReferenceScope"><option value="project">当前树与相关树</option><option value="tree">仅当前树</option><option value="node">仅当前节点</option></select></label></details><textarea id="mmAIInput" rows="3" placeholder="针对这个节点提问，回答将直接生成导图…" aria-label="向 AI 提问" maxlength="10000"></textarea><div class="mm-ai-send"><span id="mmAIStatus" role="status">AI 模型尚未接入</span><button class="mm-b" id="mmAIStop" type="button" hidden>停止</button><button class="mm-b" id="mmAISend" type="submit">发送</button></div></form>`;
+  sidebar.innerHTML=`<div class="mm-ai-resizer" role="separator" tabindex="0" aria-label="调整提问侧栏宽度" aria-orientation="vertical" title="拖动调宽；方向键微调，双击恢复默认"></div><div class="mm-ai-heading"><b>✦ 节点提问</b><button class="mm-b" id="mmAIClose" aria-label="关闭 AI 对话">✕</button></div><div id="mmAIContext"></div><div id="mmAIMessages" role="log" aria-live="polite"></div><div id="mmAIUsage"></div><form id="mmAIForm"><details class="mm-ai-options"><summary>回答方向与参考范围</summary><label>本次方向<input id="mmAIDirection" type="text" maxlength="2000" placeholder="自动判断；也可指定解释依据、举例或另一种解法"></label><label>参考范围<select id="mmAIReferenceScope"><option value="project">当前树与相关树</option><option value="tree">仅当前树</option><option value="node">仅当前节点</option></select></label></details><textarea id="mmAIInput" rows="3" placeholder="针对这个节点提问，回答将直接生成导图…" aria-label="向 AI 提问" maxlength="${window.MMCapacity.inputChars}"></textarea><div class="mm-ai-send"><span id="mmAIStatus" role="status">AI 模型尚未接入</span><button class="mm-b" id="mmAIStop" type="button" hidden>停止</button><button class="mm-b" id="mmAISend" type="submit">发送</button></div></form>`;
   document.body.appendChild(sidebar);
   const $=id=>document.getElementById(id),esc=window.MMContent.escape;
   let target=null,messages=[],pending=null,active=null,statusVersion=0;
@@ -9,7 +9,7 @@
   function draft(text){try{localStorage.setItem(key()+'_draft',text);}catch{}}
   function save(run=active){
     if(!run?.record || window.Mindmap.state().cur?.id!==run.map)return;
-    Object.assign(run.record,{answer:run.message.content,nodeCount:run.message.nodeCount || 0,generatedIds:run.message.generatedIds || [],workflow:run.message.workflow,transfer:run.message.transfer,color:run.message.color || run.batch.color || run.record.color,attachment:run.user.attachment,error:run.message.error || "",updatedAt:Date.now()});
+    Object.assign(run.record,{answer:run.message.content,nodeCount:run.message.nodeCount || 0,generatedIds:run.message.generatedIds || [],workflow:run.message.workflow,transfer:run.message.transfer,color:run.message.color || run.batch.color || run.record.color,attachment:run.user.attachment,inspection:run.message.inspection,error:run.message.error || "",updatedAt:Date.now()});
     window.Mindmap.saveAIRecord(run.record,run.ownership);
   }
   function importLegacy(map){
@@ -41,7 +41,7 @@
   function cancelActive(reason='已停止，已完成的节点已保留'){
     const controller=pending,run=active;if(!controller)return;
     pending=null;active=null;controller.abort();if(run)window.Mindmap.endAIBatch(run.batch);
-    if(run){run.message.generating=false;run.message.incomplete=true;run.record.status='stopped';if(run.message.workflow)run.message.workflow.phase='stopped';if(target?.map===run.map && target?.node===run.node){draft(run.question);$('mmAIInput').value=run.question;save(run);render();}}
+    if(run){run.usage?.finish('stopped');run.message.generating=false;run.message.incomplete=true;run.record.status='stopped';if(run.message.workflow)run.message.workflow.phase='stopped';if(target?.map===run.map && target?.node===run.node){draft(run.question);$('mmAIInput').value=run.question;save(run);render();}}
     busy(false);$('mmAIStatus').textContent=reason;
   }
   async function request(url,options){
@@ -60,7 +60,7 @@
       let data=await request('/api/ai/chat',{method:'POST',headers:{'Content-Type':'application/json'},signal:controller.signal,body:JSON.stringify({...payload,requestId:job})});
       if(data.job){job=data.job;const started=Date.now();let retries=0;
         while(data.status==='running'){
-          onProgress(data);if(Date.now()-started>270000)throw new Error('AI 回答等待超时，请稍后重试。');
+          onProgress(data);if(Date.now()-started>window.MMCapacity.pollTimeoutMs)throw new Error('AI 回答等待超时，请稍后重试。');
           if(pending===controller)$('mmAIStatus').textContent=`${data.stage || '正在生成导图'} · ${active?.message.nodeCount || 0} 个知识点 · ${Math.floor((Date.now()-started)/1000)} 秒`;
           await delay(controller.signal);
           try{data=await request('/api/ai/jobs/'+encodeURIComponent(job),{signal:controller.signal});retries=0;}catch(e){if(e.name==='AbortError' || ++retries>=3 || !e.message.startsWith('连接本地'))throw e;}
@@ -84,7 +84,7 @@
     for(const m of messages)if(m.generating){m.generating=false;m.incomplete=true;const record=map.aiMemory.turns.find(t=>t.id===m.turnId);if(record){record.status='stopped';record.workflow={...record.workflow,phase:'stopped'};window.Mindmap.saveAIRecord(record);}}
     $('mmAIDirection').value='';$('mmAIReferenceScope').value='project';
     window.dispatchEvent(new Event('mm:close-shortcuts'));sidebar.classList.remove('hidden');document.body.classList.add('mm-ai-open');
-    refreshStatus();const ctx=context();$('mmAIContext').innerHTML='<span>当前节点：'+esc(ctx.media?.name || ctx.node.text.replace(/\s+/g,' ').slice(0,100) || '空白节点')+'</span><span class="mm-ai-tree-label">'+esc(info.treeTitle)+' · 同树 '+info.turns.filter(t=>t.treeId===info.treeId).length+' 次提问记录</span>';render();window.dispatchEvent(new Event('resize'));$('mmAIInput').focus();
+    $('mmAIUsage').replaceChildren();refreshStatus();const ctx=context();$('mmAIContext').innerHTML='<span>当前节点：'+esc(ctx.media?.name || ctx.node.text.replace(/\s+/g,' ').slice(0,100) || '空白节点')+'</span><span class="mm-ai-tree-label">'+esc(info.treeTitle)+' · 同树 '+info.turns.filter(t=>t.treeId===info.treeId).length+' 次提问记录</span>';render();window.dispatchEvent(new Event('resize'));$('mmAIInput').focus();
   }
   $('mmAIClose').onclick=close;$('mmAIStop').onclick=()=>cancelActive();
   $('mmAIInput').addEventListener('input',()=>{if(target)draft($('mmAIInput').value);});
@@ -102,6 +102,7 @@
   }
   $('mmAIForm').addEventListener('submit',async e=>{
     e.preventDefault();const input=$('mmAIInput'),question=input.value.trim();if(!question || pending)return;
+    window.dispatchEvent(new Event('mm:ai-interrupt'));
     let ctx;try{ctx=context();}catch(error){$('mmAIStatus').textContent=error.message;return;}
     ++statusVersion;draft(question);const controller=new AbortController();pending=controller;busy(true);
     const map=window.Mindmap.state().cur,scope=$('mmAIReferenceScope').value,info=window.MMAIMemory.collect(map,target.node,question,{scope});
@@ -112,18 +113,18 @@
     const record={id:turnId,treeId:info.treeId,sourceId:target.node,sourceTitle:window.MMAIMemory.title(window.Mindmap.findNode(target.node).n),parentTurnId:parent?.id || null,number:turn,question,answer:'',status:'running',color,createdAt:Date.now(),workflow:{phase:'preparing',planningStatus:'pending',sources:[]}};
     const conversation=[...info.history,{role:'user',content:question}].slice(-20);messages=window.MMAIMemory.messages({...info,turns:[...info.turns,record]});
     const message=messages.at(-1),user=messages.at(-2);message.color=color;
-    const run={controller,message,user,record,ownership:info,map:target.map,node:target.node,question,batch:{turnId,treeId:info.treeId,color},entryText:`第${turn}次提问：${question.replace(/\s+/g,' ').slice(0,160)}`};active=run;
+    const run={controller,message,user,record,ownership:info,map:target.map,node:target.node,question,batch:{turnId,treeId:info.treeId,color},entryText:`第${turn}次提问：${question.replace(/\s+/g,' ').slice(0,160)}`};active=run;$('mmAIUsage').replaceChildren();run.usage=window.MMAIUsage.attach($('mmAIUsage'),{mapId:run.map});
     save(run);render();input.value='';$('mmAIStatus').textContent='正在准备提问…';
     try{
       const media=await window.MMAIMedia.prepare(ctx.media?{...ctx.media,question}:null,controller.signal,text=>{if(pending===controller)$('mmAIStatus').textContent=text;});
       if(pending!==controller)return;context();
       if(media){user.attachment=media.kind==='pdf'?media.name+(media.allPages?' · 全部 '+media.pageCount+' 页':' · 第'+media.images.map(i=>i.page).join(',')+'页'):media.name;save(run);render();}
-      const data=await runAI({mode:'graph',context:ctx,messages:conversation,workflow:{candidates:info.candidates,history:info.history.slice(-6),direction:$('mmAIDirection').value,scope},...(media?{media}:{})},controller,progress=>{if(pending!==controller)return;if(progress.transfer)message.transfer=progress.transfer;if(progress.workflow && JSON.stringify(message.workflow)!==JSON.stringify(progress.workflow)){message.workflow=progress.workflow;save(run);render();}applyGraph(run,progress.graph);});
-      if(pending!==controller)return;if(data.workflow)message.workflow=data.workflow;applyGraph(run,data.summary,true);
+      const data=await runAI({mode:'graph',context:ctx,messages:conversation,workflow:{candidates:info.candidates,history:info.history.slice(-6),direction:$('mmAIDirection').value,scope},...(media?{media}:{})},controller,progress=>{if(pending!==controller)return;run.usage.update(progress,{stage:progress.stage||'正在生成导图',nodeCount:message.nodeCount||0});if(progress.calls)record.calls=progress.calls;if(progress.transfer)message.transfer=progress.transfer;if(progress.inspection)message.inspection=progress.inspection;if(progress.workflow && JSON.stringify(message.workflow)!==JSON.stringify(progress.workflow)){message.workflow=progress.workflow;save(run);render();}applyGraph(run,progress.graph);});
+      if(pending!==controller)return;if(data.inspection)message.inspection=data.inspection;if(data.workflow)message.workflow=data.workflow;applyGraph(run,data.summary,true);
       if(!message.nodeCount)throw new Error('模型未返回有效节点，请重试。');
-      message.generating=false;delete message.incomplete;record.status='completed';draft('');save(run);render();$('mmAIStatus').textContent=`已在主导图生成 ${message.nodeCount} 个知识点，可直接编辑或撤销。`;
+      window.Mindmap.finalizeAIOrganization(run.batch);message.generating=false;delete message.incomplete;record.status='completed';draft('');save(run);render();$('mmAIStatus').textContent=`已在主导图生成 ${message.nodeCount} 个知识点，可直接编辑或撤销。${data.summary.nodes.some(n=>n.mathWarnings?.length)?' 有公式待检查，请点击节点提示查看。':''}`;
     }catch(error){if(pending===controller){message.generating=false;message.incomplete=true;record.status=error.name==='AbortError'?'stopped':'failed';message.error=error.name==='AbortError'?'':error.message;if(message.workflow)message.workflow.phase=record.status==='failed'?'failed':'stopped';input.value=question;draft(question);save(run);render();$('mmAIStatus').textContent=error.name==='AbortError'?'已停止，已完成的节点已保留':error.message;}}
-    finally{window.Mindmap.endAIBatch(run.batch);if(pending===controller){pending=null;active=null;busy(false);if(!sidebar.classList.contains('hidden'))input.focus();}}
+    finally{run.usage.finish(record.status,{nodeCount:message.nodeCount||0});window.Mindmap.endAIBatch(run.batch);if(pending===controller){pending=null;active=null;busy(false);if(!sidebar.classList.contains('hidden'))input.focus();}}
   });
   sidebar.addEventListener('click',e=>{
     const inspect=e.target.closest('[data-wf-inspect]');if(inspect){const details=[...sidebar.querySelectorAll('[data-wf-details]')].find(d=>d.dataset.wfDetails===inspect.dataset.wfInspect);if(details)details.open=!details.open;return;}

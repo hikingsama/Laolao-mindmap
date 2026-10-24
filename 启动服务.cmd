@@ -1,8 +1,17 @@
 @echo off
 setlocal
-cd /d "%~dp0"
-set "MM_PORT=8794"
-set "MM_STORAGE_DIR=%~dp0storage\maps"
-echo Open http://127.0.0.1:8794/ in your browser.
-node server.js
-pause
+chcp 65001 >nul
+if not defined MM_PORT set "MM_PORT=8796"
+if not defined MM_STORAGE_DIR set "MM_STORAGE_DIR=%~dp0storage\maps"
+where node >nul 2>&1
+if errorlevel 1 (
+  echo Node.js 18 or later is required. Please install Node.js, then try again.
+  pause
+  exit /b 1
+)
+pushd "%TEMP%"
+node "%~dp0tools\launch-service.cjs"
+set "MM_LAUNCH_EXIT=%ERRORLEVEL%"
+popd
+if not "%MM_LAUNCH_EXIT%"=="0" pause
+exit /b %MM_LAUNCH_EXIT%

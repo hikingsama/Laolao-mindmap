@@ -1,0 +1,164 @@
+{
+  "id": "336b33f1-50c2-4e12-bee8-ecfd3519d469",
+  "title": "曲率求解",
+  "layout": "mind",
+  "line": "elbow",
+  "theme": "fresh",
+  "nodes": [
+    {
+      "id": "3csnfdgt4c",
+      "text": "设 $y=x\\ln x-2x$，求曲线在 $x=e$ 处的曲率。\n\n求导得：\n$$\ny'=\\ln x-1,\\qquad y''=\\frac{1}{x}\n$$\n\n曲率公式为：\n$$\n\\kappa=\\frac{|y''|}{\\left(1+(y')^2\\right)^{3/2}}\n$$\n\n在 $x=e$ 处，$y'=0$，$y''=\\frac{1}{e}$，因此：\n$$\n\\boxed{\\kappa=\\frac{1}{e}}\n$$",
+      "children": []
+    },
+    {
+      "id": "6eqqoxkbkj",
+      "text": "# 第2次提问：曲率的几何意义与公式推导\n\n曲率表示单位弧长内切线方向的变化程度：\n$$\\kappa=\\left|\\frac{d\\theta}{ds}\\right|.$$\n对光滑函数图像 $y=f(x)$，沿 $x$ 增大方向，切线角满足 $\\theta=\\arctan(y')$。由链式法则：\n$$\\frac{d\\theta}{dx}=\\frac{(y')'}{1+(y')^2}=\\frac{y''}{1+(y')^2}.$$\n弦长为 $\\Delta\\ell=\\sqrt{(\\Delta x)^2+(\\Delta y)^2}$。当 $\\Delta x\\to0^+$ 时，弧长与弦长之比趋于 $1$，故\n$$\\frac{ds}{dx}=\\lim_{\\Delta x\\to0^+}\\sqrt{1+\\left(\\frac{\\Delta y}{\\Delta x}\\right)^2}=\\sqrt{1+(y')^2}.$$\n因此\n$$\\kappa=\\left|\\frac{d\\theta/dx}{ds/dx}\\right|=\\frac{|y''|}{[1+(y')^2]^{3/2}}.$$\n分母来自斜率到角度、横坐标到弧长的两次换算；曲率也等于密切圆半径的倒数。",
+      "children": [],
+      "color": "#4f8df5"
+    },
+    {
+      "id": "0hshh2nh5t",
+      "text": "# 第1次提问：切线方向角与曲率半径的几何关系\n\n$\\theta$ 表示沿 $x$ 增大方向的切线与 $x$ 轴正方向的有向夹角，取 $-\\pi/2<\\theta<\\pi/2$。切线斜率为 $y'$，而斜率等于方向角的正切，故\n$$\\tan\\theta=y',\\qquad\\theta=\\arctan(y').$$\n曲率衡量单位弧长内切线方向的变化：\n$$\\kappa=\\left|\\frac{d\\theta}{ds}\\right|.$$\n密切圆的半径垂直于切线，半径与切线转过的角度相同。圆上有 $ds=R|d\\theta|$，因此当 $\\kappa>0$ 时，曲率半径为\n$$R=\\frac1\\kappa.$$\n相同弧长内切线转动越快，曲率越大，曲率半径越小；曲率为零时通常记 $R=\\infty$。",
+      "children": []
+    },
+    {
+      "id": "tj51dqkkds",
+      "text": "",
+      "image": "0d600a4e-6317-4611-bc74-255c8a78c397",
+      "children": []
+    },
+    {
+      "id": "yq1y18xm99",
+      "text": "# 第1次提问：切线方向角与曲率半径的几何关系\n\n$\\theta$ 表示沿 $x$ 增大方向的切线与 $x$ 轴正方向的有向夹角，取 $-\\pi/2<\\theta<\\pi/2$。切线斜率为 $y'$，而斜率等于方向角的正切，故\n$$\\tan\\theta=y',\\qquad\\theta=\\arctan(y').$$\n曲率衡量单位弧长内切线方向的变化：\n$$\\kappa=\\left|\\frac{d\\theta}{ds}\\right|.$$\n密切圆的半径垂直于切线，半径与切线转过的角度相同。圆上有 $ds=R|d\\theta|$，因此当 $\\kappa>0$ 时，曲率半径为\n$$R=\\frac1\\kappa.$$\n相同弧长内切线转动越快，曲率越大，曲率半径越小；曲率为零时通常记 $R=\\infty$。",
+      "children": []
+    }
+  ],
+  "fold": {},
+  "edges": [
+    {
+      "id": "ees8fv0tx0bl4",
+      "from": {
+        "node": "6eqqoxkbkj",
+        "side": "w"
+      },
+      "to": {
+        "node": "3csnfdgt4c",
+        "side": "e"
+      },
+      "dir": "fwd",
+      "label": "111"
+    },
+    {
+      "id": "ezxqnc9ld3h62",
+      "from": {
+        "node": "0hshh2nh5t",
+        "side": "w"
+      },
+      "to": {
+        "node": "6eqqoxkbkj",
+        "side": "e"
+      },
+      "dir": "fwd"
+    }
+  ],
+  "v": 3,
+  "pos": {
+    "3csnfdgt4c": {
+      "x": -597,
+      "y": -67
+    },
+    "6eqqoxkbkj": {
+      "x": 332,
+      "y": -243
+    },
+    "0hshh2nh5t": {
+      "x": 1198,
+      "y": -363
+    },
+    "tj51dqkkds": {
+      "x": -573,
+      "y": 568
+    },
+    "yq1y18xm99": {
+      "x": 748,
+      "y": 199
+    }
+  },
+  "size": {
+    "3csnfdgt4c": {
+      "w": 294,
+      "h": 368
+    },
+    "6eqqoxkbkj": {
+      "w": 294,
+      "h": 665
+    },
+    "0hshh2nh5t": {
+      "w": 294,
+      "h": 698
+    },
+    "tj51dqkkds": {
+      "w": 300,
+      "h": 402
+    },
+    "yq1y18xm99": {
+      "w": 320,
+      "h": 724
+    }
+  },
+  "flat": true,
+  "media": [
+    {
+      "id": "0d600a4e-6317-4611-bc74-255c8a78c397",
+      "name": "图片261017230449.png",
+      "mime": "image/png",
+      "bytes": 40704,
+      "sourceMap": "336b33f1-50c2-4e12-bee8-ecfd3519d469"
+    }
+  ],
+  "annotations": [
+    {
+      "id": "dd7a3c6e-c0bd-42a4-a73d-725c17a83896",
+      "type": "rect",
+      "x1": -635.418098273994,
+      "y1": 520.6644949590925,
+      "x2": -223.133279341671,
+      "y2": 1039.2272342470108,
+      "color": "#2bb98a",
+      "width": 3
+    },
+    {
+      "id": "e42c4a92-33fc-46b5-aad8-22cec370f6dd",
+      "type": "ellipse",
+      "x1": 347.7733812916255,
+      "y1": 161.318075091982,
+      "x2": 455.67853929106053,
+      "y2": 227.83495331081178,
+      "color": "#e05252",
+      "width": 7
+    }
+  ],
+  "groups": [
+    {
+      "id": "61ae9d66-8bcd-43bf-bee5-d82c0d374d42",
+      "title": "组 1",
+      "x": 273,
+      "y": -319,
+      "w": 381,
+      "h": 769,
+      "color": "#8a6cf0",
+      "opacity": 10,
+      "width": 2
+    }
+  ],
+  "sizing": {
+    "yq1y18xm99": {
+      "w": true,
+      "h": true
+    },
+    "0hshh2nh5t": {
+      "h": true
+    }
+  },
+  "pdfTitlebarVersion": 1
+}

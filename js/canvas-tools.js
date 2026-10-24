@@ -6,7 +6,7 @@
   function labelBox(edge,nodes) {
     if(!edge.label) return null;
     const a=nodes.get(edge.from.node),b=nodes.get(edge.to.node);if(!a || !b)return null;
-    const points=window.MMEdgeRouter.route(a,b,edge).points, lengths=points.slice(1).map((p,i)=>Math.hypot(p.x-points[i].x,p.y-points[i].y));
+    const points=window.MMEdgeRouter.route(a,b,{...edge,style:edge.style || current().line || 'curve'},[...nodes.values()]).points, lengths=points.slice(1).map((p,i)=>Math.hypot(p.x-points[i].x,p.y-points[i].y));
     let left=lengths.reduce((a,b)=>a+b,0)/2, p=points[0];
     for(let i=0;i<lengths.length;i++) {if(left<=lengths[i]){const t=lengths[i]?left/lengths[i]:0;p={x:points[i].x+(points[i+1].x-points[i].x)*t,y:points[i].y+(points[i+1].y-points[i].y)*t};break;}left-=lengths[i];}
     const lines=String(edge.label).split("\n"),w=Math.max(44,Math.min(220,Math.max(...lines.map(s=>Array.from(s).length))*13+20)),h=lines.reduce((n,s)=>n+Math.max(1,Math.ceil(Array.from(s).length/Math.max(1,Math.floor((w-16)/13)))),0)*18+12;
@@ -51,7 +51,7 @@
     const st=$("mmStage"),map=current();if(!st || !map)return;toolbar();
     if(activeMap!==map.id) {activeMap=map.id;tool="select";gesture=null;selected=null;$("mmMarkMenu")?.classList.add("hidden");}
     st.querySelectorAll(".mm-edge-label,.mm-annotations").forEach(el=>el.remove());
-    for(const edge of map.edges || []) {const b=labelBox(edge,M().state().L.nodes);if(!b)continue;const label=document.createElement("button");label.type="button";label.className="mm-edge-label";label.dataset.edgeLabel=edge.id;label.textContent=edge.label;label.title="双击修改文字标记";label.style.cssText=`left:${b.x}px;top:${b.y}px;width:${b.w}px;min-height:${b.h}px`;st.appendChild(label);}
+    for(const edge of map.edges || []) {const b=labelBox(edge,M().state().L.nodes);if(!b)continue;const label=document.createElement("button");label.type="button";label.className="mm-edge-label"+((M().state().selected.includes(edge.from.node)||M().state().selected.includes(edge.to.node))?" linked":"")+(M().state().selectedEdge===edge.id?" edge-selected":"");label.dataset.edgeLabel=edge.id;label.textContent=edge.label;label.title="双击修改文字标记";label.style.cssText=`--connection-color:${/^#[0-9a-f]{6}$/i.test(edge.color || '')?edge.color:'#708560'};left:${b.x}px;top:${b.y}px;width:${b.w}px;min-height:${b.h}px`;st.appendChild(label);}
     const svg=document.createElementNS("http://www.w3.org/2000/svg","svg");svg.classList.add("mm-annotations");svg.setAttribute("width","1");svg.setAttribute("height","1");
     svg.innerHTML=(map.annotations || []).map(a=>shape(a,"",true)+shape(a)).join("")+(gesture?shape(gesture.preview,'data-preview="true"'):"");st.appendChild(svg);
     $("mmView").classList.toggle("mm-drawing",tool!=="select");
@@ -60,7 +60,7 @@
   }
   function bind() {
     const view=$("mmView");view.dataset.markBound="true";
-    view.addEventListener("pointerdown",e=>{
+    view.addEventListener("pointerdown",e=>{if(window.MMTopicUI?.mode==='overview')return;
       if(e.button!==0 || e.target.closest(".mm-zoom,.mm-edit,.mm-edit-preview,.mm-edit-help,.mm-hint,.mm-task,.mm-formatbar"))return;
       const label=e.target.closest("[data-edge-label]");if(label){e.stopImmediatePropagation();e.preventDefault();return;}
       const hit=hitTest(e.clientX,e.clientY),point=M().clientPoint(e.clientX,e.clientY);
@@ -73,22 +73,22 @@
         view.setPointerCapture(e.pointerId);render();
       } else if(selected){selected=null;render();}
     },true);
-    view.addEventListener("pointermove",e=>{
+    view.addEventListener("pointermove",e=>{if(window.MMTopicUI?.mode==='overview')return;
       if(!gesture || gesture.pointer!==e.pointerId){view.classList.toggle("mm-mark-hover",tool==="select" && !e.target.closest(".mm-zoom,.mm-edit,.mm-edit-preview,.mm-edit-help") && !!hitTest(e.clientX,e.clientY));return;}e.stopImmediatePropagation();
       const p=M().clientPoint(e.clientX,e.clientY),g=gesture;
       if(g.original) {const dx=p.x-g.start.x,dy=p.y-g.start.y;g.preview={...g.original,x1:g.original.x1+dx,y1:g.original.y1+dy,x2:g.original.x2+dx,y2:g.original.y2+dy};}
       else {g.preview.x2=p.x;g.preview.y2=p.y;}
       render();
     },true);
-    const up=e=>{if(!gesture || gesture.pointer!==e.pointerId)return;e.stopImmediatePropagation();const g=gesture;gesture=null;
+    const up=e=>{if(window.MMTopicUI?.mode==='overview')return;if(!gesture || gesture.pointer!==e.pointerId)return;e.stopImmediatePropagation();const g=gesture;gesture=null;
       if(e.type!=="pointercancel" && current()?.id===g.map && Math.hypot(g.preview.x2-g.preview.x1,g.preview.y2-g.preview.y1)>4) {
         selected=g.preview.id;M().editMap(()=>{const list=(current().annotations ||= []),i=list.findIndex(a=>a.id===g.preview.id);if(i>=0)list[i]=g.preview;else list.push(g.preview);});
       } else render();
       if(view.hasPointerCapture(e.pointerId))view.releasePointerCapture(e.pointerId);
     };
     view.addEventListener("pointerup",up,true);view.addEventListener("pointercancel",up,true);
-    view.addEventListener("dblclick",e=>{const label=e.target.closest("[data-edge-label]");if(label){e.stopImmediatePropagation();e.preventDefault();editEdgeLabel(label.dataset.edgeLabel);}else if(tool!=="select" || hitTest(e.clientX,e.clientY)){e.stopImmediatePropagation();e.preventDefault();}},true);
-    view.addEventListener("contextmenu",e=>{if(e.target.closest(".mm-zoom,.mm-edit,.mm-edit-preview,.mm-edit-help"))return;const a=hitTest(e.clientX,e.clientY);if(a){e.preventDefault();e.stopImmediatePropagation();showMarkMenu(a,e.clientX,e.clientY);}},true);
+    view.addEventListener("dblclick",e=>{if(window.MMTopicUI?.mode==='overview')return;const label=e.target.closest("[data-edge-label]");if(label){e.stopImmediatePropagation();e.preventDefault();editEdgeLabel(label.dataset.edgeLabel);}else if(tool!=="select" || hitTest(e.clientX,e.clientY)){e.stopImmediatePropagation();e.preventDefault();}},true);
+    view.addEventListener("contextmenu",e=>{if(window.MMTopicUI?.mode==='overview')return;if(e.target.closest(".mm-zoom,.mm-edit,.mm-edit-preview,.mm-edit-help"))return;const a=hitTest(e.clientX,e.clientY);if(a){e.preventDefault();e.stopImmediatePropagation();showMarkMenu(a,e.clientX,e.clientY);}},true);
     view.addEventListener("wheel",()=>$("mmMarkMenu")?.classList.add("hidden"),true);
     view.addEventListener("pointerleave",()=>view.classList.remove("mm-mark-hover"));
   }
@@ -115,7 +115,7 @@
     $("mmEdgeLabelCancel").onclick=()=>dlg.close();$("mmEdgeLabelForm").onsubmit=e=>{e.preventDefault();if(current()?.id!==map.id || !map.edges.includes(edge)){dlg.close();return;}const text=$("mmEdgeLabelInput").value.trim();M().editMap(()=>{if(text)edge.label=text;else delete edge.label;});dlg.close();};
     dlg.showModal();$("mmEdgeLabelInput").focus();
   }
-  document.addEventListener("keydown",e=>{
+  document.addEventListener("keydown",e=>{if(window.MMTopicUI?.mode==='overview')return;
     if(current() && (e.ctrlKey || e.metaKey) && ["=","+","-"].includes(e.key) && !e.target.closest("#mmAI,#mmShortcuts,#mmPanel,#mmMediaPanel,input:not(.mm-edit),dialog")) {e.preventDefault();e.stopImmediatePropagation();M().zoom(M().view().k*(e.key==="-"?1/1.2:1.2));return;}
     if(!current() || e.target.closest("input,textarea,[contenteditable=true],#mmAI") || $("mmDlg").open)return;
     if(e.key==="Escape" && (gesture || tool!=="select" || selected)){e.preventDefault();e.stopImmediatePropagation();gesture=null;tool="select";selected=null;render();}

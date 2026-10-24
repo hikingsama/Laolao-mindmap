@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "folders": [
+    {
+      "id": "7e8f5bce-f05d-4953-a19e-2c7e9fc59c0b",
+      "name": "高等数学上",
+      "parentId": null
+    },
+    {
+      "id": "e435ab26-a5dc-4c58-8cd6-2f476687bf57",
+      "name": "高等数学下",
+      "parentId": null
+    },
+    {
+      "id": "f140b4f2-e4ca-411e-bae7-61f80e8e844e",
+      "name": "1",
+      "parentId": "e435ab26-a5dc-4c58-8cd6-2f476687bf57"
+    }
+  ],
+  "placements": {
+    "courses-1792672649814": "7e8f5bce-f05d-4953-a19e-2c7e9fc59c0b",
+    "480b34db-b3e6-426f-97f5-510235cf0d04": "7e8f5bce-f05d-4953-a19e-2c7e9fc59c0b"
+  }
+}

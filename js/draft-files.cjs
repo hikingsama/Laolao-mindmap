@@ -1,7 +1,7 @@
 "use strict";
 // A committed document is immutable during editing. Media changes live in .draft.
 const fs=require('node:fs'),path=require('node:path'),{randomUUID,createHash}=require('node:crypto');
-const assets=require('./media-utils.cjs');
+const assets=require('./media-utils.cjs'),capacity=require('./capacity.js');
 module.exports=h=>{
   const dir=id=>path.join(h.folder(id),'.draft'),file=(id,name)=>path.join(dir(id),name);
   const hash=m=>createHash('sha256').update(JSON.stringify(m)).digest('hex');
@@ -53,7 +53,7 @@ module.exports=h=>{
   function mediaChanged(id,list){const original=h.manifest(id);return Object.values(list).some(item=>{const old=original[item.id];return item._staged || !old || old.name!==item.name || !!old.trashed!==!!item.trashed;});}
   function info(id){
     const meta=metadata(id),base=formal(id),draft=h.read(file(id,'map.json'),null),list=items(id);
-    return {base,draft,token:meta?.token,updated:meta?.updated,recoverable:!!draft && (hash(draft)!==hash(base) || mediaChanged(id,list))};
+    return {base,draft,token:meta?.token,updated:meta?.updated,mediaChanged:mediaChanged(id,list),recoverable:!!draft && (hash(draft)!==hash(base) || mediaChanged(id,list))};
   }
   function discard(id,token){check(id,token);clear(id);return formal(id);}
   function commit(id,token){
@@ -85,9 +85,9 @@ module.exports=h=>{
   async function handle(req,res,id,parts){
     const token=req.headers['x-mm-draft-token'];
     if(parts[3]==='draft'){
-      if(req.method==='POST'){const data=JSON.parse((await h.body(req,8*1024*1024)).toString());ensure(id,data.base);return h.json(res,200,info(id));}
+      if(req.method==='POST'){const data=JSON.parse((await h.body(req,capacity.documentBytes)).toString());ensure(id,data.base);return h.json(res,200,info(id));}
       if(req.method==='GET')return h.json(res,200,info(id));
-      if(req.method==='PUT'){save(id,JSON.parse((await h.body(req,8*1024*1024)).toString()),token);return h.json(res,200,{saved:true});}
+      if(req.method==='PUT'){save(id,JSON.parse((await h.body(req,capacity.documentBytes)).toString()),token);return h.json(res,200,{saved:true});}
       if(req.method==='DELETE')return h.json(res,200,{map:discard(id,token)});
     }
     if(parts[3]==='commit' && req.method==='POST')return h.json(res,200,commit(id,token));

@@ -1,8 +1,9 @@
 "use strict";
 // Local documents and their image files share one directory. No runtime dependencies.
 const fs = require("node:fs"), path = require("node:path"), { randomUUID } = require("node:crypto");
-const assets=require('./media-utils.cjs');
+const assets=require('./media-utils.cjs'),capacity=require('./capacity.js');
 const ROOT = path.resolve(process.env.MM_STORAGE_DIR || path.join(__dirname,"../storage/maps"));
+const mapTrash=require('./library-trash.cjs').createStore({root:ROOT});
 const validId = value => typeof value === "string" && /^[a-zA-Z0-9_-]{1,100}$/.test(value);
 const folder = id => { if(!validId(id)) throw new Error("导图或媒体编号无效"); return path.join(ROOT,id); };
 function read(file, fallback) { try { return JSON.parse(fs.readFileSync(file,"utf8")); } catch(error) { if(error.code === "ENOENT") return fallback; throw error; } }
@@ -44,7 +45,7 @@ function discoverMedia(id) {
   }
   if(changed)write(path.join(dir,'.media.json'),items);return items;
 }
-async function body(req,max) { const parts=[]; let size=0; for await(const part of req) {size+=part.length;if(size>max)throw new Error("文件过大：图片最多20MB、PDF最多50MB、导图最多8MB");parts.push(part);} return Buffer.concat(parts); }
+async function body(req,max) { const parts=[]; let size=0; for await(const part of req) {size+=part.length;if(size>max)throw new Error("文件过大：图片最多20 MiB、PDF最多50 MiB、导图JSON最多512 MiB");parts.push(part);} return Buffer.concat(parts); }
 function json(res,code,data) { res.writeHead(code,{"Content-Type":"application/json; charset=utf-8","Cache-Control":"no-store"});res.end(JSON.stringify(data)); }
 function restore(id,item) { if(!item.trashed) return; const old=assetPath(id,item); item.trashed=false; const dest=assetPath(id,item); if(fs.existsSync(dest)) throw new Error("同名图片已存在，请先重命名"); fs.renameSync(old,dest); }
 function saveMap(id,map) {
@@ -82,12 +83,9 @@ exports.handle = async (req,res,port) => {
       if(req.method==="DELETE") {
         const map=read(path.join(folder(id),'map.json'),null);
         if(map && (!req.headers['if-match'] || drafts.hash(map)!==req.headers['if-match']))return json(res,409,{error:'导图文件已更新，请刷新列表后重试'});
-        const source=path.resolve(folder(id)),trash=path.resolve(ROOT,'.trash'),destination=path.resolve(trash,id+'-'+randomUUID());
-        if(path.dirname(source)!==ROOT || path.dirname(destination)!==trash)throw new Error('导图路径无效');
-        if(fs.existsSync(source)){fs.mkdirSync(trash,{recursive:true});fs.renameSync(source,destination);}
-        return json(res,200,{removed:true});
+        const record=mapTrash.remove(id);return json(res,200,{removed:true,record});
       }
-      if(req.method==="PUT") {saveMap(id,JSON.parse((await body(req,8*1024*1024)).toString()));return json(res,200,{saved:true,folder:`storage/maps/${id}/`});}
+      if(req.method==="PUT") {saveMap(id,JSON.parse((await body(req,capacity.documentBytes)).toString()));return json(res,200,{saved:true,folder:`storage/maps/${id}/`});}
       if(req.method==="GET") {const m=read(path.join(folder(id),"map.json"),null);return json(res,m?200:404,m||{error:"找不到本地导图"});}
     }
     if(parts[3]!=="media") return json(res,404,{error:"文件接口不存在"});
@@ -117,3 +115,5 @@ exports.handle = async (req,res,port) => {
     return json(res,405,{error:"不支持此文件操作"});
   } catch(error) { if(!res.headersSent) json(res,error.status || 400,{error:error.code==="ENOENT"?"文件不存在":error.message});else res.destroy(); }
 };
+
+exports.snapshot = id => {if(!validId(id))throw Object.assign(new Error('导图编号无效'),{status:400});drafts.recover(id);const file=path.join(folder(id),'map.json'),map=read(file,null);if(!map || map.id!==id)throw Object.assign(new Error('目标导图不存在或编号不匹配'),{status:404});return {map,revision:drafts.hash(map),updated:fs.statSync(file).mtimeMs,hasDraft:!!drafts.info(id).recoverable};};

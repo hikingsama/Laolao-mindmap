@@ -1,6 +1,6 @@
 (() => {
   "use strict";
-  const $=id=>document.getElementById(id), M=()=>window.Mindmap, states=new Map(), esc=s=>window.MMContent.escape(String(s));
+  const $=id=>document.getElementById(id), M=()=>window.Mindmap, states=window.MMWorkspaceSessions?.states || new Map(), esc=s=>window.MMContent.escape(String(s));
   let open=false, mapId=null, disk=[], diskMap=null, error="", uploading=false, revision=0, fileBusy=false, busy=false;
   const expanded=new Set();
   const current=()=>M()?.state().cur;
@@ -15,7 +15,7 @@
   function status(message) {const el=$("mmFileStatus");if(el)el.textContent=message;const top=$("mmSync");if(top && current())top.textContent=message;}
   const draftKey=id=>'mm_recovery_v1_'+id;
   function state(id){let s=states.get(id);if(!s || s.disabled){s={chain:Promise.resolve(),latest:null,saved:null,timer:null,token:null,base:null,ready:null,disabled:false};states.set(id,s);}return s;}
-  function remember(id,s,json){try{localStorage.setItem(draftKey(id),JSON.stringify({map:JSON.parse(json),token:s.token,updated:Date.now()}));}catch{}}
+  function remember(id,s,json){const value={map:JSON.parse(json),token:s.token,updated:Date.now()};if(window.MMDocumentCache)window.MMDocumentCache.set(draftKey(id),value);else try{localStorage.setItem(draftKey(id),JSON.stringify(value));}catch{}}
   function choose(kind){
     const dlg=$("mmDlg"),editor=document.querySelector('.mm-edit');
     const recovery=kind==='recover',saving=kind==='save';
@@ -34,11 +34,12 @@
     const s=state(map.id);if(s.ready)return s.ready;if(s.token)return map;
     const opening=(async()=>{
       let data=await request(url(map.id)+'/draft',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base:map})});
-      s.token=data.token;s.base=data.base;await M().noteFile(data.base);
-      let local;try{local=JSON.parse(localStorage.getItem(draftKey(map.id)));}catch{}
+      s.token=data.token;s.base=structuredClone(data.base);await M().noteFile(data.base);
+      let local;await window.MMDocumentCache?.load([draftKey(map.id)]);try{local=window.MMDocumentCache?window.MMDocumentCache.get(draftKey(map.id)):JSON.parse(localStorage.getItem(draftKey(map.id)));}catch{}
       if(local?.token===data.token && local.updated>data.updated && JSON.stringify(local.map)!==JSON.stringify(data.base))data={...data,draft:local.map,recoverable:true};
+      s.openingClean=!data.recoverable;
       if(data.recoverable){const choice=await choose('recover');if(choice==='cancel'){s.token=null;return null;}if(choice==='discard'){
-        await request(url(map.id)+'/draft',{method:'DELETE',headers:{'X-MM-Draft-Token':s.token}});localStorage.removeItem(draftKey(map.id));data=await request(url(map.id)+'/draft',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base:data.base})});s.token=data.token;s.base=data.base;return data.base;
+        await request(url(map.id)+'/draft',{method:'DELETE',headers:{'X-MM-Draft-Token':s.token}});if(window.MMDocumentCache)window.MMDocumentCache.remove(draftKey(map.id));else localStorage.removeItem(draftKey(map.id));data=await request(url(map.id)+'/draft',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base:data.base})});s.token=data.token;s.base=structuredClone(data.base);s.openingClean=true;return data.base;
       }return data.draft;}
       return data.base;
     })();s.ready=opening;
@@ -52,17 +53,18 @@
   function flushId(id){
     const s=states.get(id);if(!s || s.disabled)return Promise.resolve();clearTimeout(s.timer);
     s.chain=s.chain.catch(()=>{}).then(async()=>{if(s.ready)await s.ready;if(!s.token || !s.latest || s.disabled)return;
-      const snapshot=s.latest;if(s.saved===snapshot)return;await request(url(id)+'/draft',{method:'PUT',headers:{'Content-Type':'application/json','X-MM-Draft-Token':s.token},body:snapshot});s.saved=snapshot;remember(id,s,snapshot);if(current()?.id===id)status('草稿已自动保存');
+      const snapshot=s.latest;if(s.saved===snapshot)return;await request(url(id)+'/draft',{method:'PUT',headers:{'Content-Type':'application/json','X-MM-Draft-Token':s.token},body:snapshot});s.saved=snapshot;remember(id,s,snapshot);if(current()?.id===id)status(s.cleanEditor===stable(JSON.parse(snapshot))?'已保存':'草稿已自动保存');
     });return s.chain;
   }
-  async function flush(map=current()){if(!map)return;queue(map);return flushId(map.id);}
-  function lock(on){busy=on;$("mmBox").inert=on;$("mmTitleIn").disabled=on;for(const id of ['mmSaveExit','mmDiscardExit','mmOpenLocal'])$(id).disabled=on;}
+  async function flush(map=current()){if(!map)return;queue(map);await flushId(map.id);await window.MMDocumentCache?.flush();}
+  function lock(on){busy=on;window.dispatchEvent(new Event('mm:file-busy'));$("mmBox").inert=on;$("mmTitleIn").disabled=on;for(const id of ['mmSaveExit','mmDiscardExit','mmOpenLocal'])$(id).disabled=on;}
   async function saveCheckpoint(exit=false){
     if(busy || uploading || fileBusy){showBanner('文件正在处理，请稍后再试');return false;}const map=current();if(!map)return false;
     lock(true);revision++;
     try{M().finishEditing();await flush(map);const s=states.get(map.id),result=await request(url(map.id)+'/commit',{method:'POST',headers:{'X-MM-Draft-Token':s.token}});
-      s.token=result.token;s.base=result.map;s.saved=null;localStorage.removeItem(draftKey(map.id));await M().noteFile(result.map);
+      s.token=result.token;s.base=structuredClone(result.map);s.cleanEditor=stable(result.map);s.saved=null;if(window.MMDocumentCache)window.MMDocumentCache.remove(draftKey(map.id));else localStorage.removeItem(draftKey(map.id));await M().noteFile(result.map);
       if(exit){s.disabled=true;clearTimeout(s.timer);M().leaveDocument(result.map);}else{M().replaceDocument(result.map);s.latest=JSON.stringify(result.map);s.saved=s.latest;status('已正式保存');}
+      window.dispatchEvent(new Event('mm:files-saved'));
       return true;
     }catch(e){showBanner(e.message);status('保存失败：'+e.message);return false;}finally{lock(false);}
   }
@@ -73,7 +75,7 @@
     lock(true);revision++;
     try{const s=states.get(map.id);clearTimeout(s.timer);await s.chain.catch(()=>{});
       const result=await request(url(map.id)+'/draft',{method:'DELETE',headers:{'X-MM-Draft-Token':s.token}});s.disabled=true;clearTimeout(s.timer);s.latest=null;
-      localStorage.removeItem(draftKey(map.id));await M().noteFile(result.map);M().leaveDocument(result.map);
+      if(window.MMDocumentCache)window.MMDocumentCache.remove(draftKey(map.id));else localStorage.removeItem(draftKey(map.id));await M().noteFile(result.map);M().leaveDocument(result.map);
     }catch(e){showBanner('未能退出，草稿已保留：'+e.message);}finally{lock(false);}
   }
   function items(){
@@ -89,6 +91,21 @@
     return '位置 '+(index+1)+' · '+(groups[0]?.title || '未分组');
   }
   function locate(id){const box=M().state().L?.nodes.get(id);if(!box)return;M().selectNode(id);M().revealBox(box);}
+  function confirmDelete(media){
+    const count=placements(media.id).length,dlg=document.createElement('dialog');
+    dlg.id='mmMediaDeleteDialog';dlg.className='mm-workspace-confirm';dlg.setAttribute('aria-labelledby','mmMediaDeleteTitle');dlg.setAttribute('aria-describedby','mmMediaDeleteDescription');
+    dlg.innerHTML=`<h3 id="mmMediaDeleteTitle">删除「${esc(media.name)}」？</h3><p id="mmMediaDeleteDescription">${count?`同时删除画布上使用此文件的 ${count} 个节点及相关连线。`:'此文件尚未放置到画布。'}删除操作可撤销。若仅需要删除某个位置，请在当前弹窗选择取消，然后在画布中单独删除目标节点。</p><div class="mm-label-buttons"><button type="button" class="mm-b" data-media-delete="cancel" autofocus>取消</button><button type="button" class="mm-b danger" data-media-delete="confirm">删除文件</button></div>`;
+    document.body.append(dlg);
+    return new Promise(resolve=>{
+      let settled=false;
+      const finish=value=>{if(settled)return;settled=true;dlg.close();dlg.remove();resolve(value);};
+      dlg.addEventListener('cancel',e=>{e.preventDefault();finish(false);});dlg.addEventListener('close',()=>finish(false));
+      // Canvas shortcuts must not act on nodes while this modal has focus.
+      dlg.addEventListener('keydown',e=>e.stopPropagation());
+      dlg.querySelectorAll('[data-media-delete]').forEach(b=>b.onclick=()=>finish(b.dataset.mediaDelete==='confirm'));
+      dlg.showModal();dlg.querySelector('[data-media-delete="cancel"]').focus();
+    });
+  }
   function renameDialog(media,submit){
     const dlg=$('mmDlg'),ext=/\.[^.]+$/.exec(media.name)?.[0] || '',stem=ext?media.name.slice(0,-ext.length):media.name;
     $('mmDlgBody').innerHTML=`<form id="mmMediaRenameForm"><h3>重命名媒体文件</h3><p>修改文件主名，后缀保持不变。同一文件在画布上的所有标签会一起更新。</p><div class="mm-media-rename-name"><input id="mmMediaRenameName" aria-label="文件主名" value="${esc(stem)}" maxlength="${255-ext.length}" required><input id="mmMediaRenameExt" aria-label="文件后缀" value="${esc(ext)}" readonly tabindex="-1"></div><p id="mmMediaRenameError" class="mm-file-error" role="alert"></p><div class="mm-label-buttons"><button type="button" class="mm-b" id="mmMediaRenameCancel">取消</button><button type="submit" class="mm-b pri" id="mmMediaRenameConfirm">重命名</button></div></form>`;
@@ -143,19 +160,25 @@
     $("mmInsertImage").onclick=()=>$("mmImagePicker").click();$("mmImagePicker").onchange=async e=>{await insertFiles([...e.target.files]);e.target.value="";};
     $("mmInsertPDF").onclick=()=>$("mmPDFPicker").click();$("mmPDFPicker").onchange=async e=>{await insertFiles([...e.target.files]);e.target.value='';};
     panel.addEventListener("click",async e=>{
-      const b=e.target.closest("[data-file-action]");if(!b || !current() || busy || fileBusy)return;const map=current(),id=map.id,media=items().find(m=>m.id===b.dataset.id);if(!media)return;
+      const b=e.target.closest("[data-file-action]");if(!b || !current())return;if(busy || fileBusy || uploading){status('文件正在处理，请稍后再试');return;}const map=current(),id=map.id,media=items().find(m=>m.id===b.dataset.id);if(!media)return;
       if(b.dataset.fileAction==='rename'){await rename(media.id);return;}
       fileBusy=true;try {
         if(b.dataset.fileAction==='locate'){const nodes=placements(media.id);if(nodes.length===1)locate(nodes[0].id);else if(nodes.length>1){expanded.has(media.id)?expanded.delete(media.id):expanded.add(media.id);renderList();}return;}
         if(b.dataset.fileAction==='location'){locate(b.dataset.node);return;}
         if(b.dataset.fileAction==="insert") {if(media.mime==='application/pdf')M().addPDF(media,center());else{const size=await dimensions(url(id,media.id));if(current()===map)M().addImage({...media,...size},center());}}
         if(b.dataset.fileAction==="remove") {
-          if(!confirm("删除此文件及画布上使用它的全部节点？仅删除一个位置请在画布中删除对应节点。此操作可撤销。"))return;
-          await flush(map);await request(url(id,media.id),{method:"DELETE"});
-          if(current()===map)M().editMap(()=>{const map=current(),ids=new Set(map.nodes.filter(n=>(n.image || n.pdf)===media.id).map(n=>n.id));map.nodes=map.nodes.filter(n=>!ids.has(n.id));map.edges=(map.edges||[]).filter(e=>!ids.has(e.from.node)&&!ids.has(e.to.node));for(const name of M().LAYER_MAPS)for(const id of ids)delete(map[name]||{})[id];map.media=(map.media||[]).filter(f=>f.id!==media.id);});
-          if(current()===map)await refresh();
+          if(!await confirmDelete(media))return;
+          if(current()!==map)throw Error('导图已切换，请重新打开文件菜单。');
+          M().finishEditing();await flush(map);
+          if(current()!==map)throw Error('导图已切换，请重新打开文件菜单。');
+          await request(url(id,media.id),{method:"DELETE"});
+          if(current()===map){
+            revision++;if(diskMap===id)disk=disk.filter(f=>f.id!==media.id);expanded.delete(media.id);error='';
+            M().editMap(()=>{const ids=new Set(map.nodes.filter(n=>(n.image || n.pdf)===media.id).map(n=>n.id));map.nodes=map.nodes.filter(n=>!ids.has(n.id));map.edges=(map.edges||[]).filter(e=>!ids.has(e.from.node)&&!ids.has(e.to.node));for(const name of M().LAYER_MAPS)for(const id of ids)delete(map[name]||{})[id];map.media=(map.media||[]).filter(f=>f.id!==media.id);});
+            await refresh();if(current()===map)status(error?'文件已删除，列表刷新失败：'+error:'文件及相关节点已删除，可撤销');
+          }
         }
-      }catch(e){if(current()===map)showBanner(e.message);}finally{fileBusy=false;}
+      }catch(e){if(current()===map){showBanner(e.message);status((b.dataset.fileAction==='remove'?'删除失败：':'文件操作失败：')+e.message);}}finally{fileBusy=false;}
     });
     toggle(open,false);
   }
@@ -164,7 +187,7 @@
     const changed=mapId!==map.id;
     if(changed){revision++;disk=[];diskMap=null;error='';expanded.clear();}
     mapId=map.id;mount();$("mmMapFolder").textContent=`storage/maps/${map.id}/`;renderList();queue(map);
-    const state=states.get(map.id);if(state?.saved===state?.latest)status("草稿已自动保存");
+    const state=states.get(map.id);if(state?.saved===state?.latest)status(state.cleanEditor===stable(map)?'已保存':'草稿已自动保存');
     if(changed && open)refresh();
   }
   function center(){const r=$("mmView").getBoundingClientRect(),p=M().clientPoint(r.left+r.width/2,r.top+r.height/2);return {x:p.x-150,y:p.y-110};}
@@ -190,7 +213,7 @@
     if(files.length){e.preventDefault();e.stopImmediatePropagation();insertFiles(files);}
   },true);
   document.addEventListener("dragover",e=>{if(e.target.closest("#mmView") && e.dataTransfer?.types.includes("Files")){e.preventDefault();e.dataTransfer.dropEffect="copy";}},true);
-  document.addEventListener("drop",e=>{if(!current() || !e.target.closest("#mmView") || !e.dataTransfer?.files.length)return;e.preventDefault();e.stopImmediatePropagation();insertFiles([...e.dataTransfer.files],M().clientPoint(e.clientX,e.clientY));},true);
+  document.addEventListener("drop",e=>{if(!current() || !e.target.closest("#mmView") || !e.dataTransfer?.files?.length)return;e.preventDefault();e.stopImmediatePropagation();insertFiles([...e.dataTransfer.files],M().clientPoint(e.clientX,e.clientY));},true);
   async function forget(id){const s=states.get(id);if(!s)return;s.disabled=true;clearTimeout(s.timer);await s.chain.catch(()=>{});states.delete(id);}
   let aiImageUploads=Promise.resolve();
   function stageAIImage(dataUrl,mapId,signal){
@@ -213,7 +236,35 @@
       return {...media,...size};
     }finally{fileBusy=false;}
   }
-  window.MMFiles={stageAIImage,queue,flush,onDraw,insertFiles,refresh,prepare,save:saveCheckpoint,exit,renameNode,forget};
+  async function stagePDF(file,mapId,signal){
+    if(current()?.id!==mapId)throw new Error('导图已切换，PDF未保存');
+    if(busy || uploading || fileBusy)throw new Error('文件正在处理，请稍后再试');
+    if(file.size>50*1024*1024 || new TextDecoder().decode(await file.slice(0,5).arrayBuffer())!=='%PDF-')throw new Error('请使用50MB以内的有效PDF');
+    fileBusy=true;try{await flush();signal?.throwIfAborted();if(current()?.id!==mapId)throw new Error('导图已切换，PDF未保存');
+      const media=await request(url(mapId)+'/media',{method:'POST',headers:{'Content-Type':'application/octet-stream','X-MM-File-Name':encodeURIComponent(file.name)},body:file,signal});
+      if(current()?.id!==mapId)throw new Error('PDF已留在原导图草稿，未写入新导图');return media;
+    }finally{fileBusy=false;}
+  }
+
+  // Ignore property order; opening migrations establish a clean editor baseline.
+  function stable(value){return JSON.stringify(value,(_,v)=>v&&typeof v==='object'&&!Array.isArray(v)?Object.fromEntries(Object.keys(v).sort().map(k=>[k,v[k]])):v);}
+  function editorOpened(map){const s=states.get(map.id);if(s?.openingClean){s.cleanEditor=stable(map);s.openingClean=false;}}
+  async function hasChanges(){const map=current();if(!map)return false;await flush(M().editingSnapshot());const s=states.get(map.id),data=await request(url(map.id)+'/draft');return !!data.mediaChanged||(s?.cleanEditor?stable(M().editingSnapshot())!==s.cleanEditor:!!data.recoverable);}
+  async function discardCheckpoint(){
+    await window.MMFiles.whenIdle();const map=current();if(!map)return true;lock(true);revision++;
+    try{M().finishEditing();const s=states.get(map.id);clearTimeout(s.timer);await s.chain.catch(()=>{});
+      const result=await request(url(map.id)+'/draft',{method:'DELETE',headers:{'X-MM-Draft-Token':s.token}});
+      const data=await request(url(map.id)+'/draft',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base:result.map})});
+      s.token=data.token;s.base=structuredClone(data.base);s.latest=null;s.saved=null;s.openingClean=true;if(window.MMDocumentCache)window.MMDocumentCache.remove(draftKey(map.id));else localStorage.removeItem(draftKey(map.id));await M().noteFile(data.base);M().restoreCheckpoint(data.base);editorOpened(current());status('已保存');return true;
+    }catch(e){showBanner('未能放弃修改，当前内容已保留：'+e.message);return false;}finally{lock(false);}
+  }
+  function capacityInfo(id){const s=states.get(id),map=current();
+    if(!s||map?.id!==id)return null;
+    const json=s.latest;
+    if(typeof json==='string'&&s.measuredJSON!==json){s.measuredJSON=json;s.documentBytes=new Blob([json]).size;}
+    return{documentBytes:s.documentBytes??null,attachmentBytes:(map.media||[]).reduce((sum,f)=>sum+(Number.isFinite(f.bytes)?f.bytes:0),0)};
+  }
+  window.MMFiles={capacityInfo,hasChanges,discard:discardCheckpoint,editorOpened,get busy(){return busy||uploading||fileBusy;},whenIdle:async()=>{const started=Date.now();while(busy||uploading||fileBusy){if(Date.now()-started>60000)throw new Error('文件操作仍在进行，请稍后再切换导图');await new Promise(resolve=>setTimeout(resolve,25));}},sessionSnapshot:id=>{const s=states.get(id);return s && !s.disabled && s.token && s.latest?JSON.parse(s.latest):null;},stagePDF,stageAIImage,queue,flush,onDraw,insertFiles,refresh,prepare,save:saveCheckpoint,exit,renameNode,forget};
   for(const [id,save] of [['mmSaveExit',true],['mmDiscardExit',false]]){$(id).addEventListener('pointerdown',e=>e.preventDefault());$(id).onclick=()=>exit(save);}
   document.addEventListener('keydown',e=>{if(busy){e.preventDefault();e.stopImmediatePropagation();return;}if(current() && (e.ctrlKey||e.metaKey) && e.key.toLowerCase()==='s' && !e.target.closest('#mmAI,#mmShortcuts')){e.preventDefault();e.stopImmediatePropagation();saveCheckpoint();}},true);
   document.addEventListener('input',e=>{if(current() && (e.target.matches('.mm-edit') || e.target.id==='mmTitleIn'))queue(M().editingSnapshot());});

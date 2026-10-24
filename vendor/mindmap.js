@@ -52,9 +52,9 @@
   // [独立版] 云同步已停用：RPC 通道不存在（第一版剥离 mm_save / mm_list / mm_get / mm_del / mm_rename）
   // const rpc = (fn, args) => CCAuth.rpc(fn, args || {});
   const tip = (msg, ms = 2600) => { showBanner(msg); clearTimeout(tip.t); tip.t = setTimeout(() => showBanner(""), ms); };
-  const lsGet = (k, d) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } };
-  const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch (e) { return false; } };
-  const lsDel = (k) => { try { localStorage.removeItem(k); } catch (e) {} };
+  const lsGet = (k, d) => { if(window.MMDocumentCache?.has(k))return window.MMDocumentCache.get(k,d);try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } };
+  const lsSet = (k, v) => { if(window.MMDocumentCache?.has(k))return window.MMDocumentCache.set(k,v);try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch (e) { return false; } };
+  const lsDel = (k) => { if(window.MMDocumentCache?.has(k)){window.MMDocumentCache.remove(k);return;}try { localStorage.removeItem(k); } catch (e) {} };
   const clone = (o) => JSON.parse(JSON.stringify(o));
   const when = (t) => { const d = new Date(t); if (isNaN(d)) return ""; const s = (Date.now() - d) / 1000; if (s < 60) return "刚刚"; if (s < 3600) return Math.floor(s / 60) + " 分钟前"; if (s < 86400) return Math.floor(s / 3600) + " 小时前"; return `${d.getMonth() + 1}月${d.getDate()}日`; };
   const fill = (n) => { n.id = n.id || nid(); n.text = String(n.text ?? ""); n.children = (n.children || []).map(fill); return n; };
@@ -82,7 +82,7 @@
     const e = idxGet(m.id) || {};
     const ok = lsSet(mapKey(m.id), m);
     idxPut({ id: m.id, title: m.title, updated: Date.now(), nodes: countNodes(m), version: e.version || 0, local: e.local ?? true, dirty: true, uid: me() ? me().id : e.uid || null });
-    if (!ok) tip("这台设备的存储空间满了：登录后导图会存到账号里", 4000);
+    if (!ok) tip("浏览器恢复缓存写入失败；请检查本地文件草稿保存状态，这不表示硬盘已满。", 5000);
     window.MMFiles?.queue(m);
   }
 
@@ -162,6 +162,7 @@
     idxPut({id:map.id,fileBacked:true,fileBaseHash,fileMissing:false});
   }
   async function browserDraft(id,baseHash){
+    await window.MMDocumentCache?.load([mapKey(id),recoveryKey(id)]);
     const map=lsGet(mapKey(id),null),recovery=lsGet(recoveryKey(id),null);
     const changed=async value=>!!value && (!baseHash || await mapHash(value)!==baseHash);
     return {map,recovery,changed:await changed(map) || await changed(recovery?.map)};
@@ -197,8 +198,8 @@
         // Apply only after the entire scan succeeded; an offline or invalid file
         // must never turn an incomplete response into a deletion.
         for(const update of updates){
-          if(update.map && !lsSet(mapKey(update.entry.id),update.map))throw new Error('浏览器存储空间不足');
-          if(update.recovery && !lsSet(recoveryKey(update.entry.id),update.recovery))throw new Error('浏览器存储空间不足');
+          if(update.map && !lsSet(mapKey(update.entry.id),update.map))throw new Error('浏览器恢复缓存写入失败，请检查本地文件草稿保存状态');
+          if(update.recovery && !lsSet(recoveryKey(update.entry.id),update.recovery))throw new Error('浏览器恢复缓存写入失败，请检查本地文件草稿保存状态');
           const i=index.findIndex(e=>e.id===update.entry.id);if(i<0)index.push(update.entry);else index[i]=update.entry;
         }
         for(const id of removed){lsDel(mapKey(id));lsDel(recoveryKey(id));}
@@ -242,8 +243,8 @@
   const isAncestor = (a, b) => { let r = findNode(b); while (r && r.p) { if (r.p.id === a) return true; r = findNode(r.p.id); } return false; };
 
   // Conversation records survive canvas undo; history stores canvas data only.
-  function historyJSON(map=cur){const snapshot={...map};delete snapshot.aiMemory;return JSON.stringify(snapshot);}
-  function restoreHistory(snapshot){const memory=cur?.aiMemory;cur=JSON.parse(snapshot);if(memory)cur.aiMemory=memory;}
+  function historyJSON(map=cur){const snapshot={...map};delete snapshot.aiMemory;delete snapshot.outlineSources;delete snapshot.moduleLearning;return JSON.stringify(snapshot);}
+  function restoreHistory(snapshot){const memory=cur?.aiMemory,sources=cur?.outlineSources,learning=cur?.moduleLearning;cur=JSON.parse(snapshot);if(memory)cur.aiMemory=memory;if(sources)cur.outlineSources=sources;if(learning)cur.moduleLearning=learning;}
   function change(fn, keepSel) {
     if (!cur) return;
     hist.push(historyJSON()); if (hist.length > 120) {hist.shift();for(const batch of aiBatches)batch.historyIndex--;} redo = [];
@@ -271,6 +272,7 @@
     return { lines: out, w: Math.max(...out.map((l) => cvs.measureText(l).width)) };
   }
   function measure(n, depth, fixedWidth = null) {
+    if(n.mapLink)return {w:300,h:260,lines:[],font:fontOf(depth,n.bold),padX:14,padY:14};
     if(n.pdf)return {w:480,h:570,lines:[],font:fontOf(depth,n.bold),padX:4,padY:4,pdf:true};
     if (n.image) {
       const media = (cur?.media || []).find(m => m.id === n.image), ratio = media?.width && media?.height ? media.height/media.width : .7;
@@ -502,7 +504,7 @@
      · LAYER_LISTS 按**端点**删：过滤掉 from.node / to.node 命中被删集合的**条目**。
        它们没有"按节点 id 的键"，**绝不可当映射去 `delete d[节点id]`** —— 那删的是条目自己的 id，完全删错东西。
      `fold` / `edges` 落地时由这两处自动覆盖，清理代码不用再改。 */
-  const LAYER_MAPS = ["pos", "size", "fold", "sizing", "pdfViews"];
+  const LAYER_MAPS = ["pos", "size", "fold", "sizing", "pdfViews", "topicLevels"];
   const LAYER_LISTS = ["edges"];
   /* 【独立版】**唯一的坐标写入口**：全文只有这里出现 `curPos()[…] = …`。
      调用方必须在 change() 的 fn 内调它（change 先快照再执行 fn，写在 fn 外就撤不回去）。 */
@@ -515,6 +517,8 @@
   function dropLayer(ids) {
     const set = ids instanceof Set ? ids : new Set(ids);
     for (const t of LAYER_MAPS) { const d = cur[t]; if (!d) continue; for (const id of set) delete d[id]; }
+    if(Array.isArray(cur.topicGroups))cur.topicGroups=cur.topicGroups.map(g=>({...g,nodeIds:(g.nodeIds || []).filter(id=>!set.has(id))})).filter(g=>g.nodeIds.length);
+    for(const n of cur.nodes)if(set.has(n.layoutParent))delete n.layoutParent;
   }
   function dropEdges(ids) {
     const set = ids instanceof Set ? ids : new Set(ids);
@@ -660,6 +664,8 @@
       const record=cur.aiMemory?.turns?.find(t=>t.id===s.n.aiTurnId),b=window.MMAILearning?.box(s,record);
       if(b){x0=Math.min(x0,b.x);y0=Math.min(y0,b.y);x1=Math.max(x1,b.x+b.w);y1=Math.max(y1,b.y+b.h);}
     }
+    const moduleStructure=window.MMTopicLayout?.describe(cur);lay.moduleCards=moduleStructure && window.MMModuleLearning?window.MMModuleLearning.canvas(cur,lay.nodes,moduleStructure.groups,moduleStructure.center):[];
+    for(const card of lay.moduleCards){const b=card.box;x0=Math.min(x0,b.x);y0=Math.min(y0,b.y);x1=Math.max(x1,b.x+b.w);y1=Math.max(y1,b.y+b.h);}
     lay.bounds = lay.nodes.size ? { x0, y0, x1, y1 } : {x0:0,y0:0,x1:0,y1:0};
     window.MMCanvasTools?.extendBounds(lay);
     window.MMGroups?.extendBounds(lay);
@@ -699,7 +705,7 @@
     if (!best) best = { x: maxX == null ? Math.round(anchor.x + anchor.w + 46) : Math.round(maxX + 60), y: minY == null ? dy0 : Math.round(minY) };
     // 再让开已经固化的节点：往下，最多 60 档
     let guard = 0;
-    while (guard++ < 60 && ids.some((id) => { const q = p[id]; return Math.abs(q.x - best.x) < 60 && Math.abs(q.y - best.y) < 40; })) best.y += 40;
+    while (guard++ < 60 && (ids.some((id) => { const q = p[id]; return Math.abs(q.x - best.x) < 60 && Math.abs(q.y - best.y) < 40; }) || (L?.moduleCards || []).some(c=>best.x<c.box.x+c.box.w+20 && best.x+180>c.box.x && best.y<c.box.y+c.box.h+20 && best.y+70>c.box.y))) best.y += 40;
     return best;
   }
   // 新建节点：算一次初始坐标、立刻固化（改动 4）
@@ -755,7 +761,7 @@
     for (const e of cur.edges) {
       const a = L.nodes.get(e.from.node), b = L.nodes.get(e.to.node);
       if (!a || !b || a.x == null || b.x == null) continue;
-      const points = window.MMEdgeRouter.route(a, b, e).points.map(p => ({ x: p.x * view.k + view.x, y: p.y * view.k + view.y }));
+      const points = window.MMEdgeRouter.route(a, b, {...e,style:e.style || cur.line || 'curve'},[...L.nodes.values(),...(L.moduleCards || []).map(c=>c.box)]).points.map(p => ({ x: p.x * view.k + view.x, y: p.y * view.k + view.y }));
       for (let i = 1; i < points.length; i++) {
         const p1 = points[i - 1], p2 = points[i], vx = p2.x - p1.x, vy = p2.y - p1.y, len2 = vx * vx + vy * vy;
         const t = len2 ? Math.max(0, Math.min(1, ((px - p1.x) * vx + (py - p1.y) * vy) / len2)) : 0;
@@ -808,9 +814,9 @@
   const EDGE_COLOR = "#8b957f", EDGE_HOT = "#637747", ARROW = 10;
   /* 边的三档视觉：常态 2px 灰 / hover 3px 蓝 / 选中 4px 蓝 + 外圈光晕（选中必须比 hover 更明显）。
      命中带跟这个无关 —— 命中一律按屏幕 10px 几何算（EDGE_HIT），线本身多细都点得中。 */
-  function edgeArrow(p, q, end, hot, eid, color=EDGE_COLOR) {
+  function edgeArrow(p, q, end, hot, eid, color=EDGE_COLOR, linked=false) {
     const deg = Math.atan2(p.y - q.y, p.x - q.x) * 180 / Math.PI;
-    return `<path class="mm-arrow${hot ? " hot" : ""}" data-end="${end}" data-edge="${eid}" d="M0,0 L${-ARROW},${ARROW * 0.45} L${-ARROW},${-ARROW * 0.45} Z" fill="${hot ? EDGE_HOT : color}" transform="translate(${p.x},${p.y}) rotate(${deg})"/>`;
+    return `<path class="mm-arrow${hot ? " hot" : ""}${linked?" linked":""}" data-end="${end}" data-edge="${eid}" d="M0,0 L${-ARROW},${ARROW * 0.45} L${-ARROW},${-ARROW * 0.45} Z" fill="${hot ? EDGE_HOT : color}" transform="translate(${p.x},${p.y}) rotate(${deg})"/>`;
   }
   function edgeSvg() {
     if (!cur || !Array.isArray(cur.edges)) return [];
@@ -819,33 +825,44 @@
       if (!e || !e.from || !e.to) continue;
       const a = L.nodes.get(e.from.node), b = L.nodes.get(e.to.node);
       if (!a || !b || a.x == null || b.x == null) continue;      // 端点不在画布上（折叠/已删）就这条不画
-      const routed = window.MMEdgeRouter.route(a, b, e), points = routed.points, p1 = points[0], p2 = points[points.length - 1], dir = e.dir || "fwd";
-      const sel2 = e.id === selEdge, hot = !sel2 && e.id === hotEdge;
-      const cls = "mm-edge" + (sel2 ? " sel" : hot ? " hot" : "");
+      const routed = window.MMEdgeRouter.route(a, b, {...e,style:e.style || cur.line || 'curve'},[...L.nodes.values(),...(L.moduleCards || []).map(c=>c.box)]), points = routed.points, p1 = points[0], p2 = points[points.length - 1], dir = e.dir || "fwd";
+      const sel2 = e.id === selEdge, hot = !sel2 && e.id === hotEdge, linked=selectedNodes.has(e.from.node) || selectedNodes.has(e.to.node);
+      const cls = "mm-edge" + (sel2 ? " sel" : hot ? " hot" : "")+(linked?" linked":"");
       const baseColor=/^#[0-9a-f]{6}$/i.test(e.color || "")?e.color:EDGE_COLOR;
-      const col = sel2 || hot ? EDGE_HOT : baseColor, wd = sel2 ? 4 : hot ? 3 : 2;
-      out.push(`<path class="${cls}" data-id="${e.id}" d="${routed.path}" stroke="${col}" stroke-width="${wd}" fill="none" stroke-linecap="round" opacity="${sel2 || hot ? 1 : .9}"/>`);
-      if (dir === "fwd" || dir === "both") out.push(edgeArrow(p2, points[points.length - 2], "to", sel2 || hot, e.id, baseColor));
-      if (dir === "rev" || dir === "both") out.push(edgeArrow(p1, points[1], "from", sel2 || hot, e.id, baseColor));
+      const col = sel2 || hot ? EDGE_HOT : baseColor, wd = sel2 ? 4 : hot || linked ? 3 : 2;
+      out.push(`<path class="${cls}" data-id="${e.id}" d="${routed.path}" stroke="${col}" stroke-width="${wd}" fill="none" stroke-linecap="round" opacity="${sel2 || hot || linked ? 1 : .7}"/>`);
+      if (dir === "fwd" || dir === "both") out.push(edgeArrow(p2, points[points.length - 2], "to", sel2 || hot, e.id, baseColor,linked));
+      if (dir === "rev" || dir === "both") out.push(edgeArrow(p1, points[1], "from", sel2 || hot, e.id, baseColor,linked));
     }
     return out;
   }
   /* 指针悬停到某条线上：只改类名/属性，不重画整张图（连线可能很多）。
      与选中互斥：选中的那条永远用"选中档"。 */
+  function refreshEdgeState() {
+    const edges=new Map((cur?.edges || []).map(e=>[e.id,e]));
+    function flags(id) {
+      const edge=edges.get(id),selected=id===selEdge,hot=!selected && id===hotEdge;
+      return {selected,hot,linked:!!edge && (selectedNodes.has(edge.from.node) || selectedNodes.has(edge.to.node)),color:/^#[0-9a-f]{6}$/i.test(edge?.color || '')?edge.color:EDGE_COLOR};
+    }
+    for(const p of document.querySelectorAll('#mmStage .mm-links path.mm-edge')) {
+      const f=flags(p.dataset.id);
+      p.classList.toggle('sel',f.selected);p.classList.toggle('hot',f.hot);p.classList.toggle('linked',f.linked);
+      p.setAttribute('stroke',f.selected || f.hot?EDGE_HOT:f.color);
+      p.setAttribute('stroke-width',f.selected?4:f.hot || f.linked?3:2);
+      p.setAttribute('opacity',f.selected || f.hot || f.linked?1:.7);
+    }
+    for(const p of document.querySelectorAll('#mmStage .mm-links path.mm-arrow')) {
+      const f=flags(p.dataset.edge);p.classList.toggle('hot',f.selected || f.hot);p.classList.toggle('linked',f.linked);
+      p.setAttribute('fill',f.selected || f.hot?EDGE_HOT:f.color);
+    }
+    for(const label of document.querySelectorAll('#mmStage [data-edge-label]')) {
+      const f=flags(label.dataset.edgeLabel);label.classList.toggle('linked',f.linked);label.classList.toggle('edge-selected',f.selected);
+      label.style.setProperty('--connection-color',f.color);
+    }
+  }
   function markEdgeHot(id) {
-    if (hotEdge === id) return;
-    hotEdge = id;
-    for (const p of document.querySelectorAll("#mmStage .mm-links path.mm-edge")) {
-      const on = p.dataset.id === id, isSel = p.classList.contains("sel");
-      p.classList.toggle("hot", on && !isSel);
-      if (on && !isSel) { p.setAttribute("stroke", EDGE_HOT); p.setAttribute("stroke-width", "3"); p.setAttribute("opacity", "1"); }
-      else if (!isSel) { p.setAttribute("stroke", /^#[0-9a-f]{6}$/i.test((cur.edges || []).find(e=>e.id===p.dataset.id)?.color || "")?(cur.edges || []).find(e=>e.id===p.dataset.id).color:EDGE_COLOR); p.setAttribute("stroke-width", "2"); p.setAttribute("opacity", ".9"); }
-    }
-    for (const a of document.querySelectorAll("#mmStage .mm-links path.mm-arrow")) {
-      const owner=cur && (cur.edges || []).find(e=>e.id===a.dataset.edge);
-      const isHot=owner && (owner.id===id || owner.id===selEdge);
-      a.setAttribute("fill",isHot?EDGE_HOT:/^#[0-9a-f]{6}$/i.test(owner?.color || "")?owner.color:EDGE_COLOR);
-    }
+    if(hotEdge===id)return;
+    hotEdge=id;refreshEdgeState();
   }
   const E = (s) => esc(s);
   function draw(transient = false) {
@@ -867,20 +884,23 @@
       if (s.x == null) continue;
       const n = s.n, d = s.depth, isSel = selectedNodes.has(n.id), hit = found.includes(n.id);
       const paper = cur.theme === 'fresh' && cur.flat;
-      const style = paper ? `background:${mix(s.color,th.sub,.32)};color:${th.text};border-color:${mix(s.color,th.sub,.92)};--mm-node-color:${s.color};` : (d === 0 ? `background:${s.color};color:${th.rootText};` : d === 1 ? `background:${mix(s.color, th.sub, .16)};color:${th.text};` : `color:${th.text};background:${th.sub};`) + `border-color:${s.color};--mm-node-color:${s.color};`;
+      const topicLevel=cur.topicLevels?.[n.id];
+      const style = (paper || Number.isFinite(topicLevel)) ? `background:${mix(s.color,th.sub,Number.isFinite(topicLevel)?Math.max(.07,.30-topicLevel*.075):.32)};color:${th.text};border-color:${mix(s.color,th.sub,.92)};--mm-node-color:${s.color};` : (d === 0 ? `background:${s.color};color:${th.rootText};` : d === 1 ? `background:${mix(s.color, th.sub, .16)};color:${th.text};` : `color:${th.text};background:${th.sub};`) + `border-color:${s.color};--mm-node-color:${s.color};`;
       const prog = n.progress ? `<svg class="mm-prog" viewBox="0 0 16 16" title="${n.progress}%"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" opacity=".25" stroke-width="2"/><circle cx="8" cy="8" r="6.5" fill="none" stroke="${d === 0 ? "currentColor" : s.color}" stroke-width="2.4" stroke-dasharray="${(n.progress / 100) * 40.8} 41" transform="rotate(-90 8 8)" stroke-linecap="round"/></svg>` : "";
-      const full=()=>n.pdf?window.MMPDF.element(n.id,n.pdf):(n.image ? `<img class="mm-node-image" src="/api/maps/${encodeURIComponent(cur.id)}/media/${encodeURIComponent(n.image)}?draft=1" alt="${E((cur.media || []).find(m=>m.id===n.image)?.name || "图片")}" draggable="false">` : s.rich ? `<div class="mm-t mm-rich"><div class="mm-rich-inner">${(n.marks || []).length ? `<p>${E(n.marks.map(m => MARK[m] || "").join(""))}</p>` : ""}${window.MMContent.render(n.text)}</div></div>` : `<span class="mm-t">${E(s.lines.join("\n"))}</span>`)
-        + `${prog}`
+      const full=()=>n.mapLink && window.MMLibrary?window.MMLibrary.renderCard(n):n.pdf?window.MMPDF.element(n.id,n.pdf):(n.image ? `<img class="mm-node-image" src="/api/maps/${encodeURIComponent(cur.id)}/media/${encodeURIComponent(n.image)}?draft=1" alt="${E((cur.media || []).find(m=>m.id===n.image)?.name || "图片")}" draggable="false">` : s.rich ? `<div class="mm-t mm-rich"><div class="mm-rich-inner">${(n.marks || []).length ? `<p>${E(n.marks.map(m => MARK[m] || "").join(""))}</p>` : ""}${window.MMContent.render(n.text)}</div></div>` : `<span class="mm-t">${E(s.lines.join("\n"))}</span>`)
+        + `${prog}${window.MMLibrary?.renderReferences(n) || ""}`
         + ((n.children || []).length && d > 0 || (d === 0 && isFold(n)) ? `<button class="mm-fold${isFold(n) ? " on" : ""} s${s.side}" data-mm="fold" data-id="${n.id}" style="--c:${s.color}" title="${isFold(n) ? "展开" : "收起"}">${isFold(n) ? hidden(n) : "−"}</button>` : "");
       const media=(cur.media || []).find(m=>m.id===(n.image || n.pdf));
-      const className=`mm-node d${Math.min(d,2)}${isSel?' sel':''}${hit?' hit':''}${n.bold?' b':''}${n.pdf?' mm-node-pdf':''}`;
+      const className=`mm-node d${Math.min(d,2)}${Number.isFinite(topicLevel)?' topic-depth-'+Math.min(topicLevel,3):''}${isSel?' sel':''}${hit?' hit':''}${n.bold?' b':''}${n.pdf?' mm-node-pdf':''}${n.mapLink?' mm-node-map-link':''}`;
       const css=`left:${s.x}px;top:${s.y}px;width:${s.w}px;height:${s.h}px;${style}font:${s.font};line-height:${lineH(d,n.fontSize)}px;padding:${s.padY}px ${s.padX}px;text-align:left;`;
-      if(window.MMScene)specs.push({id:n.id,isPDF:!!n.pdf,mediaName:media?.name || "PDF文档",className,style:css,box:s,keep:isSel || editing===n.id,key:JSON.stringify([n.text,n.image,n.pdf,n.marks,n.progress,n.bold,media?.name]),summary:n.pdf?'PDF · '+(media?.name || '文档'):n.image?(media?.name || '图片'):String(n.text || '').split('\n').find(line=>line.trim())?.replace(/^\s*#{1,6}\s+/,'').slice(0,100) || '',full});
+      if(window.MMScene)specs.push({id:n.id,isPDF:!!n.pdf,mediaName:media?.name || "PDF文档",isMapLink:!!n.mapLink,className,style:css,box:s,keep:isSel || editing===n.id,key:JSON.stringify([n.text,n.image,n.pdf,n.marks,n.progress,n.bold,media?.name,n.mapLink,n.mapReferences,window.MMLibrary?.cacheVersion]),summary:n.mapLink?(window.MMLibrary?.referenceTitle(n) || n.text):n.pdf?'PDF · '+(media?.name || '文档'):n.image?(media?.name || '图片'):String(n.text || '').split('\n').find(line=>line.trim())?.replace(/^\s*#{1,6}\s+/,'').slice(0,100) || '',full});
       else html.push(`<div class="${className}" data-id="${n.id}" style="${css}">${full()}</div>`);
       if(n.aiEntry && n.aiTurnId){const record=cur.aiMemory?.turns?.find(t=>t.id===n.aiTurnId),status=record?.status || 'completed';
         html.push(window.MMAILearning?.render(s,record) || '');
         html.push(`<button type="button" class="mm-ai-task-badge ${status==='running'?'running':status==='completed'?'complete':'incomplete'}" data-ai-turn="${E(n.aiTurnId)}" title="查看本次提问的方向、参考资料和生成过程" style="left:${s.x}px;top:${s.y-29}px;--ai-chain-color:${E(n.color || '#667e51')}"><span aria-hidden="true">${status==='running'?'◉':status==='completed'?'✓':'○'}</span> ${status==='running'?'生成中':status==='completed'?'查看过程':'未完成 · 查看过程'}</button>`);
       }
+      if(n.mathWarnings?.length && (!window.MMAIMathCheck || window.MMAIMathCheck.inspect(n.text).length))html.push(`<button type="button" class="mm-math-warning" data-math-warning="${E(n.id)}" title="${E(n.mathWarnings.join('；'))}" style="left:${s.x+(n.citations?.length?90:0)}px;top:${s.y+s.h+6}px">公式待检查</button>`);
+      if(n.citations?.length)html.push(`<button type="button" class="mm-node-citations" data-node-citations="${E(n.id)}" style="left:${s.x}px;top:${s.y+s.h+6}px">出处 ${n.citations.length}</button>`);
       if(n.image){const name=media?.name || (n.pdf?'PDF文档':'图片');html.push(`<button type="button" class="mm-image-label${isSel?' sel':''}" data-image-label="${E(n.id)}" title="${E(name)}" style="left:${s.x}px;top:${s.y-34}px;max-width:${s.w}px;--image-color:${s.color}">${E(name)}</button>`);}
     }
     /* 磁吸点画成**独立覆盖层**（在节点之上、不放进 .mm-node 里）：.mm-node 是 overflow:hidden，
@@ -900,13 +920,14 @@
     if(window.MMScene)window.MMScene.render(st,chrome,specs);else st.innerHTML=chrome;
     window.MMGroups?.render();
     window.MMCanvasTools?.render();
+    window.MMTopicUI?.render();
     const vw = $("mmView");
     vw.style.background = th.bg; vw.style.setProperty("--grid", th.grid); vw.dataset.theme = cur.theme;
     applyView();
     $("mmTitleIn").value = cur.title;
     toolbarState();
     if (panelOpen) panel();
-    if (!transient) window.MMFiles?.onDraw(cur);
+    if (!transient) {window.MMFiles?.onDraw(cur);window.MMLibrary?.onDraw(cur);window.MMWorkspaceHost?.onDraw(cur);}
   }
   function mix(hex, base, a) {
     const p = (h) => { h = h.replace("#", ""); if (h.length === 3) h = h.split("").map((c) => c + c).join(""); return [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16)); };
@@ -915,17 +936,19 @@
   function applyView() { const st = $("mmStage"); if (st){st.style.transform = `translate(${view.x}px,${view.y}px) scale(${view.k})`;window.MMScene?.refresh(st);} const z = $("mmZoom"); if (z) z.textContent = Math.round(view.k * 100) + "%"; syncMagSize(); }
   function fit(anim) {
     if (!L) return;
-    const vw = $("mmView"), r = vw.getBoundingClientRect(), b = L.bounds, pad = 85;
+    const vw = $("mmView"), r = vw.getBoundingClientRect(), b = L.bounds, pad = window.MMWorkspaceHost?40:85;
+    const dock=window.MMWorkspaceHost?document.querySelector('.mm-tools:not(.mm-draw-dock)')?.getBoundingClientRect():null;
+    const topPad=dock?Math.max(85,Math.min(r.height*.45,dock.bottom-r.top+24)):85,bottomPad=window.MMWorkspaceHost?124:85,centerY=topPad+Math.max(80,r.height-topPad-bottomPad)/2;
     const w = Math.max(1,b.x1-b.x0), h = Math.max(1,b.y1-b.y0);
     // Dock clearance is measured in screen pixels, independent of canvas zoom.
-    const want = Math.min(Math.max(80,r.width-pad*2)/w,Math.max(80,r.height-pad*2)/h), minK = isMobile() ? 0.6 : 0.2;
+    const want = Math.min(Math.max(80,r.width-pad*2)/w,Math.max(80,r.height-topPad-bottomPad)/h), minK = isMobile() ? 0.6 : 0.2;
     view.k = Math.max(minK, Math.min(1.4, want));
     if (want < minK) {
       // 手机上整张图放不下：不缩得看不清，以中心主题为准，其余的左右拖着看
       const s = L.nodes.get(topNode()?.id); if (!s) { view.x = r.width / 2 - (b.x0+b.x1)/2*view.k; view.y = r.height / 2 - (b.y0+b.y1)/2*view.k; applyView(); return; } const lay = cur.layout;
       const cx = lay === "right" ? s.x + Math.min(r.width / view.k / 2 - 20, (b.x1 - b.x0) / 2) : s.x + s.w / 2, cy = lay === "down" ? s.y + Math.min(r.height / view.k / 2 - 20, (b.y1 - b.y0) / 2) : s.y + s.h / 2;
-      view.x = r.width / 2 - cx * view.k; view.y = r.height / 2 - cy * view.k;
-    } else { view.x = r.width / 2 - ((b.x0 + b.x1) / 2) * view.k; view.y = r.height / 2 - ((b.y0 + b.y1) / 2) * view.k; }
+      view.x = r.width / 2 - cx * view.k; view.y = centerY - cy * view.k;
+    } else { view.x = r.width / 2 - ((b.x0 + b.x1) / 2) * view.k; view.y = centerY - ((b.y0 + b.y1) / 2) * view.k; }
     if (anim) { const st = $("mmStage"); st.classList.add("anim"); setTimeout(() => st.classList.remove("anim"), 260); }
     applyView();
   }
@@ -945,6 +968,7 @@
     document.querySelectorAll("#mmStage .mm-node").forEach(el => el.classList.toggle("sel", selectedNodes.has(el.dataset.id)));
     document.querySelectorAll('#mmStage .mm-image-label').forEach(el=>el.classList.toggle('sel',selectedNodes.has(el.dataset.imageLabel)));
     window.MMScene?.refresh($('mmStage'));
+    refreshEdgeState();window.MMTopicUI?.render();
     toolbarState(); if (panelOpen) panel(); if (show && sel) reveal(sel);
   }
   function select(id, show) { selectNodes(id ? [id] : [], show); }
@@ -971,7 +995,7 @@
     if (!anchor) throw new Error("提问节点尚未完成布局，请稍后重试。");
     const prepared = texts.map(text => { const node = { id: nid(), text, children: [] }; return { node, box: measure(node, 0) }; });
     const width = Math.max(...prepared.map(item => item.box.w));
-    const occupied = [...L.nodes.values()];
+    const occupied = [...L.nodes.values(),...(L.moduleCards || []).map(c=>c.box)];
     // Place only this batch in two columns, measuring real content and avoiding
     // both existing nodes and earlier rows; the rest of the canvas stays put.
     let rowY = anchor.y;
@@ -1021,7 +1045,7 @@
       for(const n of added){const id=all.get(n.id);cur.nodes.push({id,text:texts[plan.nodes.findIndex(v=>v.id===n.id)],children:[]});putLayerPos(id,{x:n.x+dx,y:n.y+dy});curSize()[id]={w:n.w,h:n.h};}
       const edges=cur.edges ||= [];
       for(const e of graph.edges){if(!all.has(e.from) || !all.has(e.to) || !fresh.has(e.from) && !fresh.has(e.to))continue;
-        const from=all.get(e.from),to=all.get(e.to),label=window.MMAISummary.relationLabels[e.kind];
+        const from=all.get(e.from),to=all.get(e.to),label=window.MMAISummary.edgeLabel(e);
         if(!edges.some(v=>v.from.node===from && v.to.node===to && v.label===label))edges.push({id:eid(),from:{node:from,side:"e"},to:{node:to,side:"w"},dir:e.kind==="parallel"?"none":"fwd",label});
       }
       if(!known.size){const entry=added.find(n=>!graph.edges.some(e=>e.to===n.id && fresh.has(e.from))) || added[0];edges.push({id:eid(),from:{node:all.get(entry.id),side:"w"},to:{node:sourceId,side:"e"},dir:"fwd",label:"回应"});}
@@ -1056,7 +1080,7 @@
       function connect(from,to,label,dir='fwd',fromSide='e',toSide='w'){
         if(!edges.some(e=>e.from.node===from && e.to.node===to && e.label===label))edges.push({id:eid(),from:{node:from,side:fromSide},to:{node:to,side:toSide},dir,label});
       }
-      for(const e of graph.edges)if(all.has(e.from) && all.has(e.to) && (fresh.has(e.from)||fresh.has(e.to)))connect(all.get(e.from),all.get(e.to),S.relationLabels[e.kind],e.kind==='parallel'?'none':'fwd');
+      for(const e of graph.edges)if(all.has(e.from) && all.has(e.to) && (fresh.has(e.from)||fresh.has(e.to)))connect(all.get(e.from),all.get(e.to),S.edgeLabel(e),e.kind==='parallel'?'none':'fwd');
       // A partial selection still has an entry path, even if its preceding step is omitted.
       for(const n of graph.nodes)if(n.type==='text' && all.has(n.id) && !edges.some(e=>e.to.node===all.get(n.id) && [...all.values()].includes(e.from.node)))connect(all.get('__entry'),all.get(n.id),'展开');
       connect(all.get('__entry'),sourceId,'回应','fwd','w','e');
@@ -1067,49 +1091,57 @@
   // Complete streamed nodes join one history operation. Later history snapshots
   // receive only fresh additions, preserving intervening user edits and deletions.
   function appendAIResult(mapId,sourceId,summary,entryText,batch,final=false){
-    if(!cur || cur.id!==mapId || !findNode(sourceId))throw new Error('提问节点已删除或导图已切换');
+    const outline=batch?.kind==='outline';
+    if(!cur || cur.id!==mapId || (sourceId && !findNode(sourceId)) || (!outline && !sourceId))throw new Error('来源节点已删除或导图已切换');
     if(!batch || batch.mapId && (batch.mapId!==mapId || batch.sourceId!==sourceId))throw new Error('生成批次无效');
     if(typeof entryText!=='string' || !entryText.trim() || entryText.length>500)throw new Error('提问入口标题无效');
-    const S=window.MMAISummary,plan=S.normalizeSummary(summary,{partial:!final});
-    if(!batch.mapping){endEdit();batch.mapping={};batch.mapId=mapId;batch.sourceId=sourceId;
-      if(batch.turnId && window.MMAIBranch){batch.color ||= window.MMAIBranch.color(L.nodes.get(sourceId)?.color,(cur.aiMemory?.turns || []).filter(t=>t.sourceId===sourceId).map(t=>t.color),cur.aiMemory?.turns?.length || 0);batch.sourcePort=window.MMAIBranch.port(sourceId,cur.edges || []);}
+    const S=window.MMAISummary,plan=S.normalizeSummary(summary,{partial:!final,...(outline?{outline:true,lecture:!!batch.lecture,documents:batch.documents,allowSupplement:batch.allowSupplement}: {})});
+    if(!batch.mapping){window.MMTopicUI?.setMode('detail');endEdit();batch.mapping={};batch.mapId=mapId;batch.sourceId=sourceId;
+      if((batch.turnId || outline && sourceId) && window.MMAIBranch){batch.color ||= window.MMAIBranch.color(L.nodes.get(sourceId)?.color,(cur.aiMemory?.turns || []).filter(t=>t.sourceId===sourceId).map(t=>t.color),cur.aiMemory?.turns?.length || 0);batch.sourcePort=window.MMAIBranch.port(sourceId,cur.edges || []);}
     }
-    const mapping=batch.mapping,anchor=L.nodes.get(sourceId);if(!anchor)throw new Error('提问节点尚未完成布局');
+    const mapping=batch.mapping,anchor=sourceId?L.nodes.get(sourceId):{x:Math.max(-110,...[...L.nodes.values()].map(b=>b.x+b.w)),y:0,w:0,h:0};if(!anchor)throw new Error('来源节点尚未完成布局');
     if(mapping.__entry && !findNode(mapping.__entry))throw new Error('本次提问入口已删除，生成已停止');
+    if(outline && batch.rootKey && mapping[batch.rootKey] && !findNode(mapping[batch.rootKey]))throw new Error('本次整理的中心节点已删除，生成已停止');
     const items=[],occupied=[...L.nodes.values()].flatMap(s=>{
       const record=cur.aiMemory?.turns?.find(t=>t.id===s.n.aiTurnId),b=window.MMAILearning?.box(s,record,true);return b?[s,b]:[s];
-    });
-    function place(key,text,at){
-      const n={id:nid(),text,children:[],...(batch.turnId?{aiTurnId:batch.turnId,aiEntry:key==='__entry',color:batch.color}: {})},box=measure(n,0),p={...at};
+    }).concat((L.moduleCards || []).map(c=>c.box));
+    function place(key,text,at,extra={}){
+      const n={id:nid(),text,children:[],...extra,...(outline?{outlineSourceId:batch.recordId,...(batch.color?{color:batch.color}: {})}:{}),...(batch.turnId?{aiTurnId:batch.turnId,aiEntry:key==='__entry',color:batch.color}: {})},box=measure(n,0),p={...at};
       const reserve=n.aiEntry && window.MMAILearning?{w:Math.max(220,box.w),h:box.h+174}:box;
       while(true){const hits=occupied.filter(b=>p.x<b.x+b.w+24 && p.x+reserve.w+24>b.x && p.y<b.y+b.h+24 && p.y+reserve.h+24>b.y);if(!hits.length)break;p.y=Math.max(...hits.map(b=>b.y+b.h+40));}
-      mapping[key]=n.id;items.push({node:n,pos:p,size:{w:box.w,h:box.h}});const result={x:p.x,y:p.y,w:box.w,h:box.h};occupied.push({...result,...reserve});return result;
+      if(batch.lecture && (key==='lecture_root' || n.layoutRole==='document') && window.MMLectureCleanup?.placeholder(n))n.lecturePlaceholderText=n.text;
+      mapping[key]=n.id;(batch.generatedPos ||= {})[n.id]={...p};(batch.initialColors ||= {})[n.id]=n.color || null;items.push({node:n,pos:p,size:{w:box.w,h:box.h}});const result={x:p.x,y:p.y,w:box.w,h:box.h};occupied.push({...result,...reserve});return result;
     }
+    for(const asset of batch.pdfAssets || [])if(!mapping['pdf-'+asset.documentId])place('pdf-'+asset.documentId,'',{x:anchor.x-600,y:anchor.y},{pdf:asset.media.id});
     const boxOf=key=>{const id=mapping[key],n=items.find(v=>v.node.id===id);return n?{...n.pos,...n.size}:L.nodes.get(id);};
-    if(!mapping.__entry){const box=measure({text:'# '+entryText},0),side=batch.sourcePort?.side;
+    if(!outline && !mapping.__entry){const box=measure({text:'# '+entryText},0),side=batch.sourcePort?.side;
       const at=side==='s'?{x:anchor.x,y:anchor.y+anchor.h+100}:side==='n'?{x:anchor.x,y:anchor.y-box.h-100}:side==='w'?{x:anchor.x-box.w-100,y:anchor.y}:{x:anchor.x+anchor.w+100,y:anchor.y};place('__entry','# '+entryText,at);
     }
     for(const n of plan.nodes){
       if(mapping[n.id])continue; // A user-deleted generated node stays deleted.
-      const parent=plan.edges.find(e=>e.to===n.id && boxOf(e.from)),base=parent?boxOf(parent.from):boxOf('__entry');
-      place(n.id,S.nodeText(n),{x:base.x+base.w+110,y:base.y});
+      const parent=plan.edges.find(e=>e.to===n.id && boxOf(e.from)),base=parent?boxOf(parent.from):outline?(boxOf(batch.rootKey) || anchor):boxOf('__entry');
+      if(outline)batch.rootKey ||= n.id;
+      place(n.id,S.nodeText(n),{x:base.x+base.w+110,y:base.y},{...(n.brief?{brief:n.brief}:{}),...(n.topic?{topic:n.topic,topicScope:batch.recordId || batch.turnId || mapId}:{}),...(n.layoutRole?{layoutRole:n.layoutRole}:n.id===plan.nodes[0].id && !n.topic?{layoutRole:'overview'}:{}),...(n.parentId && mapping[n.parentId]?{layoutParent:mapping[n.parentId]}:{}),...(summary.nodes.find(v=>v.id===n.id)?.mapReferences?{mapReferences:clone(summary.nodes.find(v=>v.id===n.id).mapReferences)}:{}),...(n.citations?{citations:clone(n.citations)}:{}),...(n.mathWarnings?.length?{mathWarnings:clone(n.mathWarnings)}:{})});
     }
     const exists=id=>items.some(v=>v.node.id===id) || !!findNode(id),edges=[];
     function connect(from,to,label,dir='fwd',fromSide='e',toSide='w',fixed=null){
       if(!from || !to || !exists(from) || !exists(to))return;
       if(!(cur.edges || []).some(e=>e.from.node===from && e.to.node===to && e.label===label)){
-        const all=[...(cur.edges || []),...edges],B=batch.turnId && window.MMAIBranch;
+        const all=[...(cur.edges || []),...edges],B=(batch.turnId || outline) && window.MMAIBranch;
         const a=fixed || (B?B.port(from,all,[fromSide,...['e','s','n','w'].filter(s=>s!==fromSide)]):{side:fromSide}),b=B?B.port(to,all,[toSide,...['w','n','s','e'].filter(s=>s!==toSide)]):{side:toSide};
         edges.push({id:eid(),from:{node:from,...a},to:{node:to,...b},dir,label,...(batch.color?{color:batch.color}: {})});
       }
     }
-    if(batch.turnId)connect(sourceId,mapping.__entry,'提问','fwd',batch.sourcePort?.side || 'e',({e:'w',w:'e',s:'n',n:'s'})[batch.sourcePort?.side] || 'w',batch.sourcePort);else connect(mapping.__entry,sourceId,'回应','fwd','w','e');
-    for(const e of plan.edges)connect(mapping[e.from],mapping[e.to],S.relationLabels[e.kind],e.kind==='parallel'?'none':'fwd');
-    if(final){for(const n of plan.nodes)if(!plan.edges.some(e=>e.to===n.id))connect(mapping.__entry,mapping[n.id],'展开');}
-    else if(plan.nodes[0])connect(mapping.__entry,mapping[plan.nodes[0].id],'展开');
+    if(outline){if(sourceId)connect(sourceId,mapping[batch.rootKey],'整理','fwd',batch.sourcePort?.side || 'e','w',batch.sourcePort);}
+    else if(batch.turnId)connect(sourceId,mapping.__entry,'提问','fwd',batch.sourcePort?.side || 'e',({e:'w',w:'e',s:'n',n:'s'})[batch.sourcePort?.side] || 'w',batch.sourcePort);else connect(mapping.__entry,sourceId,'回应','fwd','w','e');
+    for(const e of plan.edges)connect(mapping[e.from],mapping[e.to],S.edgeLabel(e),e.kind==='parallel'?'none':'fwd');
+    for(const edge of edges){const original=plan.edges.find(e=>mapping[e.from]===edge.from.node && mapping[e.to]===edge.to.node);if(original)edge.kind=original.kind;}
+    if(!outline && final){for(const n of plan.nodes)if(!plan.edges.some(e=>e.to===n.id))connect(mapping.__entry,mapping[n.id],'展开');}
+    else if(!outline && plan.nodes[0])connect(mapping.__entry,mapping[plan.nodes[0].id],'展开');
     if(!items.length && !edges.length)return {ids:[],mapping};
     function apply(map,current=false){
-      for(const v of items){map.nodes.push(clone(v.node));if(current)putLayerPos(v.node.id,clone(v.pos));else (map.pos ||= {})[v.node.id]=clone(v.pos);(map.size ||= {})[v.node.id]=clone(v.size);}
+      for(const v of items){map.nodes.push(clone(v.node));if(v.node.pdf){const media=batch.pdfAssets.find(a=>a.media.id===v.node.pdf)?.media;if(media && !(map.media ||= []).some(m=>m.id===media.id))map.media.push(clone(media));}if(current)putLayerPos(v.node.id,clone(v.pos));else (map.pos ||= {})[v.node.id]=clone(v.pos);(map.size ||= {})[v.node.id]=clone(v.size);}
+      for(const n of plan.nodes)if(n.parentId && mapping[n.parentId]){const target=map.nodes.find(v=>v.id===mapping[n.id]);if(target)target.layoutParent=mapping[n.parentId];}
       const live=new Set(map.nodes.map(n=>n.id));
       for(const e of edges)if(live.has(e.from.node) && live.has(e.to.node))(map.edges ||= []).push(clone(e));
     }
@@ -1121,6 +1153,13 @@
     }
     if(final)aiBatches.delete(batch);return {ids:items.map(v=>v.node.id),mapping};
   }
+  function applyTopicPlan(map,plan){
+    const live=new Set(map.nodes.map(n=>n.id)),local={...plan,ids:plan.ids.filter(id=>live.has(id)),groups:plan.groups.map(g=>({...g,nodeIds:g.nodeIds.filter(id=>live.has(id))})).filter(g=>g.nodeIds.length)};
+    const members=(map.groups || []).map(g=>({g,ids:map.nodes.filter(n=>{const p=map.pos?.[n.id],z=map.size?.[n.id] || L.nodes.get(n.id);return p && z && p.x>=g.x && p.y>=g.y && p.x+z.w<=g.x+g.w && p.y+z.h<=g.y+g.h;}).map(n=>n.id)}));
+    for(const {g,ids} of members)if(ids.some(id=>local.ids.includes(id))){const boxes=ids.map(id=>({...L.nodes.get(id),...map.size?.[id],...map.pos[id],...local.positions[id]})),b=window.MMTopicLayout.extent(boxes);Object.assign(g,{x:b.x-28,y:b.y-52,w:b.w+56,h:b.h+80});}
+    window.MMTopicLayout.apply(map,local);
+    for(const e of map.edges || [])if(local.colors[e.from.node] && local.ids.includes(e.to.node))e.color=local.colors[e.from.node];
+  }
   function del(id) {
     const ids = id ? [id] : [...selectedNodes]; if (!ids.length) return;
     const remove = new Set(ids);
@@ -1130,11 +1169,11 @@
   function toggleFold() {}
   function foldLevel() {}
 
-  function setProp(k, v) { const nodes = [...selectedNodes].map(id => findNode(id)?.n).filter(Boolean); if (!nodes.length) return; change(() => { for (const n of nodes) { if (v === undefined || v === "" || v === false || v === null) delete n[k]; else n[k] = clone(v); } }); }
+  function setProp(k, v) { const nodes = [...selectedNodes].map(id => findNode(id)?.n).filter(n=>n && (!window.MMNodeKinds || !["marks","progress","bold"].includes(k) || window.MMNodeKinds.can(n,k==="progress"?"progress":k==="marks"?"marks":"format"))); if (!nodes.length) return; change(() => { for (const n of nodes) { if(window.MMNodeKinds && ["marks","progress","bold"].includes(k) && !window.MMNodeKinds.can(n,k==="progress"?"progress":k==="marks"?"marks":"format"))continue; if (v === undefined || v === "" || v === false || v === null) delete n[k]; else n[k] = clone(v); } }); }
   function toggleMark(m) {
     const r = findNode(sel); if (!r) return;
     change(() => {
-      for (const id of selectedNodes) { const n = findNode(id)?.n; if (!n) continue;
+      for (const id of selectedNodes) { const n = findNode(id)?.n; if (!n || window.MMNodeKinds && !window.MMNodeKinds.can(n,"marks")) continue;
       let a = (n.marks || []).slice();
       if (selectedNodes.size === 1 && a.includes(m)) a = a.filter((x) => x !== m);
       else { if (/^p\d$/.test(m)) a = a.filter((x) => !/^p\d$/.test(x)); a.unshift(m); }
@@ -1169,11 +1208,12 @@
     if(!original.length && !copiedGroups.length)return;
     const nodeIds=new Map(original.map(n=>[n.id,nid()])),groupIds=new Map(copiedGroups.map(g=>[g.id,eid()]));
     const nodes=original.map(n=>fill({...clone(n),id:nodeIds.get(n.id),children:[]}));
+    for(const n of nodes)if(n.layoutParent){const parent=nodeIds.get(n.layoutParent);if(parent)n.layoutParent=parent;else delete n.layoutParent;}
     const boxes=original.map(n=>{const p=payload.layers.pos?.[n.id] || {x:0,y:0},z=payload.layers.size?.[n.id] || measure(n,1);return {...p,w:z.w,h:z.h};}).concat(copiedGroups);
     const bounds={x:Math.min(...boxes.map(b=>b.x)),y:Math.min(...boxes.map(b=>b.y))};bounds.w=Math.max(...boxes.map(b=>b.x+b.w))-bounds.x;bounds.h=Math.max(...boxes.map(b=>b.y+b.h))-bounds.y;
     const frame=(cur.groups || []).find(g=>g.id===window.MMGroups?.state().selected),anchor=frame || L?.nodes.get(sel) || bounds;
     const at={x:anchor.x+anchor.w+60,y:anchor.y};
-    const occupied=[...(L?.nodes.values() || []),...(cur.groups || [])];
+    const occupied=[...(L?.nodes.values() || []),...(L?.moduleCards || []).map(c=>c.box),...(cur.groups || [])];
     for(;;){const hits=occupied.filter(b=>at.x<b.x+b.w+24 && at.x+bounds.w+24>b.x && at.y<b.y+b.h+24 && at.y+bounds.h+24>b.y);if(!hits.length)break;at.y=Math.max(...hits.map(b=>b.y+b.h+30));}
     const dx=at.x-bounds.x,dy=at.y-bounds.y;
     change(()=>{
@@ -1193,14 +1233,47 @@
   function pasteNode(payload) {
     if(!payload?.node || typeof payload.node.text!=="string")return;
     const node=fill({...clone(payload.node),id:nid(),children:[]}),anchor=L?.nodes.get(sel) || {x:0,y:0,w:150,h:40}, measured=measure(node,1);
+    delete node.layoutParent;
     const size=payload.size && Number.isFinite(payload.size.w) && Number.isFinite(payload.size.h)?clampSize(payload.size.w,payload.size.h,measured.w,measured.h):{w:measured.w,h:measured.h};
     const at={x:anchor.x+anchor.w+70,y:anchor.y};
-    const occupied=[...(L?.nodes.values() || [])];
+    const occupied=[...(L?.nodes.values() || []),...(L?.moduleCards || []).map(c=>c.box)];
     for(;;) {const hits=occupied.filter(s=>at.x<s.x+s.w+24 && at.x+size.w+24>s.x && at.y<s.y+s.h+24 && at.y+size.h+24>s.y);if(!hits.length)break;at.y=Math.max(...hits.map(s=>s.y+s.h+30));}
     change(()=>{cur.nodes.push(node);putLayerPos(node.id,at);curSize()[node.id]=size;
       if(node.image || node.pdf){for(const media of payload.media || [])if(media.id===(node.image || node.pdf) && !(cur.media || []).some(m=>m.id===media.id))(cur.media ||= []).push({...media,sourceMap:media.sourceMap || payload.sourceMap});}
     });select(node.id,true);
     if((node.image || node.pdf) && window.MMFiles) {const mapId=cur.id;window.MMFiles.flush(cur).then(()=>{if(cur?.id===mapId)draw();}).catch(error=>tip(error.message));}
+  }
+  async function generateTextOutline(text, options={}) {
+    const parsed=parseText(text),root=parsed.root;
+    if(parsed.fromTitle)root.text=options.title || '新导图';
+    walk(root,n=>{if(options.recordId)n.outlineSourceId=options.recordId;});
+    if(options.placement==='new'){
+      await create('blank',null,root);
+      if(cur && options.title){cur.title=options.title.slice(0,80);if($('mmTitleIn'))$('mmTitleIn').value=cur.title;storeLocal(cur);}
+      return {mapId:cur?.id,ids:cur?nodesArr().map(n=>n.id):[]};
+    }
+    if(!cur || options.sourceId && !findNode(options.sourceId))throw new Error('来源节点已删除或导图已切换');
+    endEdit();
+    const rows=[],widths=[];
+    function prepare(n,depth){const box=measure(n,0),children=(n.children || []).map(k=>prepare(k,depth+1));
+      widths[depth]=Math.max(widths[depth] || 0,box.w);
+      const row={node:n,box,depth,children,span:Math.max(box.h,children.reduce((sum,k)=>sum+k.span,0)+Math.max(0,children.length-1)*40)};rows.push(row);return row;}
+    const tree=prepare(root,0),columns=[0];for(let i=1;i<widths.length;i++)columns[i]=columns[i-1]+widths[i-1]+110;
+    const logical=[];
+    function place(row,y){row.pos={x:columns[row.depth],y:y+(row.span-row.box.h)/2};let next=y;
+      for(const child of row.children){place(child,next);next+=child.span+40;logical.push({from:row.node.id,to:child.node.id});}}
+    place(tree,0);
+    const anchor=options.sourceId?L.nodes.get(options.sourceId):{x:Math.max(-110,...[...L.nodes.values()].map(b=>b.x+b.w)),y:0,w:0,h:0};
+    let dx=anchor.x+anchor.w+110,dy=anchor.y;
+    const occupied=[...L.nodes.values()].flatMap(s=>{const record=cur.aiMemory?.turns?.find(t=>t.id===s.n.aiTurnId),card=window.MMAILearning?.box(s,record,true);return card?[s,card]:[s];}).concat((L.moduleCards || []).map(c=>c.box));
+    for(;;){const hits=occupied.filter(b=>rows.some(r=>r.pos.x+dx<b.x+b.w+24 && r.pos.x+dx+r.box.w+24>b.x && r.pos.y+dy<b.y+b.h+24 && r.pos.y+dy+r.box.h+24>b.y));if(!hits.length)break;dy=Math.max(...hits.map(b=>b.y+b.h+40));}
+    change(()=>{
+      for(const row of rows){row.node.children=[];cur.nodes.push(row.node);putLayerPos(row.node.id,{x:row.pos.x+dx,y:row.pos.y+dy});curSize()[row.node.id]={w:row.box.w,h:row.box.h};}
+      const edges=(cur.edges ||= []),B=window.MMAIBranch;
+      const connect=(from,to,label)=>edges.push({id:eid(),from:{node:from,...(B?B.port(from,edges,['e','s','n','w']):{side:'e'})},to:{node:to,...(B?B.port(to,edges,['w','n','s','e']):{side:'w'})},dir:'fwd',label});
+      for(const edge of logical)connect(edge.from,edge.to,'包含');if(options.sourceId)connect(options.sourceId,root.id,'整理');
+    });
+    selectNodes(rows.map(r=>r.node.id));reveal(root.id);return {mapId:cur.id,ids:rows.map(r=>r.node.id)};
   }
   function pasteTo(id, text) {
     const r = findNode(id || sel); if (!r) return;
@@ -1217,7 +1290,7 @@
 
   // 改字：节点上面盖一个输入框
   function startEdit(id, selectAll, initial) {
-    const s = L && L.nodes.get(id); if (!s || s.x == null) return;
+    const s = L && L.nodes.get(id); if (!s || s.x == null || s.n.mapLink || s.n.image || s.n.pdf) return;
     endEdit(true);
     select(id); editing = id; editingNew = null;
     // 手机上图缩得太小时：先放大到正常大小再改字
@@ -1383,9 +1456,9 @@
         stage.classList.remove("anim");
         stage.querySelectorAll(".mm-magwrap,.mm-linkprev,.mm-edit,.mm-edit-preview,.mm-edit-help,.mm-formatbar,.ghost,[data-preview],.mm-mark-hit,.mm-group-handle").forEach(el => el.remove());
         stage.querySelectorAll(".mm-mark.selected,.mm-group-frame.selected,.mm-group-label.selected").forEach(el=>el.classList.remove("selected"));
-        stage.querySelectorAll(".sel,.hot,.hit").forEach(el => { el.classList.remove("sel","hot","hit"); });
-        stage.querySelectorAll(".mm-edge").forEach(el => {el.setAttribute("stroke", EDGE_COLOR);el.setAttribute("stroke-width","2");});
-        stage.querySelectorAll(".mm-arrow").forEach(el => el.setAttribute("fill", EDGE_COLOR));
+        stage.querySelectorAll(".sel,.hot,.hit,.linked,.edge-selected").forEach(el => { el.classList.remove("sel","hot","hit"); });
+        stage.querySelectorAll(".mm-edge").forEach(el => {el.setAttribute("stroke",(cur.edges || []).find(e=>e.id===el.dataset.id)?.color || EDGE_COLOR);el.setAttribute("stroke-width","2");});
+        stage.querySelectorAll(".mm-arrow").forEach(el => el.setAttribute("fill",(cur.edges || []).find(e=>e.id===el.dataset.edge)?.color || EDGE_COLOR));
         wrapper.appendChild(stage); document.body.appendChild(wrapper);
         // Exclude logical inset/size aliases: copying both aliases and physical styles
         // can retain the offscreen position when the SVG clone is moved to its origin.
@@ -1404,8 +1477,8 @@
     g.translate(pad - b.x0, pad - b.y0);
     for (const e of cur.edges || []) {
       const a = lay.nodes.get(e.from.node), b = lay.nodes.get(e.to.node); if (!a || !b) continue;
-      const routed = window.MMEdgeRouter.route(a, b, e), p = routed.points;
-      g.strokeStyle = EDGE_COLOR; g.lineWidth = 2; g.lineCap = "round"; g.stroke(new Path2D(routed.path));
+      const routed = window.MMEdgeRouter.route(a, b, {...e,style:e.style || cur.line || 'curve'},[...lay.nodes.values()]), p = routed.points;
+      g.strokeStyle = e.color || EDGE_COLOR; g.lineWidth = 2; g.lineCap = "round"; g.stroke(new Path2D(routed.path));
       const arrow = (tip, prev) => {
         const angle = Math.atan2(tip.y - prev.y, tip.x - prev.x), c = Math.cos(angle), sn = Math.sin(angle);
         g.beginPath(); g.moveTo(tip.x, tip.y);
@@ -1453,10 +1526,10 @@
   function listHtml() {
     const kw = listQ.trim().toLowerCase();
     const items = index.filter((e) => !me() || !e.uid || e.uid === me().id).filter((e) => !kw || String(e.title).toLowerCase().includes(kw));
-    return `<section class="mm-home-hero"><div><span class="mm-home-eyebrow">捞捞 / 学习书桌</span><h1>给知识一点<br>生长的空间。</h1><p>把公式、想法与资料铺在一起，<br>慢慢连成自己的理解。</p><button type="button" class="mm-b pri mm-home-create" data-mm="new" data-tpl="blank"><span aria-hidden="true">＋</span> 新建空白导图 <span aria-hidden="true">↗</span></button></div><div class="mm-home-art" aria-hidden="true"><span class="mm-art-kicker">从记录，到理解</span><span class="mm-art-line one"></span><span class="mm-art-line two"></span><span class="mm-art-note one">一个想法<small>让思考发生</small></span><span class="mm-art-note two">一种联系<small>把知识连接起来</small></span><span class="mm-art-note three">自己的理解<small>慢慢积累，逐渐清晰</small></span><span class="mm-art-footer">A LITTLE ROOM FOR THINKING</span></div></section>
+    return `<section class="mm-home-hero"><div><span class="mm-home-eyebrow">捞捞 / 学习书桌</span><h1>给知识一点<br>生长的空间。</h1><p>把公式、想法与资料铺在一起，<br>慢慢连成自己的理解。</p><div class="mm-home-actions" role="group" aria-label="创建导图"><button type="button" class="mm-b pri mm-home-create" data-mm="new" data-tpl="blank"><span aria-hidden="true">＋</span> 新建空白导图 <span aria-hidden="true">↗</span></button><button type="button" class="mm-b mm-home-generate" data-mm="paste-new">大纲 / 正文生成导图 <span aria-hidden="true">↗</span></button><button type="button" class="mm-b mm-home-generate" data-mm="lecture-new">课件 / 讲义生成导图 <span aria-hidden="true">↗</span></button></div></div><div class="mm-home-art" aria-hidden="true"><span class="mm-art-kicker">从记录，到理解</span><span class="mm-art-line one"></span><span class="mm-art-line two"></span><span class="mm-art-note one">一个想法<small>让思考发生</small></span><span class="mm-art-note two">一种联系<small>把知识连接起来</small></span><span class="mm-art-note three">自己的理解<small>慢慢积累，逐渐清晰</small></span><span class="mm-art-footer">A LITTLE ROOM FOR THINKING</span></div></section>
       <section class="mm-home-library" aria-label="我的导图"><div class="mm-library-head"><div class="mm-sec"><b>我的导图</b><span>${items.length} 张${kw?'匹配':''} · 保存在本机</span></div><input id="mmListQ" class="mm-search" type="search" aria-label="搜索导图" placeholder="搜索导图名称…" value="${E(listQ)}" maxlength="40"></div>
-      ${items.length ? `<div class="mm-cards">${items.map(e=>`<div class="mm-card" data-mm="open" data-id="${E(e.id)}" tabindex="0" role="button" aria-label="打开 ${E(e.title)}"><div class="mc-preview">${homePreview(e)}<span class="mc-open-hint">打开导图 ↗</span></div><div class="mc-details"><div class="mc-top"><b>${E(e.title)}</b><button type="button" class="mm-more" data-mm="menu" data-id="${E(e.id)}" aria-label="更多：${E(e.title)}">⋯</button></div><div class="mc-meta">${e.nodes || 1} 个节点 <span>·</span> ${when(e.updated)}</div>${e.fileMissing || e.hasDraft?`<span class="mc-draft">${e.fileMissing?'文件已移除，草稿已保留':'有未保存草稿'}</span>`:''}</div></div>`).join('')}</div>`:`<div class="mm-empty"><span class="mm-empty-mark" aria-hidden="true">${kw?'⌕':'＋'}</span><b>${kw?'没有找到这张导图':'你的第一张导图，从这里开始'}</b><p>${kw?'试试其他名称，或清空搜索框。':'新建一张空白导图，或导入你已有的笔记。'}</p></div>`}</section>
-      <section class="mm-home-start" aria-label="创建导图"><div class="mm-home-import"><span>已经有内容了？</span><button type="button" class="mm-b" data-mm="paste-new">粘贴文字生成 <span aria-hidden="true">↗</span></button><button type="button" class="mm-b" data-mm="import-home">导入文件 <span aria-hidden="true">↗</span></button><small>支持 JSON、Markdown、TXT</small><input type="file" id="mmFileOpen" accept=".json,.md,.markdown,.txt" hidden></div></section>
+      ${items.length ? `<div class="mm-cards">${items.map(e=>`<div class="mm-card" data-mm="open" data-id="${E(e.id)}" tabindex="0" role="button" aria-label="打开 ${E(e.title)}"><div class="mc-preview">${homePreview(e)}<span class="mc-open-hint">打开导图 ↗</span></div><div class="mc-details"><div class="mc-top"><b>${E(e.title)}</b><button type="button" class="mm-more" data-mm="menu" data-id="${E(e.id)}" aria-label="更多：${E(e.title)}">⋯</button></div><div class="mc-meta">${e.nodes || 1} 个节点 <span>·</span> ${when(e.updated)}</div>${e.fileMissing || e.hasDraft?`<span class="mc-draft">${e.fileMissing?'文件已移除，草稿已保留':'有未保存草稿'}</span>`:''}</div></div>`).join('')}</div>`:`<div class="mm-empty"><span class="mm-empty-mark" aria-hidden="true">${kw?'⌕':'＋'}</span><b>${kw?'没有找到这张导图':'你的第一张导图，从这里开始'}</b><p>${kw?'试试其他名称，或清空搜索框。':'从上方新建空白导图，或用文字、课件生成。'}</p></div>`}</section>
+
 <footer class="mm-home-footer"><span>捞捞 · 留一张画布给思考</span><span>本地保存 / 自由连接</span></footer>`;
   }
   function renderList() {
@@ -1465,6 +1538,7 @@
     $('mmSaveExit')?.classList.add('hidden');$('mmDiscardExit')?.classList.add('hidden');
     box.className = "mm-box list"; box.style.height = "";
     box.innerHTML = listHtml();
+    window.MMWorkspaceHost?.onDraw(null);
     const s = $("mmListQ"); if (s && s.dataset.f) s.focus();
   }
 
@@ -1475,7 +1549,8 @@
         <div class="mm-tg"><button class="mm-b" data-mm="find" title="搜索（Ctrl+F）" aria-label="搜索节点">查找</button></div>
         <div class="mm-tg mm-sel">
           <label title="画布主题"><select id="mmTheme" aria-label="画布主题">${Object.entries(THEMES).map(([k, v]) => `<option value="${k}">${v.name}</option>`).join("")}</select></label></div>
-        <div class="mm-tg"><button class="mm-b" data-mm="paste-in" title="把文字转换成平级节点">粘贴文字</button><button class="mm-b" data-mm="export" title="导出图片 / Markdown / 备份">导出 ↗</button></div>
+        <div class="mm-tg mm-topic-controls"><span class="mm-view-switch" role="group" aria-label="导图视图"><button type="button" class="mm-b" id="mmDetailView" aria-pressed="true">详细</button><button type="button" class="mm-b" id="mmOverviewView" aria-pressed="false">概览</button></span><button type="button" class="mm-b" id="mmStructureReviewButton" title="使用当前模型复核整图的模块与层级">结构复核</button><button class="mm-b" id="mmOrganizeButton" type="button" title="整理当前分支，可一步撤销">自动整理</button><select id="mmOrganizeScope" aria-label="整理范围"><option value="branch">当前分支</option><option value="all">整张导图</option></select><label class="mm-line-choice">连线 <select id="mmConnectionStyle" aria-label="连线样式"><option value="curve">曲线</option><option value="elbow">折线</option><option value="straight">直线</option></select></label></div>
+        <div class="mm-tg"><button class="mm-b" data-mm="paste-in" title="通过 AI 理解大纲或正文，或按原有层级生成导图">大纲 / 正文生成导图</button><button class="mm-b" data-mm="outline-records">生成记录</button><button class="mm-b" data-mm="export" title="导出图片 / Markdown / 备份">导出 ↗</button></div>
       </div>
       <div class="mm-findbar hidden" id="mmFindBar"><input id="mmFindIn" placeholder="搜索主题、备注…" maxlength="60"><span id="mmFindN"></span><button class="mm-b ic" data-mm="fprev">↑</button><button class="mm-b ic" data-mm="fnext">↓</button><button class="mm-b ic" data-mm="fclose">✕</button></div>
       <div class="mm-main">
@@ -1496,6 +1571,7 @@
     $("mmTheme").value = cur.theme || "fresh";
     fitBox(); bindCanvas();
     draw(); fit();
+    if(window.MMWorkspaceHost){const openedId=cur.id,initialView=JSON.stringify(view);requestAnimationFrame(()=>requestAnimationFrame(()=>{if(cur?.id===openedId && JSON.stringify(view)===initialView)fit();}));}
     setSync(!me() ? "只存在这台设备（登录后自动存到账号）" : (idxGet(cur.id) || {}).dirty ? "待同步" : "已存到账号");
     $("mmView").focus({ preventScroll: true });
   }
@@ -1516,15 +1592,17 @@
 
   // ---------------- 打开 / 关闭 ----------------
   async function openMap(id, fromServer) {
+    if(window.MMWorkspaceHost && await window.MMWorkspaceHost.beforeOpen(id)===false)return false;
     window.dispatchEvent(new Event("mm:ai-interrupt"));
     const serial=++openSerial;
+    await window.MMDocumentCache?.load([mapKey(id),recoveryKey(id)]);
     let m = lsGet(mapKey(id), null);
     const e = idxGet(id) || {};
     // [独立版] 云同步已停用：不再从账号取导图，只读本机（原 mm_get 分支及 fromServer 语义见 git 历史）
-    if (!m) { tip("这张导图在这台设备上找不到了"); return; }
+    if (!m) {window.MMWorkspaceHost?.openCancelled?.(id);tip("这张导图在这台设备上找不到了"); return; }
     let migrated = migrateMap(m); // Normalize browser-only legacy documents before the file API sees them.
-    try {if(window.MMFiles)m=await window.MMFiles.prepare(m);}catch(error){tip(error.message);return false;}
-    if(!m || serial!==openSerial)return false;
+    try {if(window.MMFiles)m=await window.MMFiles.prepare(m);}catch(error){window.MMWorkspaceHost?.openCancelled?.(id);tip(error.message);return false;}
+    if(!m || serial!==openSerial){window.MMWorkspaceHost?.openCancelled?.(id);return false;}
     migrated = migrateMap(m) || migrated;
         for (const r of m.nodes) fill(r);
     cur = m; cur.layout ||= "mind"; cur.line ||= "curve"; cur.theme ||= "fresh";
@@ -1543,11 +1621,13 @@
     window.MMGroups?.reset(); window.MMCanvasTools?.clearSelection();
     sel = topNode() ? topNode().id : null; selectedNodes = new Set(sel ? [sel] : []); hist = []; redo = []; aiBatches.clear(); found = []; mode = "map"; panelOpen = false;
     document.body.classList.add("mm-editing");
+    window.MMFiles?.editorOpened(cur);
     renderEditor();
     if (panelOpen) { $("mmPanel").classList.remove("hidden"); panel(); }
     try { save("mm_last_v1", id); } catch (err) {}
+    window.MMWorkspaceHost?.afterOpen(id);
   }
-  function closeMap(skipEdit) { window.dispatchEvent(new Event("mm:ai-interrupt")); if(skipEdit){const ta=document.querySelector('.mm-edit');if(ta?._resizeHandler)window.removeEventListener('resize',ta._resizeHandler);editing=null;editingNew=null;}else endEdit();window.MMAlign?.clear();window.MMPDF?.close();openSerial++;cur = null; L = null;window.MMAI?.close();window.dispatchEvent(new Event('mm:close-shortcuts'));document.body.classList.remove("mm-editing");refreshHome();try { save("mm_last_v1", ""); } catch (e) {} }
+  function closeMap(skipEdit) { window.MMWorkspaceHost?.beforeLeave?.();window.dispatchEvent(new Event("mm:ai-interrupt")); if(skipEdit){const ta=document.querySelector('.mm-edit');if(ta?._resizeHandler)window.removeEventListener('resize',ta._resizeHandler);editing=null;editingNew=null;}else endEdit();window.MMAlign?.clear();window.MMPDF?.close();openSerial++;cur = null; L = null;window.MMAI?.close();window.dispatchEvent(new Event('mm:close-shortcuts'));document.body.classList.remove("mm-editing");refreshHome();try { save("mm_last_v1", ""); } catch (e) {} }
   async function create(tpl, title, rootObj) {
     const m = newMap(tpl, title);
     if (rootObj) { m.nodes = [fill(rootObj)]; m.title = ((m.nodes[0] || {}).text || "未命名导图").slice(0, 80); }
@@ -1561,7 +1641,8 @@
   function dlg(html) { const d = $("mmDlg"); $("mmDlgBody").innerHTML = html; if (!d.open) d.showModal(); return d; }
   const closeDlg = () => { const d = $("mmDlg"); if (d.open) d.close(); };
   function pasteDlg(intoMap) {
-    dlg(`<form id="mmPasteF"><h3>${intoMap ? "把文字加到「" + E((findNode(sel).n.text || "").slice(0, 12)) + "」下面" : "粘贴文字生成导图"}</h3>
+    if(window.MMAIOutline){window.MMAIOutline.open(intoMap,'text');return;}
+    dlg(`<form id="mmPasteF"><h3>${intoMap ? "把文字加到「" + E((findNode(sel).n.text || "").slice(0, 12)) + "」下面" : "大纲 / 正文生成导图"}</h3>
       <p class="meta">支持 AI 回答、Markdown（# 标题、- 列表）、缩进列表、1. / 1.1 编号。每一行是一个主题，层级按标题和缩进来。</p>
       <textarea id="mmPasteIn" rows="12" placeholder="# 函数的极限&#10;## 定义&#10;- ε-δ 定义&#10;- 左右极限&#10;## 计算方法&#10;- 四则运算&#10;- 两个重要极限&#10;  - sinx/x → 1&#10;  - (1+1/x)^x → e"></textarea>
       <div class="mm-prev" id="mmPrev"></div>
@@ -1616,12 +1697,8 @@
     const box = $("mmBox"); let m = $("mmNodeMenu");
     if (!m) { m = document.createElement("div"); m.id = "mmNodeMenu"; m.className = "mm-ctx"; box.appendChild(m); }
     const n=findNode(id).n,C=window.MMContextMenus;
-    m.innerHTML = C.branch("颜色",`<button data-mm="color" data-v="">默认颜色</button>`+C.palette('data-node-color',n.color)+`<label class="mm-ctx-custom">自选颜色 <input type="color" id="mmNodeColorPick" value="${/^#[0-9a-f]{6}$/i.test(n.color || "")?n.color:"#4f8df5"}" aria-label="节点自选颜色"></label>`,"node-color")+
-      C.branch("标记",`<div class="mm-ctx-marks">${MARKS.map(([k,ic,nm])=>`<button data-mm="mark" data-v="${k}">${(n.marks || []).includes(k)?"✓ ":""}${ic} ${E(nm)}</button>`).join("")}</div><button class="danger" data-mm="clear-marks">删除所有标记</button>`,"node-marks")+
-      C.branch("进度",[0,25,50,75,100].map(v=>`<button data-mm="prog" data-v="${v}">${(n.progress || 0)===v?"✓ ":""}${v?v+"%":"无进度"}</button>`).join(""),"node-progress")+
-      (window.MMAlign?.menu() || '')+(window.MMFormat?.menu() || '')+
-      (n.image || n.pdf?`<button data-mm="media-rename" data-id="${E(id)}">重命名文件</button>`:'')+
-      `<button data-mm="auto-size">恢复内容自适应</button><button data-mm="new-group">添加到新组</button><button data-mm="node-ask" data-id="${esc(id)}">✦ 提问</button><button class="danger" data-mm="del">删除${selectedNodes.size > 1 ? "选中的 " + selectedNodes.size + " 个节点" : "节点"}</button>`;
+    const chosen=[...selectedNodes].map(id=>findNode(id)?.n).filter(Boolean);
+    m.innerHTML=window.MMNodeMenu?window.MMNodeMenu.render(chosen,{marks:MARKS}):`<button data-mm="del">删除节点</button>`;
     C.place(m,cx,cy);
   }
   function showEdgeMenu(e, cx, cy) {
@@ -1659,7 +1736,7 @@
     (cur.edges ||= []).push(e);
     return e;
   }
-  async function duplicate(id) {    const m = id === (cur && cur.id) ? clone(cur) : lsGet(mapKey(id), null);
+  async function duplicate(id) {await window.MMDocumentCache?.load([mapKey(id),recoveryKey(id)]);const m = id === (cur && cur.id) ? clone(cur) : lsGet(mapKey(id), null);
     let src = m;
     // [独立版] 云同步已停用：不再从账号取导图（原 mm_get 分支见 git 历史）
     if (!src) { tip("这张图还没下载到这台设备，先打开一次再复制"); return; }
@@ -1669,6 +1746,9 @@
     migrateMap(c);                    // 旧格式来源（只有 root）先成容器，否则下面没有可遍历的节点
     const old2new = new Map();
     for (const r of (c.nodes || [])) walk(r, (n) => { const nw = nid(); old2new.set(n.id, nw); n.id = nw; });
+    for(const node of c.nodes)if(node.layoutParent){const parent=old2new.get(node.layoutParent);if(parent)node.layoutParent=parent;else delete node.layoutParent;}
+    window.MMStructurePlan?.remap(c,old2new);window.MMModuleLearning?.remap(c,old2new);
+    if(Array.isArray(c.topicGroups))c.topicGroups=c.topicGroups.map(g=>({...g,id:uid(),nodeIds:(g.nodeIds || []).map(id=>old2new.get(id)).filter(Boolean),centerId:old2new.get(g.centerId)}));
     for (const t of LAYER_MAPS) {
       const d = c[t]; if (!d || typeof d !== "object") continue;
       const out = {};
@@ -1688,6 +1768,7 @@
     closeDlg(); if (cur) openMap(c.id); else renderList(); tip("已复制");
   }
   async function renameMap(id,title){
+    if(window.MMWorkspaceHost?.canMutateSavedMap(id)===false){tip("这张导图正在画布中打开，请在该画布标题栏中改名");return;}
     await pullList();
     const entry=idxGet(id);if(!entry)return;
     fileListRevision++;
@@ -1696,7 +1777,7 @@
         if((await browserDraft(id,entry.fileBaseHash)).changed)throw new Error('此导图有浏览器草稿，请先打开并保存或放弃草稿，再改名');
         await window.MMFiles?.forget(id);
         const result=await fileRequest('/api/maps/'+encodeURIComponent(id),{method:'PATCH',headers:{'Content-Type':'application/json','If-Match':entry.fileBaseHash},body:JSON.stringify({title})});
-        if(!lsSet(mapKey(id),result.map))throw new Error('浏览器存储空间不足');
+        if(!lsSet(mapKey(id),result.map))throw new Error('浏览器恢复缓存写入失败，请检查本地文件草稿保存状态');
         lsDel(recoveryKey(id));await noteFile(result.map);
       }else{
         const map=lsGet(mapKey(id),null);if(map){map.title=title;lsSet(mapKey(id),map);}
@@ -1706,6 +1787,8 @@
     }catch(error){tip(error.message,5000);refreshHome();}
   }
   async function deleteMap(id) {
+    if(window.MMWorkspaceHost?.deleteMaps)return window.MMWorkspaceHost.deleteMaps([id]);
+    if(window.MMWorkspaceHost?.canMutateSavedMap(id)===false){tip("这张导图正在画布中打开，请先关闭或切换该画布再删除");return;}
     await pullList();
     const entry=idxGet(id);if(!entry || !confirm(`删除「${entry.title}」及其导图文件、图片、PDF 和未保存草稿？`))return;
     closeDlg();fileListRevision++;
@@ -1893,7 +1976,7 @@
         e.preventDefault();
         return;
       }
-      if (e.target.closest(".mm-zoom, .mm-edit, .mm-edit-preview, .mm-edit-help, .mm-ic,.mm-formatbar,.mm-task")) return;
+      if (e.target.closest(".mm-zoom, .mm-edit, .mm-edit-preview, .mm-edit-help, .mm-ic,.mm-formatbar,.mm-task,[data-map-open],[data-map-relink],[data-map-refs]")) return;
       const imageLabel=e.target.closest('[data-image-label]');
       const ctrlNode = e.target.closest(".mm-node") || (imageLabel && document.querySelector(`.mm-node[data-id="${imageLabel.dataset.imageLabel}"]`));
       if ((e.ctrlKey || e.metaKey) && ctrlNode) {
@@ -2056,7 +2139,7 @@
       if (d.id) {
         const now = Date.now();
         // Touch needs a double-tap fallback; mouse editing is handled only by dblclick.
-        if (d.touch && lastTap.id === d.id && now - lastTap.t < 350) { if(d.mediaLabel)window.MMFiles?.renameNode(d.id);else if(findNode(d.id)?.n.pdf)window.MMPDF?.activate(d.id);else if(!findNode(d.id)?.n.image)startEdit(d.id);lastTap = { t: 0, id: null }; return; }
+        if (d.touch && lastTap.id === d.id && now - lastTap.t < 350) { if(d.mediaLabel)window.MMFiles?.renameNode(d.id);else if(findNode(d.id)?.n.pdf)window.MMPDF?.activate(d.id);else if(!findNode(d.id)?.n.image && !findNode(d.id)?.n.mapLink)startEdit(d.id);lastTap = { t: 0, id: null }; return; }
         lastTap = d.touch ? { t: now, id: d.id } : { t: 0, id: null };
         select(d.id);
       } else { lastTap = { t: 0, id: null }; if (!e.ctrlKey && !e.metaKey) select(null); }
@@ -2081,7 +2164,7 @@
       if (hit) { e.preventDefault(); showNodeMenu(hit, e.clientX, e.clientY); return; }
       hideNodeMenu();
       const eh = edgeAt(e.clientX, e.clientY);
-      if (!eh) return;
+      if (!eh) {window.MMLibrary?.contextMenu(e.clientX,e.clientY,local(e));return;}
       e.preventDefault();
       selEdge = eh.id; draw();
       showEdgeMenu(eh, e.clientX, e.clientY);
@@ -2123,7 +2206,7 @@
        新节点挂到**根节点**下：数据是纯树、渲染从 topNode() 递归开始，没有父节点的节点不会被画出来；
        挂根既满足"不挂到当前选中节点下面"（自由画布上到处双击不该都长在选中节点下），又保证它能被渲染。 */
     vw.addEventListener("dblclick", (e) => {
-      if (e.target.closest(".mm-zoom, .mm-edit, .mm-edit-preview, .mm-edit-help,.mm-formatbar,.mm-task")) return;
+      if (e.target.closest(".mm-zoom, .mm-edit, .mm-edit-preview, .mm-edit-help,.mm-formatbar,.mm-task,[data-map-open],[data-map-relink],[data-map-refs]")) return;
       if (!cur) return;
       const label=e.target.closest('[data-image-label]') || document.elementFromPoint(e.clientX,e.clientY)?.closest('[data-image-label]');
       if(label){e.preventDefault();const point=document.elementFromPoint(e.clientX,e.clientY);if(label.classList.contains('mm-pdf-titlebar') && !e.target.closest('.mm-pdf-title') && !point?.closest('.mm-pdf-title'))return;select(label.dataset.imageLabel);window.MMFiles?.renameNode(label.dataset.imageLabel);return;}
@@ -2132,7 +2215,7 @@
       const nd = e.target.closest(".mm-node");
       const p = local(e);
       const hit = e.target.closest('[data-image-label]')?.dataset.imageLabel || (nd ? nd.dataset.id : (L && [...L.nodes.values()].reverse().find(s => p.x >= s.x && p.x <= s.x + s.w && p.y >= s.y && p.y <= s.y + s.h) || {}).n?.id);
-      if (hit) { e.preventDefault(); select(hit); if(findNode(hit)?.n.pdf){window.MMPDF?.activate(hit);return;}if (!findNode(hit)?.n.image && editing !== hit) startEdit(hit); return; }
+      if (hit) { e.preventDefault(); select(hit); if(findNode(hit)?.n.mapLink){window.MMLibrary?.navigate(findNode(hit).n.mapLink.mapId);return;}if(findNode(hit)?.n.pdf){window.MMPDF?.activate(hit);return;}if (!findNode(hit)?.n.image && editing !== hit) startEdit(hit); return; }
       /* 【独立版】盒子必须用 measure() 量出来，不能用 estSize() 的文字估算：
          estSize("分支主题",1) 给 100×38，实际量出来是 96×40 —— 差 (Δw/2, Δh/2) 就是"中心没落在鼠标点上"的偏差
          （浏览器实测 dx=-2）。这里和布局用的是同一个 measure()，尺寸完全一致，中心就精确落在鼠标点。
@@ -2189,7 +2272,7 @@
   document.addEventListener("keydown", (e) => {
     if (!cur || currentView() !== "mindmap" || $("mmDlg").open) return;
     const t = e.target;
-    if (t.closest && t.closest("#mmShortcuts,#mmAI")) return;
+    if (t.closest && t.closest("#mmShortcuts,#mmAI,.mm-module-learning")) return;
     if (t.closest && (t.closest("#mmPanel, #mmFindBar,.mm-ctx") || (t.closest(".mm-tools") && t.closest("input,select,textarea"))) && !(e.key === "Escape")) {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f") { e.preventDefault(); openFind(); }
       return;
@@ -2259,7 +2342,7 @@
     if (b.tagName !== "A") e.preventDefault();
     switch (a) {
       case "new": await create(b.dataset.tpl); break;
-      case "import-home": $('mmFileOpen')?.click(); break;
+      case "lecture-new": window.MMAIOutline?.open(false,'files'); break;
       case "paste-new": pasteDlg(false); break;
       case "open": if (!e.target.closest(".mm-more")) openMap(id); break;
       case "menu": mapMenu(id); break;
@@ -2272,6 +2355,7 @@
       case "del": del(); hideNodeMenu(); break;
       case "clear-marks": setProp("marks", undefined); hideNodeMenu(); break;
       case "new-group": window.MMGroups?.create(); hideNodeMenu(); break;
+      case "node-math-review": hideNodeMenu();window.MMAIMathReview?.open(id);break;
       case "auto-size": change(()=>{for(const id of selectedNodes)fitNode(id,true);});hideNodeMenu();break;
       case "foldsel": toggleFold(); break;
       case "edir": {                                            // 改这条线的指向（走 change：可撤销、落盘）
@@ -2298,6 +2382,7 @@
       case "fprev": stepFind(-1); break;
       case "fclose": $("mmFindBar").classList.add("hidden"); found = []; q = ""; draw(); break;
       case "paste-in": pasteDlg(true); break;
+      case "outline-records": window.MMAIOutline?.records(); break;
       case "export": exportDlg(); break;
       case "ex-png": closeDlg(); exportPng(); break;
       case "ex-md": closeDlg(); download(safeName() + ".md", nodesArr().map(n => {
@@ -2383,12 +2468,40 @@
   ===== [独立版] 云同步停用结束 ===== */
   window.Mindmap = {
     noteFile,
+    createOutlineDocument: async title => {const m=newMap("blank",title);m.nodes=[];m.flat=true;m.v=3;storeLocal(m);idxPut({id:m.id,local:true});await openMap(m.id);return cur?.id===m.id?m.id:null;},
+    organize:(scope='branch')=>{
+      if(!cur || !window.MMTopicLayout)return null;window.dispatchEvent(new Event('mm:ai-interrupt'));endEdit();
+      const ids=scope==='all'?new Set(cur.nodes.map(n=>n.id)):window.MMTopicLayout.branch(cur,[...selectedNodes]);if(!ids.size)throw new Error('请先选择要整理的分支节点');
+      const working=clone(cur),cleanup=window.MMLectureCleanup?.plan(working,{ids:[...ids]});if(cleanup)window.MMLectureCleanup.apply(working,cleanup,LAYER_MAPS);
+      const live=new Set(working.nodes.map(n=>n.id)),plan=window.MMTopicLayout.organize(working,L.nodes,{ids:[...ids].filter(id=>live.has(id)),scope:'manual-'+uid()});
+      change(()=>{if(cleanup)window.MMLectureCleanup.apply(cur,cleanup,LAYER_MAPS);applyTopicPlan(cur,plan);});fit(true);return{...plan,cleaned:cleanup?.removed.length || 0};
+    },
+    applyReviewedStructure:(plan,scope)=>{const working=clone(cur),cleanup=window.MMLectureCleanup?.plan(working);if(cleanup)window.MMLectureCleanup.apply(working,cleanup,LAYER_MAPS);window.MMStructurePlan.apply(working,plan,scope);const layout=window.MMTopicLayout.organize(working,L.nodes,{ids:[...plan.root.nodeIds,...plan.modules.flatMap(window.MMStructurePlan.members)],scope:'review-'+scope});change(()=>{if(cleanup)window.MMLectureCleanup.apply(cur,cleanup,LAYER_MAPS);window.MMStructurePlan.apply(cur,plan,scope);applyTopicPlan(cur,layout);});fit(true);},
+    finalizeAIOrganization:batch=>{
+      if(!cur || cur.id!==batch.mapId || !window.MMTopicLayout)return;
+      const all=Object.values(batch.mapping || {}).filter(id=>findNode(id)),working=clone(cur),cleanup=batch.lecture?window.MMLectureCleanup?.plan(working,{ids:all,recordId:batch.recordId,force:true}):null;
+      if(cleanup)window.MMLectureCleanup.apply(working,cleanup,LAYER_MAPS);if(batch.structurePlan)window.MMStructurePlan.apply(working,batch.structurePlan,batch.recordId);const live=new Set(working.nodes.map(n=>n.id)),ids=all.filter(id=>live.has(id)),fixed=ids.filter(id=>{const a=cur.pos[id],b=batch.generatedPos?.[id];return !b || a.x!==b.x || a.y!==b.y;}),movable=ids.filter(id=>!fixed.includes(id));
+      if(!movable.length && !cleanup?.removed.length)return;
+      const plan=window.MMTopicLayout.organize(working,L.nodes,{ids,fixed,scope:(batch.layoutScope ||= (batch.recordId || batch.turnId || 'layout')+'-'+uid())});
+      if(batch.turnId && !ids.some(id=>findNode(id)?.n.topic)){plan.colors={};for(const group of plan.groups)group.color=batch.color || group.color;}
+      for(const id of plan.ids){const n=findNode(id)?.n;if((n?.color || null)!==batch.initialColors?.[id])delete plan.colors[id];}
+      const apply=map=>{if(cleanup)window.MMLectureCleanup.apply(map,cleanup,LAYER_MAPS);if(batch.structurePlan)window.MMStructurePlan.apply(map,batch.structurePlan,batch.recordId);applyTopicPlan(map,plan);};
+      for(let i=Math.max(0,batch.historyIndex+1);i<hist.length;i++){const map=JSON.parse(hist[i]);apply(map);hist[i]=JSON.stringify(map);}redo=[];apply(cur);storeLocal(cur);scheduleCloud();draw();if(!fixed.length && plan.centerId)reveal(plan.centerId);
+    },
+    setConnectionStyle:style=>{if(!['curve','elbow','straight','inherit'].includes(style))return;if(selEdgeObj()){change(()=>{if(style==='inherit')delete selEdgeObj().style;else selEdgeObj().style=style;});}else if(style!=='inherit')change(()=>{cur.line=style;});},
+    applyMathReview:(mapId,id,before,after,warnings=[])=>{if(cur?.id!==mapId || !findNode(id) || findNode(id).n.text!==before)throw new Error('节点已修改、删除或导图已切换，请重新检查');if(typeof after!=='string' || after.length>24000)throw new Error('数学检查结果过长');change(()=>{const n=findNode(id).n;n.text=after;if(warnings.length)n.mathWarnings=warnings.slice(0,8);else delete n.mathWarnings;fitNode(id,false);});},
+    fitView: () => fit(true),
+    nameOutlineDocument: (mapId,previous,title) => {if(cur?.id!==mapId || cur.title!==previous)return;cur.title=title.slice(0,80);if($('mmTitleIn'))$('mmTitleIn').value=cur.title;storeLocal(cur);},
+    generateTextOutline,
+    saveOutlineSource: record => {if(!cur)return;const records=(cur.outlineSources ||= []),old=records.find(r=>r.id===record.id);if(old)Object.assign(old,clone(record));else records.push(clone(record));storeLocal(cur);},
     finishEditing: () => {window.dispatchEvent(new Event("mm:ai-interrupt"));window.MMPDF?.capture();const title=$('mmTitleIn')?.value;endEdit();if(cur && title?.trim() && title.trim()!==cur.title)change(()=>{cur.title=title.trim().slice(0,80);});},
     editingSnapshot: () => {if(!cur)return null;const map=clone(cur),ta=document.querySelector('.mm-edit');if(ta && editing){const node=map.nodes.find(n=>n.id===editing);if(node){node.text=ta.value;if(ta._nodeStyle)window.MMFormat.apply(node,ta._nodeStyle);}}const title=$('mmTitleIn')?.value?.trim();if(title)map.title=title;return map;},
     fitNode,
     scrollGesture:()=>lastScroll,
     resetScroll:()=>resetScroll(),
     toggleTask: (id,line,checked) => {const n=findNode(id)?.n;if(!n || n.image || n.pdf || !Number.isInteger(line))return;const text=window.MMFormat.taskText(n.text,line,checked);if(text!==n.text)change(()=>{n.text=text;fitNode(id);});},
+    restoreCheckpoint: map => {cur=clone(map);migrateMap(cur);for(const n of cur.nodes)fill(n);cur.layout ||= 'mind';cur.line ||= 'curve';cur.theme ||= 'fresh';if(cur.pdfTitlebarVersion!==1){for(const node of cur.nodes)walk(node,n=>{if(n.pdf&&Number.isFinite(cur.size?.[n.id]?.h))cur.size[n.id].h=Math.min(8000,cur.size[n.id].h+30);});cur.pdfTitlebarVersion=1;}pruneLayer();seedPos();hist=[];redo=[];aiBatches.clear();selectedNodes=new Set();sel=null;if($('mmTitleIn'))$('mmTitleIn').value=cur.title;storeLocal(cur);draw();},
+    forgetDocument: id => {if(cur?.id===id)closeMap(true);lsDel(mapKey(id));lsDel(recoveryKey(id));index=index.filter(e=>e.id!==id);idxSave();if(!cur)refreshHome();},
     replaceDocument: map => {cur=clone(map);storeLocal(cur);draw();},
     leaveDocument: map => {if(map){cur=clone(map);storeLocal(cur);}closeMap(true);},
     zoom: zoomAt,
@@ -2407,6 +2520,7 @@
     revealBox: box => { const r=$("mmView").getBoundingClientRect(); view.x=r.width/2-(box.x+box.w/2)*view.k; view.y=r.height/2-(box.y+box.h/2)*view.k; applyView(); },
     ensureVisible: box => {const r=$("mmView").getBoundingClientRect(),left=view.x+box.x*view.k,top=view.y+box.y*view.k,right=left+box.w*view.k,bottom=top+box.h*view.k;view.x+=left<12?12-left:right>r.width-12?r.width-12-right:0;view.y+=top<12?12-top:bottom>r.height-12?r.height-12-bottom:0;applyView();},
     view: () => ({...view}),
+    restoreView: v => {if(v && [v.x,v.y,v.k].every(Number.isFinite) && v.k>=.05 && v.k<=8){view={...v};applyView();}},
     clientPoint: (cx,cy) => {const r=$("mmView").getBoundingClientRect();return {x:(cx-r.left-view.x)/view.k,y:(cy-r.top-view.y)/view.k};},
     openDocument: m => { if(!m || !m.id || !Array.isArray(m.nodes)) throw new Error("无效的导图文件"); storeLocal(m); return openMap(m.id); },
     addImage: (media,at) => {
@@ -2426,6 +2540,9 @@
       window.MMAIMemory.merge(cur,record,ownership);
       storeLocal(cur);scheduleCloud();draw();
     },
+    setModuleLearning: (key,patch) => {
+      if(!cur || !window.MMModuleLearning)return false;const group=window.MMTopicLayout.describe(cur).groups.find(g=>g.key===key && g.reviewed);if(!group || !window.MMModuleLearning.update(cur,group,patch))return false;storeLocal(cur);scheduleCloud();draw();return true;
+    },
     setAILearning: (turnId,patch) => {
       const record=cur?.aiMemory?.turns?.find(t=>t.id===turnId);if(!record || !patch || !window.MMAILearning)return false;
       const state=window.MMAILearning.normalize(record.learning);
@@ -2440,7 +2557,7 @@
     /* 【独立版】**"扫哪些表"的唯一真相来源**：del 清理 / 读取容错 / 导入 / 自测台孤儿判据
        全部读这两个数组（自测台不许再写一份字面量）。加新表只改上面那两行。 */
     LAYER_MAPS, LAYER_LISTS,
-    state: () => ({ cur, sel, selected: [...selectedNodes], editing, mode, index, L }), open: openMap, create,
+    state: () => ({ cur, sel, selected: [...selectedNodes], editing, mode, index, L, selectedEdge:selEdge }), open: openMap, create,
     /* 【独立版】导出给断言读**同一处**：多容器下 findNode 必须能找到非第一个容器里的节点，
        断言不能自己再写一份遍历（自写遍历只是证明"夹具里有那个节点"，证明不了产品路径）。 */
     findNode,

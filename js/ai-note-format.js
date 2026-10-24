@@ -15,11 +15,10 @@
     if(result.length>20000)throw new Error('总结正文过长，请拆分节点');return result;
   }
   function displayMainMath(text){
-    // Only generated output is formatted; code and existing display math remain intact.
-    const parts=text.split(/(```[\s\S]*?```|~~~[\s\S]*?~~~|`[^`\n]*`|\$\$[\s\S]*?\$\$|\\\[[\s\S]*?\\\])/g);
-    const main=latex=>/[=<>≤≥≈]|\\(?:frac|lim|int|sum|prod|sim|approx|equiv|to|Rightarrow|rightarrow|sqrt)\b/.test(latex);
-    return parts.map((part,i)=>i%2?part:part.replace(/(?<![\\$])\$(?!\$)([^\n$]+?)(?<!\\)\$(?!\$)/g,(all,latex)=>main(latex)?'\n\n$$\n'+latex.trim()+'\n$$\n\n':all).replace(/\\\(([^\n]*?)\\\)/g,(all,latex)=>main(latex)?'\n\n$$\n'+latex.trim()+'\n$$\n\n':all).replace(/\n{3,}/g,'\n\n').replace(/\n\n[，,；;]\s*/g,'\n\n')).join('').trim();
+    // Explicit inline/display choices are authoritative. Review handles missing delimiters.
+    return text;
   }
+
   function generatedText(item){return displayMainMath(item.blocks!==undefined?blocksToText(item.blocks):item.text);}
   const api={blocksToText,displayMainMath,generatedText};
   if(typeof module==='object' && module.exports)module.exports=api;else root.MMAINoteFormat=api;

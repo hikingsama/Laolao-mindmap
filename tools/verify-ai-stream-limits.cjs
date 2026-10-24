@@ -52,7 +52,7 @@ async function run(planResponse,answerResponse=()=>response(content(JSON.stringi
   check('Nonstream JSON also separates reasoning from the final answer',()=>{assert.equal(jsonReply,'短正文');assert.equal(stats.answerBytes,9);assert.equal(stats.reasoningBytes,900000);});
   await assert.rejects(readCompletion(response(JSON.stringify({choices:[{message:{content:'中中中'}}]}),{json:true}).value,{limit:8}),e=>e.code==='AI_OUTPUT_LIMIT');count++;console.log('PASS Nonstream answer limit remains enforced');
   const workflow=await run(()=>response(planningWire).value,()=>response(answerWire).value);
-  check('Both workflow roles succeed with larger wrappers and retain only numeric counters',()=>{assert.equal(workflow.result.status,'completed');assert.equal(workflow.result.workflow.planningStatus,'completed');assert.equal(workflow.calls.length,2);assert(workflow.result.transfer.planning.transportBytes>256*1024);assert(workflow.result.transfer.answer.transportBytes>6*1024*1024);assert(Object.values(workflow.result.transfer).every(s=>Object.values(s).every(Number.isFinite)));});
+  check('Both workflow roles succeed with larger wrappers and retain only numeric counters',()=>{assert.equal(workflow.result.status,'completed');assert.equal(workflow.result.workflow.planningStatus,'completed');assert.equal(workflow.calls.length,2);assert(workflow.result.transfer.planning.transportBytes>256*1024);assert(workflow.result.transfer.answer.transportBytes>6*1024*1024);assert(Object.values(workflow.result.transfer).every(s=>['transportBytes','answerBytes','reasoningBytes','events'].every(k=>Number.isFinite(s[k]))&&s.finishReason==='stop'));});
   const cases=[
     ['planner answer exceeding 256KB',()=>response(content('x'.repeat(256*1024+1))+end).value],
     ['malformed planner SSE',()=>response('data: invalid-json\n\n').value],
@@ -68,7 +68,7 @@ async function run(planResponse,answerResponse=()=>response(content(JSON.stringi
     const {result,calls}=await run(()=>new Response('{}',{status}));
     check('Planner HTTP '+status+' remains fatal and never starts a second paid request',()=>{assert.equal(result.status,'failed');assert(result.error.includes('验证失败'));assert.equal(calls.length,1);});
   }
-  const {result,calls}=await run(()=>response(content(smallPlan)+end).value,()=>response(content('x'.repeat(1024*1024+1))+end).value);
-  check('Genuinely excessive final answer fails distinctly with numeric diagnostics and no retry',()=>{assert.equal(result.status,'failed');assert(result.error.includes('正文超过'));assert.equal(result.workflow.planningStatus,'completed');assert(result.transfer.answer.transportBytes>1024*1024);assert.equal(calls.length,2);});
+  const {result,calls}=await run(()=>response(content(smallPlan)+end).value,()=>response(Array.from({length:2049},()=>content('x'.repeat(16384))).join('')+end).value);
+  check('Genuinely excessive final answer fails distinctly with numeric diagnostics and no retry',()=>{assert.equal(result.status,'failed');assert(result.error.includes('正文超过'));assert.equal(result.workflow.planningStatus,'completed');assert(result.transfer.answer.transportBytes>32*1024*1024);assert.equal(calls.length,2);});
   console.log(count+' stream limit and workflow recovery checks passed; fake model only.');
 })().catch(e=>{console.error(e);process.exitCode=1;});

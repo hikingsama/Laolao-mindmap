@@ -1,0 +1,47 @@
+{
+  "c780366f-c2c1-4cda-8a04-e5880e76aa45": {
+    "id": "c780366f-c2c1-4cda-8a04-e5880e76aa45",
+    "name": "0705 伯努利方程.pdf",
+    "mime": "application/pdf",
+    "bytes": 147077,
+    "sourceMap": "1e6c6e06-e00f-417a-9864-f8812612397e",
+    "_file": "0705 伯努利方程.pdf",
+    "_staged": false
+  },
+  "f33880d2-1d92-453d-bc85-62dda1d62f56": {
+    "id": "f33880d2-1d92-453d-bc85-62dda1d62f56",
+    "name": "0704 一阶线性微分方程.pdf",
+    "mime": "application/pdf",
+    "bytes": 376830,
+    "sourceMap": "1e6c6e06-e00f-417a-9864-f8812612397e",
+    "_file": "0704 一阶线性微分方程.pdf",
+    "_staged": false
+  },
+  "88f18d21-dcdb-4c7f-9089-10d93e429c53": {
+    "id": "88f18d21-dcdb-4c7f-9089-10d93e429c53",
+    "name": "0703 齐次微分方程.pdf",
+    "mime": "application/pdf",
+    "bytes": 146556,
+    "sourceMap": "1e6c6e06-e00f-417a-9864-f8812612397e",
+    "_file": "0703 齐次微分方程.pdf",
+    "_staged": false
+  },
+  "79fcc879-2f8a-44cc-ba00-f035423356c5": {
+    "id": "79fcc879-2f8a-44cc-ba00-f035423356c5",
+    "name": "0702 可分离变量的微分方程.pdf",
+    "mime": "application/pdf",
+    "bytes": 128369,
+    "sourceMap": "1e6c6e06-e00f-417a-9864-f8812612397e",
+    "_file": "0702 可分离变量的微分方程.pdf",
+    "_staged": false
+  },
+  "9b8b6923-6078-4dc1-9810-6b84a9098125": {
+    "id": "9b8b6923-6078-4dc1-9810-6b84a9098125",
+    "name": "0701 常微分方程的基本概念.pdf",
+    "mime": "application/pdf",
+    "bytes": 348419,
+    "sourceMap": "1e6c6e06-e00f-417a-9864-f8812612397e",
+    "_file": "0701 常微分方程的基本概念.pdf",
+    "_staged": false
+  }
+}

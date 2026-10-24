@@ -1,0 +1,24 @@
+.mm-ai-usage { margin:10px 0 0; border:1px solid #d7dece; border-radius:10px; background:#fafbf5; color:#43513e; font:12px/1.55 system-ui,sans-serif; text-align:left; }
+.mm-ai-usage>summary { cursor:pointer; padding:8px 10px; font-weight:600; }
+.mm-ai-usage-body { padding:0 10px 9px; }
+.mm-ai-usage .mm-ai-usage-stage { margin:0 0 7px; font-size:12px; overflow-wrap:anywhere; }
+.mm-ai-usage .mm-ai-usage-coverage { margin:3px 0 8px; font-size:12px; }
+.mm-ai-usage-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:7px 14px; margin:0; }
+.mm-ai-usage-grid>div { min-width:0; }
+.mm-ai-usage-grid dt { color:#78836e; font-size:11px; }
+.mm-ai-usage-grid dd { margin:1px 0; color:#34452f; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
+.mm-ai-usage-grid small { display:block; color:#89937e; font-size:10px; }
+.mm-ai-usage-total { display:grid; gap:2px; margin-top:9px; padding-top:7px; border-top:1px solid #e0e6d7; font-size:11px; }
+.mm-ai-usage .mm-ai-usage-note { margin:7px 0 0; color:#7c866f; font-size:10px; line-height:1.5; }
+.mm-outline-progress,.mm-lecture-progress,#mmMultiProgress { max-height:calc(100dvh - 110px); overflow-y:auto; }
+#mmAIUsage { padding:0 12px; max-height:43dvh; overflow:auto; flex-shrink:0; }
+#mmAIUsage:empty { display:none; }
+.mm-outline-progress .mm-outline-actions { margin-top:10px; }
+.mm-has-workspace .mm-canvas-pane .mm-outline-progress,.mm-has-workspace .mm-canvas-pane #mmMultiProgress { max-height:calc(100% - 168px); }
+.mm-has-workspace .mm-canvas-pane .mm-outline-progress,.mm-has-workspace .mm-canvas-pane #mmMultiProgress { display:flex; flex-direction:column; overflow:hidden; }
+.mm-has-workspace .mm-canvas-pane .mm-outline-progress[hidden],.mm-has-workspace .mm-canvas-pane #mmMultiProgress[hidden] { display:none; }
+.mm-outline-progress>b,.mm-outline-progress>p,.mm-outline-progress>.mm-outline-actions,#mmMultiProgress>b,#mmMultiProgress>p,#mmMultiProgress>[data-multi-actions] { flex-shrink:0; }
+.mm-outline-progress>[data-usage-host],#mmMultiProgress>[data-usage-host] { min-height:0; overflow:auto; scrollbar-width:thin; }
+.mm-pane-embedded .mm-outline-progress,.mm-pane-embedded #mmMultiProgress { display:flex; flex-direction:column; max-height:calc(100dvh - 180px); overflow:hidden; }
+.mm-pane-embedded .mm-outline-progress[hidden],.mm-pane-embedded #mmMultiProgress[hidden] { display:none; }
+@media(max-width:400px){.mm-ai-usage-grid{gap:7px;}.mm-ai-usage-grid dd{font-size:11px;}}

@@ -1,0 +1,31 @@
+.mm-outline-form { display:grid; gap:12px; }
+.mm-outline-form [hidden] { display:none!important; }
+.mm-outline-heading { display:flex;align-items:center;justify-content:space-between;gap:12px; }
+#mmDlgBody .mm-outline-heading h3 { margin:0; }
+.mm-outline-more { border:0; }
+.mm-outline-more summary { cursor:pointer;font-size:13px;color:#65734f; }
+.mm-outline-more summary span { margin-left:8px;color:#8a917f;font-size:12px; }
+.mm-outline-more[open] summary { margin-bottom:12px; }
+.mm-outline-form:not(.is-lecture) .mm-outline-more { display:contents; }
+.mm-outline-form:not(.is-lecture) .mm-outline-more summary { display:none; }
+.mm-outline-form label { display:grid; gap:6px; font-size:14px; }
+.mm-outline-form .mm-outline-check { display:flex; align-items:center; gap:8px; }
+.mm-outline-form .mm-outline-check input { width:auto; }
+.mm-outline-form :is(input[type=text],select,textarea) { width:100%; box-sizing:border-box; }
+.mm-outline-form textarea { resize:vertical; min-height:170px; }
+.mm-outline-form p { margin:0; }
+.mm-outline-model { display:flex; flex-wrap:wrap; align-items:center; gap:8px; font-size:13px; }
+.mm-outline-model button { margin-left:auto; }
+.mm-outline-error { color:#a7482c; }
+.mm-outline-progress { position:fixed; z-index:70; left:30px; bottom:28px; width:min(400px,calc(100vw - 60px)); padding:15px 18px; box-sizing:border-box; background:#fffef9; border:1px solid #b7c4a4; border-radius:14px; box-shadow:0 8px 32px #343b2e25; color:#394436; }
+.mm-outline-progress[hidden] { display:none; }
+.mm-outline-progress p { margin:6px 0 10px; font-size:13px; line-height:1.5; }
+.mm-outline-progress .mm-outline-actions { display:flex; gap:10px; align-items:center; }
+.mm-outline-progress button:last-child { margin-left:auto; }
+.mm-outline-source { display:grid; gap:12px; }
+.mm-outline-source textarea { width:100%; box-sizing:border-box; min-height:240px; max-height:50vh; resize:vertical; }
+.mm-outline-source pre { white-space:pre-wrap; overflow-wrap:anywhere; max-height:50vh; overflow:auto; }
+.mm-outline-records { display:grid; gap:10px; max-height:55vh; overflow:auto; }
+.mm-outline-records button { text-align:left; padding:12px; border:1px solid #d8dfcc; border-radius:8px; background:#f8f9f1; color:inherit; font:inherit; cursor:pointer; }
+.mm-outline-records small { display:block; margin-top:5px; color:#748269; }
+@media(max-width:720px) { .mm-outline-progress {left:12px; bottom:12px; width:calc(100vw - 24px);} }

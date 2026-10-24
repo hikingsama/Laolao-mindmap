@@ -1,0 +1,47 @@
+{
+  "0d600a4e-6317-4611-bc74-255c8a78c397": {
+    "id": "0d600a4e-6317-4611-bc74-255c8a78c397",
+    "name": "截图测试.png",
+    "mime": "image/png",
+    "bytes": 40704,
+    "sourceMap": "e16f85d7-9f2a-4a78-9b79-1cfe07b953c6"
+  },
+  "4809549b-c3ce-470c-a033-a51f4eb8c55d": {
+    "id": "4809549b-c3ce-470c-a033-a51f4eb8c55d",
+    "name": "图片261018144854.png",
+    "mime": "image/png",
+    "bytes": 28818,
+    "sourceMap": "e16f85d7-9f2a-4a78-9b79-1cfe07b953c6",
+    "trashed": true
+  },
+  "903fd0c9-dfab-44a3-aefc-653d229172c6": {
+    "id": "903fd0c9-dfab-44a3-aefc-653d229172c6",
+    "name": "2025西交高数A.pdf",
+    "mime": "application/pdf",
+    "bytes": 1566396,
+    "sourceMap": "e16f85d7-9f2a-4a78-9b79-1cfe07b953c6"
+  },
+  "2dd8efc9-919f-41f8-849a-9249787b5dbc": {
+    "id": "2dd8efc9-919f-41f8-849a-9249787b5dbc",
+    "name": "图片261019171323.jpg",
+    "mime": "image/jpeg",
+    "bytes": 223796,
+    "sourceMap": "e16f85d7-9f2a-4a78-9b79-1cfe07b953c6",
+    "trashed": true
+  },
+  "907f24f9-7866-44e4-b0b6-78ba5b2a2d61": {
+    "id": "907f24f9-7866-44e4-b0b6-78ba5b2a2d61",
+    "name": "图片261019172555.jpg",
+    "mime": "image/jpeg",
+    "bytes": 193081,
+    "sourceMap": "e16f85d7-9f2a-4a78-9b79-1cfe07b953c6",
+    "trashed": true
+  },
+  "e36a3ff5-7e3a-4a95-ac30-a6d82b066e11": {
+    "id": "e36a3ff5-7e3a-4a95-ac30-a6d82b066e11",
+    "name": "GPT示例.png",
+    "mime": "image/png",
+    "bytes": 333984,
+    "sourceMap": "e16f85d7-9f2a-4a78-9b79-1cfe07b953c6"
+  }
+}

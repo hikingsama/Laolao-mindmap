@@ -105,9 +105,10 @@
   function find(r,previous=false,again=false){if(!r.bus)return;const query=r.root.querySelector('.mm-pdf-find input').value;r.bus.dispatch('find',{source:r.root,type:again?'again':'',query,phraseSearch:true,caseSensitive:false,entireWord:false,highlightAll:true,findPrevious:previous,matchDiacritics:false});}
   async function activate(id,options={}){
     const n=M().findNode(id)?.n;if(!n?.pdf)return;
+    if(options.page){M().updatePDFView(id,{page:options.page,scale:'page-width'});if(active?.id===id && active.ready){active.viewer.currentPageNumber=Math.min(active.doc.numPages,options.page);persist(active);return;}}
     if(options.hover && (M().view().k<=.2 || M().state().editing))return;
     if(active?.id===id){if(!options.hover){active.hover=false;M().selectNode(id);if(active.ready && (M().view().k<.65))expand(active);else active.scroll.focus({preventScroll:true});}return;}
-    deactivate();if(!options.hover){M().finishEditing();M().selectNode(id);}const box=M().state().L.nodes.get(id);if(box && !options.hover)M().ensureVisible({x:box.x,y:box.y-38,w:Math.min(box.w,350),h:100});const root=element(id,n.pdf),r=records.get(id);active=r;r.hover=!!options.hover;r.version++;r.applying=true;r.root.dataset.reading='true';r.root.dataset.ready='false';r.root.querySelector('.mm-pdf-reader').hidden=false;status(r,'正在打开PDF…');
+    deactivate();if(!options.hover){if(!options.preserveAI)M().finishEditing();M().selectNode(id);}const box=M().state().L.nodes.get(id);if(box && !options.hover)M().ensureVisible({x:box.x,y:box.y-38,w:Math.min(box.w,350),h:100});const root=element(id,n.pdf),r=records.get(id);active=r;r.hover=!!options.hover;r.version++;r.applying=true;r.root.dataset.reading='true';r.root.dataset.ready='false';r.root.querySelector('.mm-pdf-reader').hidden=false;status(r,'正在打开PDF…');
     M().refresh();layout(r);const token=r.version,saved=state(id);
     try{
       const lib=await libraries(),doc=await documentFor(r.media,r.map);if(active!==r || token!==r.version)return;r.doc=doc;

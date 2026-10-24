@@ -14,16 +14,18 @@
       if(mode==='full'){
         const content=spec.full();if(typeof content==='string')element.innerHTML=content;else if(!element.contains(content) && !content.closest('.mm-pdf-dialog'))element.replaceChildren(content);
       }else if(mode==='brief'){const summary=document.createElement('div');summary.className='mm-node-summary';summary.textContent=spec.summary;
-        if(spec.isPDF){const bar=document.createElement('div');bar.className='mm-pdf-titlebar';bar.dataset.imageLabel=spec.id;bar.tabIndex=0;bar.setAttribute('role','button');bar.title=spec.mediaName;const name=document.createElement('span');name.className='mm-pdf-title';name.textContent=spec.mediaName;bar.appendChild(name);element.replaceChildren(bar,summary);}
+        if(spec.isMapLink){element.innerHTML=`<button type="button" class="mm-reference-brief" data-reference-card="${window.MMContent.escape(spec.id)}" title="双击打开目标导图"><span>${window.MMContent.escape(spec.summary)}</span>↗</button>`;}
+        else if(spec.isPDF){const bar=document.createElement('div');bar.className='mm-pdf-titlebar';bar.dataset.imageLabel=spec.id;bar.tabIndex=0;bar.setAttribute('role','button');bar.title=spec.mediaName;const name=document.createElement('span');name.className='mm-pdf-title';name.textContent=spec.mediaName;bar.appendChild(name);element.replaceChildren(bar,summary);}
         else element.replaceChildren(summary);}
       else element.replaceChildren();
     }
+    window.MMTopicUI?.refreshNumbers(stage);
     window.MMPDF?.sync();
   }
   function render(stage,chrome,specs){
     let scene=scenes.get(stage);if(!scene){scene=new Map();scenes.set(stage,scene);}
     const live=new Set(specs.map(s=>s.id));for(const [id,r] of scene)if(!live.has(id)){r.element.remove();scene.delete(id);}
-    stage.querySelectorAll(':scope > .mm-links,:scope > .mm-linkprev,:scope > .mm-magwrap,:scope > .mm-image-label,:scope > .mm-ai-task-badge,:scope > .mm-ai-learning').forEach(el=>el.remove());
+    stage.querySelectorAll(':scope > .mm-links,:scope > .mm-linkprev,:scope > .mm-magwrap,:scope > .mm-image-label,:scope > .mm-ai-task-badge,:scope > .mm-ai-learning,:scope > .mm-node-citations,:scope > .mm-math-warning').forEach(el=>el.remove());
     const template=document.createElement('template');template.innerHTML=chrome;
     const magnets=[...template.content.querySelectorAll('.mm-magwrap')];for(const el of magnets)el.remove();stage.prepend(template.content);
     for(const spec of specs){
@@ -40,6 +42,7 @@
       target.dataset.detail='full';
       const content=record.spec.full();if(typeof content==='string')target.innerHTML=content;else window.MMPDF?.exportNode(record.spec.id,target);
     }
+    window.MMTopicUI?.refreshNumbers(stage);
   }
   window.MMScene={render,refresh,exportContent};
 })();

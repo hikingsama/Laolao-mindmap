@@ -31,6 +31,7 @@
 
   /* ---------- 设备判断 ---------- */
   window.isMobile = function isMobile() {
+    if(window.MMWorkspaceEmbedded){try{return parent.isMobile();}catch{}}
     if (typeof window.matchMedia === "function" && window.matchMedia("(pointer: coarse)").matches) return true;
     return window.innerWidth <= 720;
   };

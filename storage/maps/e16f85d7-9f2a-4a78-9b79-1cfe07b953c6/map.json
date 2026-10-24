@@ -1,0 +1,2373 @@
+{
+  "id": "e16f85d7-9f2a-4a78-9b79-1cfe07b953c6",
+  "title": "演示草稿",
+  "layout": "mind",
+  "line": "curve",
+  "theme": "fresh",
+  "nodes": [
+    {
+      "id": "ae26p9ut1v",
+      "text": "在空白位置双击创建新节点\n文本编辑时右边有实时预览",
+      "children": []
+    },
+    {
+      "id": "s5vtuparmb",
+      "text": "节点四周有磁吸点\n拖动则可用箭头连接两个磁吸点\n箭头为折线！方便拐弯~\n\n↓从一个磁吸点出发，拖动到空白处，则会在空白处自动创建新节点！",
+      "children": []
+    },
+    {
+      "id": "447xkj4gep",
+      "text": "# 右键节点可以：\n## 编辑样式\n## 添加标记\n## 创建新组（后续更详细讲解）\n## 进行提问！（暂未上线）",
+      "children": []
+    },
+    {
+      "id": "el4t77lu0q",
+      "text": "# 箭头也可以被选中！\n## 右键修改箭头的方向！\n## 右键还可以添加箭头文字标记！\nOS：双击创建文字标记不应该更方便喵？\n## 我们还没做左键与箭头的互动功能\n",
+      "children": []
+    },
+    {
+      "id": "4smmw0a5xg",
+      "text": "对已有节点鼠标操作总览：\n①左键单击选中\n左键双击进入文本编辑\n②右键单击显示菜单\n③拖动边缘调节大小\n④按住左键并拖动节点\n",
+      "children": [],
+      "color": "#2bb98a"
+    },
+    {
+      "id": "a7p75iwhhk",
+      "text": "可以多选\n①按住ctrl依次点按就能多选\n②在空白位置出发按住右键扫动也能多选\n\n多选后可以一起拖动，一起修改样式，一起添加特殊标记。",
+      "children": [],
+      "color": "#2bb98a"
+    },
+    {
+      "id": "evs63y6xto",
+      "text": "画布操作\n①左键拖动空白处，拖动画布\n②鼠标中键滑动，位置滑移\n③按住ctrl后滑动中键，缩放画布\n④ctrl + \"-\" 或\"=\"也可以缩放画布\n⑤会用触控板的--双指滑动，滑移；双指扩张或捏合，缩放画布！\n⑥不好意思，暂时没有右键菜单！",
+      "children": []
+    },
+    {
+      "id": "1duan44y2m",
+      "text": "Obsidian canvas左键与箭头交互：\n\n左键拖动后，可以修改最近的端点的位置。",
+      "children": [],
+      "color": "#e05252"
+    },
+    {
+      "id": "1vwp58o5w9",
+      "text": "一个节点上的不同磁吸点可以互连了，方便表示循环或递归的过程",
+      "children": [],
+      "color": "#7aa33c"
+    },
+    {
+      "id": "pavc1tmth6",
+      "text": "# Md演示\n标题、粗体、斜体、删除线、引用、列表、任务列表、表格、链接、代码。\n\n# 一级标题\n## 二级标题\n### 三级标题\n\n__bold__\n_Italic_\n**also bold**\n*also italic*\n***Bold and italic***\n~~删除线~~\n>quote\n>>quote in a quote!\n\n### 无序列表\n- 1（留个空格）\n+ 2\n* 3\n  - 3.1，使用tab缩进即可\n    - 3.1.1\n      - 3.1.1.1\n\n### 有序列表\n1. 数字+下点，朴实无华\n2.\n3.\n\n### 任务列表（三处空格！）\n- [ ] 任务列表\n- [x] 1\n\n### 表格\n|  姓名 |  年龄  |  城市  |\n|  :--- |  :---:  |  ---:  |\n|  张三 |  18  |  北京  |\n|  李四 |  20  |  上海  |\n\n### 链接\n[西安交通大学](奶龙交通大学.com)\n\n### 代码\n`hello world!`\n\n### 代码块\n```\nint main()\n{\nprintf(\"咥面\")\n}\n```",
+      "children": []
+    },
+    {
+      "id": "9ravsip74z",
+      "text": "# 节点的内容自适应模式与手动缩放模式\n\n创建的节点默认自适应输入的文本大小\n手动拖动后变成固定宽或高\n右键可以选择恢复内容自适应",
+      "children": [],
+      "color": "#7aa33c"
+    },
+    {
+      "id": "f8uuudch19",
+      "text": "还能从一个磁吸点拖到空白处以创建新节点！",
+      "children": []
+    },
+    {
+      "id": "7pu8azdz43",
+      "text": "# LaTeX演示\n\n行内公式$ 111，1231 $\n行间公式\n$$ Kobe + Helicopter↑ → Mamba out↓ $$\n积分快捷键：在公式区输入int后按tab\n$$ \\int_{□}^{□} □\\,\\mathrm{d}□ $$\n\n# 试试公式快捷补全\n\n目标：输入下面的定积分。\n\n$$\n\\int_0^1 \\frac{1}{1+x^2}\\,\\mathrm{d}x=\\frac{\\pi}{4}\n$$\n\n1. 双击节点，输入 `$int$`，将光标放在 `int` 后、结尾 `$` 前，按 Tab。\n2. 填下限 `0` → Tab → 填上限 `1` → Tab。\n3. 在被积函数区域输入 `frac`，按 Tab，展开分数。\n4. 填分子 `1` → Tab → 填分母 `1+x^2` → Tab。\n5. 自动返回积分的微分变量区域，填 `x` → Tab\n6. 写等于号，输入frac，按tab\n7. 输入\\pi，或输入pi后按tab\n8. 按tab跳到下一格，输入4，完成\n\n填错了？按 Shift+Tab 返回上一项。\n右侧实时预览公式，最后按 Ctrl+Enter 保存。",
+      "children": []
+    },
+    {
+      "id": "zvk3tg09by",
+      "text": "还没有代码块按类型渲染\n这种高级功能",
+      "children": [],
+      "color": "#e05252"
+    },
+    {
+      "id": "gtt9j5iala",
+      "text": "$\\int_{0}^{1} \\frac{1}{1+x^2}\\,\\mathrm{d}x = \\frac{\\pi}{4}$",
+      "children": []
+    },
+    {
+      "id": "vxtywiu1nq",
+      "text": "# 矩阵快捷补全\n\n输入 `$mat2$`，将光标放在 `mat2` 后、结尾 `$` 前，按 Tab。\n\n按行依次填写，每填一项按 Tab：\n`1` → `2` → `3` → `4`\n\n得到：\n\n$$\n\\begin{pmatrix}\n1 & 2 \\\\\n3 & 4\n\\end{pmatrix}\n$$\n\n想输入三阶矩阵？使用 `mat3`。\n想使用方括号？使用 `bmat2`。",
+      "children": []
+    },
+    {
+      "id": "fhmj937519",
+      "text": "$\\begin{pmatrix} 1 & 2 \\\\ 3 & 4 \\end{pmatrix}$\n\n$\\begin{pmatrix} 1 & 1 & 4 \\\\ 5 & 1 & 4 \\\\ 1 & 9 & 1 \\end{pmatrix}$\n\n$\\begin{bmatrix} 1 & 2 \\\\ 3 & 4 \\end{bmatrix}$",
+      "children": []
+    },
+    {
+      "id": "q3rdcmxwhf",
+      "text": "$\\alpha,\\beta,\\gamma,\\delta,\\epsilon,\\mu,\\lambda,\\theta,\\pi,\\infty$",
+      "children": []
+    },
+    {
+      "id": "dl8b78nt3y",
+      "text": "一味填快捷键是没有前途的\nLiiiSTEM这一块比较牛批了",
+      "children": [],
+      "color": "#e05252"
+    },
+    {
+      "id": "m0wk5zid59",
+      "text": "大纲功能咱先去掉吧。\n现在还没有做那么大的项目，大到需要这玩意。",
+      "children": [],
+      "color": "#e05252"
+    },
+    {
+      "id": "2myk02w62k",
+      "text": "图片、PDF标签可以重命名了",
+      "children": [],
+      "color": "#2bb98a"
+    },
+    {
+      "id": "2eidc0pm4m",
+      "text": "媒体文件显示\n- 点击跳转\n- 显示引用次数",
+      "children": [],
+      "color": "#7aa33c"
+    },
+    {
+      "id": "umvtu5mya8",
+      "text": "",
+      "image": "0d600a4e-6317-4611-bc74-255c8a78c397",
+      "children": []
+    },
+    {
+      "id": "qba1p2guzt",
+      "text": "",
+      "pdf": "903fd0c9-dfab-44a3-aefc-653d229172c6",
+      "children": []
+    },
+    {
+      "id": "1snov08ptw",
+      "text": "这个checkbox渲染出来后是可点击的",
+      "children": []
+    },
+    {
+      "id": "kh8ie2msv6",
+      "text": "# 第8次提问：第八题解答的上下文已经丢失了吗？好吧，重新解答一遍第八题",
+      "children": [],
+      "aiTurnId": "02d0a078-4736-4fe1-91a1-4156e4da3515",
+      "aiEntry": true,
+      "color": "#527f96"
+    },
+    {
+      "id": "odqzb0msv6",
+      "text": "# 方程与齐次特征方程\n\n按图像读数，方程为二阶常系数非齐次线性方程，右端由两项相加。先处理齐次部分。\n\n$$\ny''+6y'+9y=e^{-3x}(4+3x)+2e^{-x}\n$$\n\n齐次方程的特征方程为\n\n$$\nr^2+6r+9=(r+3)^2=0\n$$\n\n故 r=-3 是二重根。",
+      "children": [],
+      "aiTurnId": "02d0a078-4736-4fe1-91a1-4156e4da3515",
+      "aiEntry": false,
+      "color": "#527f96"
+    },
+    {
+      "id": "7xl2sw2t28",
+      "text": "# 齐次通解\n\n二重根对应的齐次通解为\n\n$$\ny_h=(C_1+C_2x)e^{-3x}\n$$\n\n其中 C_1,C_2 为任意常数。非齐次方程的特解可按右端两项分别求，再叠加。",
+      "children": [],
+      "aiTurnId": "02d0a078-4736-4fe1-91a1-4156e4da3515",
+      "aiEntry": false,
+      "color": "#527f96"
+    },
+    {
+      "id": "c02r01htos",
+      "text": "# 右端共振项的特解\n\n先只保留右端第一项。指数 e^{-3x} 与二重根共振，用移位算子化简。令\n\n$$\ny=e^{-3x}u\n$$\n\n则左端算子满足\n\n$$\n(D+3)^2[e^{-3x}u]=e^{-3x}u''\n$$\n\n于是对应第一项的方程化为\n\n$$\nu''=4+3x\n$$\n\n连续积分并取积分常数为零，先得\n\n$$\nu'=4x+\\frac32x^2\n$$\n\n再积分得一个特解\n\n$$\nu=2x^2+\\frac12x^3\n$$\n\n因此第一项对应的特解为\n\n$$\ny_{p1}=e^{-3x}\\left(\\frac12x^3+2x^2\\right)\n$$\n\n其中可能出现的线性项与常数项已归入齐次解。",
+      "children": [],
+      "aiTurnId": "02d0a078-4736-4fe1-91a1-4156e4da3515",
+      "aiEntry": false,
+      "color": "#527f96"
+    },
+    {
+      "id": "mkhfn0iu6x",
+      "text": "# 右端指数项的特解\n\n再处理右端第二项 2e^{-x}。因 r=-1 不是特征根，设\n\n$$\ny_{p2}=Ae^{-x}\n$$\n\n求导后代入方程左端，得\n\n$$\ny_{p2}''+6y_{p2}'+9y_{p2}=4Ae^{-x}\n$$\n\n令其等于 2e^{-x}，比较系数\n\n$$\n4A=2\\Rightarrow A=\\frac12\n$$\n\n故第二项对应的特解为\n\n$$\ny_{p2}=\\frac12e^{-x}\n$$",
+      "children": [],
+      "aiTurnId": "02d0a078-4736-4fe1-91a1-4156e4da3515",
+      "aiEntry": false,
+      "color": "#527f96"
+    },
+    {
+      "id": "u3r41pmudr",
+      "text": "# 叠加得通解\n\n非齐次方程通解等于齐次通解与两个特解之和。\n\n$$\ny=e^{-3x}(C_1+C_2x)+e^{-3x}\\left(\\frac12x^3+2x^2\\right)+\\frac12e^{-x}\n$$\n\n合并 e^{-3x} 的同类项，得\n\n$$\ny=e^{-3x}\\left(C_1+C_2x+2x^2+\\frac12x^3\\right)+\\frac12e^{-x}\n$$\n\n其中 C_1,C_2 为任意常数。",
+      "children": [],
+      "aiTurnId": "02d0a078-4736-4fe1-91a1-4156e4da3515",
+      "aiEntry": false,
+      "color": "#527f96"
+    },
+    {
+      "id": "1jrrcst9gj",
+      "text": "# 第10次提问：简要回答什么是特征方程？我联想起了线性代数中的特征向量与特征值。",
+      "children": [],
+      "aiTurnId": "87872a9e-012d-47ee-abfb-839c53fb4648",
+      "aiEntry": true,
+      "color": "#9c6b4f"
+    },
+    {
+      "id": "wne7wlf9gj",
+      "text": "# 特征方程的来源\n\n对常系数线性齐次微分方程，先尝试指数型解，因为指数函数求导后仍保持同一形式。\n\n$$\ny=e^{rx}\n$$\n\n把试解代入方程，各项都含有同一个指数因子，可以约去。\n\n$$\ne^{rx}P(r)=0\n$$\n\n由于指数因子不为零，问题就化为关于 r 的代数方程。",
+      "children": [],
+      "aiTurnId": "87872a9e-012d-47ee-abfb-839c53fb4648",
+      "aiEntry": false,
+      "color": "#9c6b4f"
+    },
+    {
+      "id": "viv32p59or",
+      "text": "# 特征方程与特征根\n\n约去指数因子后得到的多项式方程，称为该微分方程的特征方程。\n\n$$\na_n r^n+\\cdots+a_1r+a_0=0\n$$\n\n特征方程的根称为特征根，每个根对应一个指数型齐次解。\n\n$$\ny=e^{rx}\n$$\n\n若根重复，还要补充乘以 x 的幂的独立解，使解空间维数足够。",
+      "children": [],
+      "aiTurnId": "87872a9e-012d-47ee-abfb-839c53fb4648",
+      "aiEntry": false,
+      "color": "#9c6b4f"
+    },
+    {
+      "id": "ud9mupca79",
+      "text": "# 特征根决定通解形式\n\n不同特征根给出不同的指数基函数，齐次通解是这些基函数的线性组合。\n\n$$\ny_h=C_1e^{r_1x}+C_2e^{r_2x}\n$$\n\n若 r 是二重根，则对应两个线性无关解。\n\n$$\ne^{rx},\\quad xe^{rx}\n$$\n\n若出现共轭复根，则可用实值正余弦函数表示相应解。\n\n$$\nr=\\alpha\\pm i\\beta\\ \\Rightarrow\\ e^{\\alpha x}\\cos\\beta x,\\ e^{\\alpha x}\\sin\\beta x\n$$",
+      "children": [],
+      "aiTurnId": "87872a9e-012d-47ee-abfb-839c53fb4648",
+      "aiEntry": false,
+      "color": "#9c6b4f"
+    },
+    {
+      "id": "m9rhkpyaf7",
+      "text": "# 线性代数中的特征方程\n\n在线性代数中，寻找矩阵作用下方向不变的向量，会得到特征值方程。\n\n$$\nAv=\\lambda v\n$$\n\n移项后，非零特征向量存在要求系数矩阵奇异。\n\n$$\n\\det(A-\\lambda I)=0\n$$\n\n这个行列式方程同样称为特征方程，它的根是矩阵的特征值。",
+      "children": [],
+      "aiTurnId": "87872a9e-012d-47ee-abfb-839c53fb4648",
+      "aiEntry": false,
+      "color": "#9c6b4f"
+    },
+    {
+      "id": "n3k7x8cazw",
+      "text": "# 两类特征方程的类比与区别\n\n共同点是：都把寻找特殊解或特殊方向的问题，转化为多项式求根。\n\n$$\nP(r)=0\\quad\\text{与}\\quad\\det(A-\\lambda I)=0\n$$\n\n区别在于：微分方程中 r 是试解指数 y=e^{rx} 的参数，根决定齐次解的基函数。\n\n$$\nr\\ \\text{决定}\\ e^{rx}\n$$\n\n线性代数中 λ 是矩阵作用在特征向量上的伸缩因子，根决定不变方向。\n\n$$\nAv=\\lambda v\n$$\n\n因此二者可类比为“由方程求根”，但不能把微分方程的特征根直接当作矩阵特征值使用。",
+      "children": [],
+      "aiTurnId": "87872a9e-012d-47ee-abfb-839c53fb4648",
+      "aiEntry": false,
+      "color": "#9c6b4f"
+    },
+    {
+      "id": "ujbovqpyle",
+      "text": "# 第13次提问：线性无关解为什么用幂函数乘以指数函数构造？单幂函数不行吗？",
+      "children": [],
+      "aiTurnId": "75eccd7b-2fb2-4606-bd90-121d46e432e6",
+      "aiEntry": true,
+      "color": "#527f96"
+    },
+    {
+      "id": "cxu2113yle",
+      "text": "# 重根只提供一个独立指数解\n\n二阶齐次方程的解空间是二维的。以 r=-3 为二重根时，特征方程只给出一个指数解。\n\n$$\ny_1=e^{-3x}\n$$\n\n因此还需要一个与它线性无关的齐次解，才能组成通解。",
+      "children": [],
+      "aiTurnId": "75eccd7b-2fb2-4606-bd90-121d46e432e6",
+      "aiEntry": false,
+      "color": "#527f96"
+    },
+    {
+      "id": "1alc1utyy9",
+      "text": "# 单幂函数不满足齐次方程\n\n若直接取幂函数 y=x，代入方程左端不为零。\n\n$$\ny=x:\\quad y''+6y'+9y=6+9x\\ne0\n$$\n\n再取 y=x^2，代入后仍含多项式项。\n\n$$\ny=x^2:\\quad y''+6y'+9y=2+12x+9x^2\\ne0\n$$\n\n所以单幂函数本身不能充当重根对应的第二个齐次解。",
+      "children": [],
+      "aiTurnId": "75eccd7b-2fb2-4606-bd90-121d46e432e6",
+      "aiEntry": false,
+      "color": "#527f96"
+    },
+    {
+      "id": "wg8k4lqz5s",
+      "text": "# 设指数因子乘待定函数\n\n为了保持指数求导后的形式闭合，设第二个候选解为待定函数乘指数因子。\n\n$$\ny=v(x)e^{rx}\n$$\n\n本题 r=-3，因此设\n\n$$\ny=v(x)e^{-3x}\n$$\n\n再把它代入齐次方程，用重根条件化简。",
+      "children": [],
+      "aiTurnId": "75eccd7b-2fb2-4606-bd90-121d46e432e6",
+      "aiEntry": false,
+      "color": "#527f96"
+    },
+    {
+      "id": "g4xl9lszds",
+      "text": "# 重根使待定函数满足 v''=0\n\n代入后，含 v' 和 v 的项因 r=-3 是重根而抵消，只剩二阶导数项。\n\n$$\ne^{-3x}v''=0\n$$\n\n指数因子不为零，故待定函数满足\n\n$$\nv''=0\n$$\n\n积分两次得 v 为线性函数。\n\n$$\nv=C_1+C_2x\n$$",
+      "children": [],
+      "aiTurnId": "75eccd7b-2fb2-4606-bd90-121d46e432e6",
+      "aiEntry": false,
+      "color": "#527f96"
+    },
+    {
+      "id": "5hg0gbxzq1",
+      "text": "# 得到两个线性无关解\n\n代回候选形式，得到齐次通解。\n\n$$\ny_h=e^{-3x}(C_1+C_2x)\n$$\n\n两个基函数为\n\n$$\ne^{-3x},\\quad xe^{-3x}\n$$\n\n二者比值是 x，不是常数，故线性无关；第二个解就是 x 乘指数函数。",
+      "children": [],
+      "aiTurnId": "75eccd7b-2fb2-4606-bd90-121d46e432e6",
+      "aiEntry": false,
+      "color": "#527f96"
+    },
+    {
+      "id": "js34xf9zy9",
+      "text": "# 区别于非齐次特解的高次幂\n\n第八题右端含 e^{-3x}(4+3x)，共振特解会出现 x^2、x^3 项，但这些项属于非齐次特解。\n\n$$\ny_{p1}=e^{-3x}\\left(\\frac12x^3+2x^2\\right)\n$$\n\n齐次部分只保留 e^{-3x} 与 x e^{-3x} 两个基函数；高次幂来自对右端多项式积分，不能并入齐次通解。\n\n$$\ny_h=e^{-3x}(C_1+C_2x)\n$$",
+      "children": [],
+      "aiTurnId": "75eccd7b-2fb2-4606-bd90-121d46e432e6",
+      "aiEntry": false,
+      "color": "#527f96"
+    },
+    {
+      "id": "wsb456smn9",
+      "text": "# 第14次提问：求解第十题。",
+      "children": [],
+      "aiTurnId": "a2ca8297-0da4-40f8-aedf-b802e096c25e",
+      "aiEntry": true,
+      "color": "#a08743"
+    },
+    {
+      "id": "wvk3033mn9",
+      "text": "# 题干与目标\n\n已知 f 在闭区间连续、开区间可导，积分条件为：\n\n$$\n\\int_0^1 x f(x)\\,dx=\\frac12\n$$\n\n目标是证明存在内部点 λ，使目标式中的导数值为零：\n\n$$\n\\lambda f'(\\lambda)+f(\\lambda)-1=0\n$$\n\n它对应辅助函数导数的零点。",
+      "children": [],
+      "aiTurnId": "a2ca8297-0da4-40f8-aedf-b802e096c25e",
+      "aiEntry": false,
+      "color": "#a08743"
+    },
+    {
+      "id": "j27kaatmvr",
+      "text": "# 构造辅助函数\n\n构造辅助函数，使其导数正好包含目标式：\n\n$$\nF(x)=x f(x)-x\n$$\n\n该函数连续可导，且端点值为：\n\n$$\nF(0)=0\n$$\n\n其导数为：\n\n$$\nF'(x)=x f'(x)+f(x)-1\n$$",
+      "children": [],
+      "aiTurnId": "a2ca8297-0da4-40f8-aedf-b802e096c25e",
+      "aiEntry": false,
+      "color": "#a08743"
+    },
+    {
+      "id": "a4qla9en4u",
+      "text": "# 积分条件转化\n\n把已知积分条件改写成 F 的积分：\n\n$$\n\\int_0^1 F(x)\\,dx=\\int_0^1 x f(x)\\,dx-\\int_0^1 x\\,dx\n$$\n\n因为已知第一项为二分之一，且\n\n$$\n\\int_0^1 x\\,dx=\\frac12\n$$\n\n所以\n\n$$\n\\int_0^1 F(x)\\,dx=0\n$$",
+      "children": [],
+      "aiTurnId": "a2ca8297-0da4-40f8-aedf-b802e096c25e",
+      "aiEntry": false,
+      "color": "#a08743"
+    },
+    {
+      "id": "70xhj90ndw",
+      "text": "# 内部零点\n\n由 F(0)=0 且积分为零，可知 F 在内部必有零点。若 F≡0，则任取内部点都有 F'=0，结论已成立；否则存在内部零点：\n\n$$\n\\exists c\\in(0,1),\\quad F(c)=0\n$$",
+      "children": [],
+      "aiTurnId": "a2ca8297-0da4-40f8-aedf-b802e096c25e",
+      "aiEntry": false,
+      "color": "#a08743"
+    },
+    {
+      "id": "gyj4swpnmz",
+      "text": "# Rolle定理\n\n在区间 [0,c] 上对 F 应用 Rolle 定理。因为 F(0)=F(c)=0，且 F 连续可导，故存在\n\n$$\n\\exists \\lambda\\in(0,c)\\subset(0,1),\\quad F'(\\lambda)=0\n$$\n\n其中 λ 落在所需开区间内。",
+      "children": [],
+      "aiTurnId": "a2ca8297-0da4-40f8-aedf-b802e096c25e",
+      "aiEntry": false,
+      "color": "#a08743"
+    },
+    {
+      "id": "axtesafnyw",
+      "text": "# 结论回代\n\n将 F' 的表达式代入 F'(λ)=0：\n\n$$\n\\lambda f'(\\lambda)+f(\\lambda)-1=0\n$$\n\n移项即得所需等式：\n\n$$\n\\lambda f'(\\lambda)+f(\\lambda)=1\n$$\n\n证毕。",
+      "children": [],
+      "aiTurnId": "a2ca8297-0da4-40f8-aedf-b802e096c25e",
+      "aiEntry": false,
+      "color": "#a08743"
+    },
+    {
+      "id": "hokkppu5ul",
+      "text": "# 第15次提问：这一节点的内容可以展开证明一下吗？为什么F不恒为0的时候必然存在内部零点？",
+      "children": [],
+      "aiTurnId": "dd008e94-4a52-41dd-8c4a-09e3fb986f89",
+      "aiEntry": true,
+      "color": "#527f96"
+    },
+    {
+      "id": "mu9y36m5ul",
+      "text": "# 内部零点目标\n\n已知辅助函数满足两个条件：端点值 F(0)=0，且积分值为零。目标是说明在开区间 (0,1) 内必有一点使 F 为零。\n\n$$\nF(0)=0,\\quad \\int_0^1 F(x)\\,dx=0\n$$\n\n实际上，无论 F 是否恒为零，这两个条件都已经保证内部零点存在。",
+      "children": [],
+      "aiTurnId": "dd008e94-4a52-41dd-8c4a-09e3fb986f89",
+      "aiEntry": false,
+      "color": "#527f96"
+    },
+    {
+      "id": "y2exjdq6hq",
+      "text": "# 反设无内部零点\n\n为了证明内部零点存在，先反设 F 在 (0,1) 内没有零点。\n\n$$\nF(x)\\neq 0,\\quad \\forall x\\in(0,1)\n$$\n\n接下来利用连续函数的介值性导出矛盾。",
+      "children": [],
+      "aiTurnId": "dd008e94-4a52-41dd-8c4a-09e3fb986f89",
+      "aiEntry": false,
+      "color": "#527f96"
+    },
+    {
+      "id": "b90yfoi74m",
+      "text": "# 连续函数的符号恒定\n\nF 在 [0,1] 上连续。若 F 在 (0,1) 内没有零点，则它不能从正变负或从负变正；否则由介值定理会产生一个内部零点。\n\n$$\nF(x)>0\\ \\text{或}\\ F(x)<0,\\quad \\forall x\\in(0,1)\n$$\n\n也就是说，在反设下，F 在开区间内必须保持同一个符号。",
+      "children": [],
+      "aiTurnId": "dd008e94-4a52-41dd-8c4a-09e3fb986f89",
+      "aiEntry": false,
+      "color": "#527f96"
+    },
+    {
+      "id": "axayww474v",
+      "text": "# 积分符号矛盾\n\n若 F 在 (0,1) 内恒正，则其积分严格大于零；若恒负，则积分严格小于零。端点 x=0 处 F(0)=0 不影响积分符号。\n\n$$\n\\int_0^1 F(x)\\,dx>0\\quad \\text{或}\\quad \\int_0^1 F(x)\\,dx<0\n$$\n\n但这与已知积分等于零矛盾：\n\n$$\n\\int_0^1 F(x)\\,dx=0\n$$\n\n因此反设不成立。",
+      "children": [],
+      "aiTurnId": "dd008e94-4a52-41dd-8c4a-09e3fb986f89",
+      "aiEntry": false,
+      "color": "#527f96"
+    },
+    {
+      "id": "tleyjul7wu",
+      "text": "# 结论与平凡情形\n\n所以 (0,1) 内至少存在一个零点：\n\n$$\n\\exists c\\in(0,1),\\quad F(c)=0\n$$\n\n若 F 恒为零，则每个内部点都是零点，且 F' 恒为零，结论更直接；若 F 不恒为零，上述反证同样给出内部零点 c。之后可在 [0,c] 上对 F 使用 Rolle 定理。",
+      "children": [],
+      "aiTurnId": "dd008e94-4a52-41dd-8c4a-09e3fb986f89",
+      "aiEntry": false,
+      "color": "#527f96"
+    },
+    {
+      "id": "enbx9jcl7y",
+      "text": "",
+      "image": "e36a3ff5-7e3a-4a95-ac30-a6d82b066e11",
+      "children": []
+    }
+  ],
+  "fold": {},
+  "edges": [
+    {
+      "id": "ez8000nanu8jt",
+      "from": {
+        "node": "447xkj4gep",
+        "side": "s"
+      },
+      "to": {
+        "node": "el4t77lu0q",
+        "side": "n"
+      },
+      "dir": "none",
+      "label": "双击文字标记进行编辑！"
+    },
+    {
+      "id": "etj7qnuwb3aex",
+      "from": {
+        "node": "ae26p9ut1v",
+        "side": "s"
+      },
+      "to": {
+        "node": "s5vtuparmb",
+        "side": "n"
+      },
+      "dir": "fwd"
+    },
+    {
+      "id": "eb7m98bpeyzud",
+      "from": {
+        "node": "s5vtuparmb",
+        "side": "n"
+      },
+      "to": {
+        "node": "ae26p9ut1v",
+        "side": "n"
+      },
+      "dir": "fwd"
+    },
+    {
+      "id": "evrxll3e65svc",
+      "from": {
+        "node": "qba1p2guzt",
+        "side": "e"
+      },
+      "to": {
+        "node": "kh8ie2msv6",
+        "side": "w"
+      },
+      "dir": "fwd",
+      "label": "提问",
+      "color": "#527f96"
+    },
+    {
+      "id": "ekxml66oi5svc",
+      "from": {
+        "node": "kh8ie2msv6",
+        "side": "e"
+      },
+      "to": {
+        "node": "odqzb0msv6",
+        "side": "w"
+      },
+      "dir": "fwd",
+      "label": "展开",
+      "color": "#527f96"
+    },
+    {
+      "id": "erpbkw04i5t2b",
+      "from": {
+        "node": "odqzb0msv6",
+        "side": "e"
+      },
+      "to": {
+        "node": "7xl2sw2t28",
+        "side": "w"
+      },
+      "dir": "fwd",
+      "label": "主线",
+      "color": "#527f96"
+    },
+    {
+      "id": "exwcgngc75toy",
+      "from": {
+        "node": "7xl2sw2t28",
+        "side": "e"
+      },
+      "to": {
+        "node": "c02r01htos",
+        "side": "w"
+      },
+      "dir": "fwd",
+      "label": "递进",
+      "color": "#527f96"
+    },
+    {
+      "id": "ei1fn6j4g5u72",
+      "from": {
+        "node": "7xl2sw2t28",
+        "side": "s"
+      },
+      "to": {
+        "node": "mkhfn0iu6x",
+        "side": "w"
+      },
+      "dir": "fwd",
+      "label": "递进",
+      "color": "#527f96"
+    },
+    {
+      "id": "er7jlrkfm5udx",
+      "from": {
+        "node": "c02r01htos",
+        "side": "e"
+      },
+      "to": {
+        "node": "u3r41pmudr",
+        "side": "w"
+      },
+      "dir": "fwd",
+      "label": "递进",
+      "color": "#527f96"
+    },
+    {
+      "id": "eg6f9cf395udx",
+      "from": {
+        "node": "mkhfn0iu6x",
+        "side": "e"
+      },
+      "to": {
+        "node": "u3r41pmudr",
+        "side": "n"
+      },
+      "dir": "fwd",
+      "label": "递进",
+      "color": "#527f96"
+    },
+    {
+      "id": "e09qu6pl2a9gm",
+      "from": {
+        "node": "odqzb0msv6",
+        "side": "s"
+      },
+      "to": {
+        "node": "1jrrcst9gj",
+        "side": "n"
+      },
+      "dir": "fwd",
+      "label": "提问",
+      "color": "#9c6b4f"
+    },
+    {
+      "id": "es5hxj91va9ov",
+      "from": {
+        "node": "wne7wlf9gj",
+        "side": "e"
+      },
+      "to": {
+        "node": "viv32p59or",
+        "side": "w"
+      },
+      "dir": "fwd",
+      "label": "递进",
+      "color": "#9c6b4f"
+    },
+    {
+      "id": "efl5qit30aa7e",
+      "from": {
+        "node": "viv32p59or",
+        "side": "e"
+      },
+      "to": {
+        "node": "ud9mupca79",
+        "side": "w"
+      },
+      "dir": "fwd",
+      "label": "递进",
+      "color": "#9c6b4f"
+    },
+    {
+      "id": "ed7bulzh6aafa",
+      "from": {
+        "node": "wne7wlf9gj",
+        "side": "s"
+      },
+      "to": {
+        "node": "m9rhkpyaf7",
+        "side": "w"
+      },
+      "dir": "none",
+      "label": "并列",
+      "color": "#9c6b4f"
+    },
+    {
+      "id": "ebxvf1455ab0x",
+      "from": {
+        "node": "m9rhkpyaf7",
+        "side": "e"
+      },
+      "to": {
+        "node": "n3k7x8cazw",
+        "side": "w"
+      },
+      "dir": "fwd",
+      "label": "递进",
+      "color": "#9c6b4f"
+    },
+    {
+      "id": "elujtwzf3appt",
+      "from": {
+        "node": "1jrrcst9gj",
+        "side": "s"
+      },
+      "to": {
+        "node": "wne7wlf9gj",
+        "side": "n"
+      },
+      "dir": "fwd"
+    },
+    {
+      "id": "ecz5t36h03ylg",
+      "from": {
+        "node": "ud9mupca79",
+        "side": "e"
+      },
+      "to": {
+        "node": "ujbovqpyle",
+        "side": "w"
+      },
+      "dir": "fwd",
+      "label": "提问",
+      "color": "#527f96"
+    },
+    {
+      "id": "eiulpqq0e3ylg",
+      "from": {
+        "node": "ujbovqpyle",
+        "side": "e"
+      },
+      "to": {
+        "node": "cxu2113yle",
+        "side": "w"
+      },
+      "dir": "fwd",
+      "label": "展开",
+      "color": "#527f96"
+    },
+    {
+      "id": "egi3d3bjq3yye",
+      "from": {
+        "node": "cxu2113yle",
+        "side": "e"
+      },
+      "to": {
+        "node": "1alc1utyy9",
+        "side": "w"
+      },
+      "dir": "fwd",
+      "label": "递进",
+      "color": "#527f96"
+    },
+    {
+      "id": "eraizphzk3z5v",
+      "from": {
+        "node": "1alc1utyy9",
+        "side": "e"
+      },
+      "to": {
+        "node": "wg8k4lqz5s",
+        "side": "w"
+      },
+      "dir": "fwd",
+      "label": "递进",
+      "color": "#527f96"
+    },
+    {
+      "id": "e3odb9hx33zdv",
+      "from": {
+        "node": "wg8k4lqz5s",
+        "side": "e"
+      },
+      "to": {
+        "node": "g4xl9lszds",
+        "side": "w"
+      },
+      "dir": "fwd",
+      "label": "递进",
+      "color": "#527f96"
+    },
+    {
+      "id": "efa8zaclk3zq3",
+      "from": {
+        "node": "g4xl9lszds",
+        "side": "e"
+      },
+      "to": {
+        "node": "5hg0gbxzq1",
+        "side": "w"
+      },
+      "dir": "fwd",
+      "label": "递进",
+      "color": "#527f96"
+    },
+    {
+      "id": "e8i6xin5x3zye",
+      "from": {
+        "node": "5hg0gbxzq1",
+        "side": "e"
+      },
+      "to": {
+        "node": "js34xf9zy9",
+        "side": "w"
+      },
+      "dir": "fwd",
+      "label": "补充说明",
+      "color": "#527f96"
+    },
+    {
+      "id": "erobx0tafamnd",
+      "from": {
+        "node": "qba1p2guzt",
+        "side": "s"
+      },
+      "to": {
+        "node": "wsb456smn9",
+        "side": "n"
+      },
+      "dir": "fwd",
+      "label": "提问",
+      "color": "#a08743"
+    },
+    {
+      "id": "ekwc8lq0hamnd",
+      "from": {
+        "node": "wsb456smn9",
+        "side": "e"
+      },
+      "to": {
+        "node": "wvk3033mn9",
+        "side": "w"
+      },
+      "dir": "fwd",
+      "label": "展开",
+      "color": "#a08743"
+    },
+    {
+      "id": "enbz8cqobamvv",
+      "from": {
+        "node": "wvk3033mn9",
+        "side": "e"
+      },
+      "to": {
+        "node": "j27kaatmvr",
+        "side": "w"
+      },
+      "dir": "fwd",
+      "label": "递进",
+      "color": "#a08743"
+    },
+    {
+      "id": "e12somy9nan4y",
+      "from": {
+        "node": "j27kaatmvr",
+        "side": "e"
+      },
+      "to": {
+        "node": "a4qla9en4u",
+        "side": "w"
+      },
+      "dir": "fwd",
+      "label": "递进",
+      "color": "#a08743"
+    },
+    {
+      "id": "erhptrerxaneh",
+      "from": {
+        "node": "a4qla9en4u",
+        "side": "e"
+      },
+      "to": {
+        "node": "70xhj90ndw",
+        "side": "w"
+      },
+      "dir": "fwd",
+      "label": "递进",
+      "color": "#a08743"
+    },
+    {
+      "id": "eebz4zsw9ann2",
+      "from": {
+        "node": "70xhj90ndw",
+        "side": "e"
+      },
+      "to": {
+        "node": "gyj4swpnmz",
+        "side": "w"
+      },
+      "dir": "fwd",
+      "label": "递进",
+      "color": "#a08743"
+    },
+    {
+      "id": "ei534avbjanyz",
+      "from": {
+        "node": "gyj4swpnmz",
+        "side": "e"
+      },
+      "to": {
+        "node": "axtesafnyw",
+        "side": "w"
+      },
+      "dir": "fwd",
+      "label": "递进",
+      "color": "#a08743"
+    },
+    {
+      "id": "eqf8pch41f5ur",
+      "from": {
+        "node": "70xhj90ndw",
+        "side": "s"
+      },
+      "to": {
+        "node": "hokkppu5ul",
+        "side": "n"
+      },
+      "dir": "fwd",
+      "label": "提问",
+      "color": "#527f96"
+    },
+    {
+      "id": "evpynkwt9f5ur",
+      "from": {
+        "node": "hokkppu5ul",
+        "side": "e"
+      },
+      "to": {
+        "node": "mu9y36m5ul",
+        "side": "w"
+      },
+      "dir": "fwd",
+      "label": "展开",
+      "color": "#527f96"
+    },
+    {
+      "id": "ehrm21jyjf6hx",
+      "from": {
+        "node": "mu9y36m5ul",
+        "side": "e"
+      },
+      "to": {
+        "node": "y2exjdq6hq",
+        "side": "w"
+      },
+      "dir": "fwd",
+      "label": "递进",
+      "color": "#527f96"
+    },
+    {
+      "id": "e07lz1811f753",
+      "from": {
+        "node": "y2exjdq6hq",
+        "side": "e"
+      },
+      "to": {
+        "node": "b90yfoi74m",
+        "side": "w"
+      },
+      "dir": "fwd",
+      "label": "递进",
+      "color": "#527f96"
+    },
+    {
+      "id": "emekre6djf753",
+      "from": {
+        "node": "b90yfoi74m",
+        "side": "e"
+      },
+      "to": {
+        "node": "axayww474v",
+        "side": "w"
+      },
+      "dir": "fwd",
+      "label": "递进",
+      "color": "#527f96"
+    },
+    {
+      "id": "e7mnbil1mf7wz",
+      "from": {
+        "node": "axayww474v",
+        "side": "e"
+      },
+      "to": {
+        "node": "tleyjul7wu",
+        "side": "w"
+      },
+      "dir": "fwd",
+      "label": "递进",
+      "color": "#527f96"
+    }
+  ],
+  "v": 3,
+  "pos": {
+    "ae26p9ut1v": {
+      "x": -331,
+      "y": -119
+    },
+    "s5vtuparmb": {
+      "x": -137,
+      "y": 7
+    },
+    "447xkj4gep": {
+      "x": -213,
+      "y": 405
+    },
+    "el4t77lu0q": {
+      "x": -293,
+      "y": 840
+    },
+    "4smmw0a5xg": {
+      "x": -546,
+      "y": 12
+    },
+    "a7p75iwhhk": {
+      "x": -546,
+      "y": 218
+    },
+    "evs63y6xto": {
+      "x": -1068,
+      "y": -188
+    },
+    "1duan44y2m": {
+      "x": -332,
+      "y": 1095
+    },
+    "1vwp58o5w9": {
+      "x": 284,
+      "y": 212
+    },
+    "pavc1tmth6": {
+      "x": 800,
+      "y": -71
+    },
+    "9ravsip74z": {
+      "x": 286,
+      "y": -120
+    },
+    "f8uuudch19": {
+      "x": -181,
+      "y": 256
+    },
+    "7pu8azdz43": {
+      "x": 1368,
+      "y": -33
+    },
+    "zvk3tg09by": {
+      "x": 492,
+      "y": 1093
+    },
+    "gtt9j5iala": {
+      "x": 1399,
+      "y": 748
+    },
+    "vxtywiu1nq": {
+      "x": 1763,
+      "y": -30
+    },
+    "fhmj937519": {
+      "x": 1846.5,
+      "y": 344
+    },
+    "q3rdcmxwhf": {
+      "x": 2153,
+      "y": -28
+    },
+    "dl8b78nt3y": {
+      "x": 2138,
+      "y": -177
+    },
+    "m0wk5zid59": {
+      "x": 2634.5,
+      "y": -188.5
+    },
+    "2myk02w62k": {
+      "x": 2661,
+      "y": 75
+    },
+    "2eidc0pm4m": {
+      "x": 2986,
+      "y": -98
+    },
+    "umvtu5mya8": {
+      "x": 2138,
+      "y": 190
+    },
+    "qba1p2guzt": {
+      "x": 2400,
+      "y": 857.5783864986738
+    },
+    "1snov08ptw": {
+      "x": 469,
+      "y": 748
+    },
+    "kh8ie2msv6": {
+      "x": 3577.5,
+      "y": 857.5783864986738
+    },
+    "odqzb0msv6": {
+      "x": 4063.5,
+      "y": 857.5783864986738
+    },
+    "7xl2sw2t28": {
+      "x": 4549.5,
+      "y": 857.5783864986738
+    },
+    "c02r01htos": {
+      "x": 5035.5,
+      "y": 427.5783864986738
+    },
+    "mkhfn0iu6x": {
+      "x": 5035.5,
+      "y": 1515.5783864986738
+    },
+    "u3r41pmudr": {
+      "x": 5679.5,
+      "y": 857.5783864986738
+    },
+    "1jrrcst9gj": {
+      "x": 4063.5,
+      "y": 1217.5783864986738
+    },
+    "wne7wlf9gj": {
+      "x": 3999.5,
+      "y": 1985.5783864986738
+    },
+    "viv32p59or": {
+      "x": 5036,
+      "y": 1962
+    },
+    "ud9mupca79": {
+      "x": 5521.5,
+      "y": 1961.5783864986738
+    },
+    "m9rhkpyaf7": {
+      "x": 5035.5,
+      "y": 2309.578386498674
+    },
+    "n3k7x8cazw": {
+      "x": 5521.5,
+      "y": 2333.578386498674
+    },
+    "ujbovqpyle": {
+      "x": 6013.5,
+      "y": 1962
+    },
+    "cxu2113yle": {
+      "x": 6483.5,
+      "y": 1961.5783864986738
+    },
+    "1alc1utyy9": {
+      "x": 6969.5,
+      "y": 1961.5783864986738
+    },
+    "wg8k4lqz5s": {
+      "x": 7490.5,
+      "y": 1985.5783864986738
+    },
+    "g4xl9lszds": {
+      "x": 7941.5,
+      "y": 1961.5783864986738
+    },
+    "5hg0gbxzq1": {
+      "x": 8427.5,
+      "y": 1961.5783864986738
+    },
+    "js34xf9zy9": {
+      "x": 8913.5,
+      "y": 1961.5783864986738
+    },
+    "wsb456smn9": {
+      "x": 1846.5,
+      "y": 2686.578386498674
+    },
+    "wvk3033mn9": {
+      "x": 2301.5,
+      "y": 2686.578386498674
+    },
+    "j27kaatmvr": {
+      "x": 2787.5,
+      "y": 2686.578386498674
+    },
+    "a4qla9en4u": {
+      "x": 3251.5,
+      "y": 2686.578386498674
+    },
+    "70xhj90ndw": {
+      "x": 3698.5,
+      "y": 2686.578386498674
+    },
+    "gyj4swpnmz": {
+      "x": 4184.5,
+      "y": 2686.578386498674
+    },
+    "axtesafnyw": {
+      "x": 4670.5,
+      "y": 2686.578386498674
+    },
+    "hokkppu5ul": {
+      "x": 3698.5,
+      "y": 2974.578386498674
+    },
+    "mu9y36m5ul": {
+      "x": 4184.5,
+      "y": 2974.578386498674
+    },
+    "y2exjdq6hq": {
+      "x": 4670.5,
+      "y": 2974.578386498674
+    },
+    "b90yfoi74m": {
+      "x": 5156.5,
+      "y": 2974.578386498674
+    },
+    "axayww474v": {
+      "x": 5642.5,
+      "y": 2974.578386498674
+    },
+    "tleyjul7wu": {
+      "x": 6128.5,
+      "y": 2974.578386498674
+    },
+    "enbx9jcl7y": {
+      "x": 1629,
+      "y": 1088.5783864986738
+    }
+  },
+  "size": {
+    "ae26p9ut1v": {
+      "w": 439,
+      "h": 73
+    },
+    "s5vtuparmb": {
+      "w": 294,
+      "h": 156
+    },
+    "447xkj4gep": {
+      "w": 370,
+      "h": 306
+    },
+    "el4t77lu0q": {
+      "w": 393,
+      "h": 225
+    },
+    "4smmw0a5xg": {
+      "w": 294,
+      "h": 182
+    },
+    "a7p75iwhhk": {
+      "w": 294,
+      "h": 281
+    },
+    "evs63y6xto": {
+      "w": 294,
+      "h": 307
+    },
+    "1duan44y2m": {
+      "w": 404,
+      "h": 99
+    },
+    "1vwp58o5w9": {
+      "w": 360,
+      "h": 68
+    },
+    "pavc1tmth6": {
+      "w": 360,
+      "h": 1484
+    },
+    "9ravsip74z": {
+      "w": 360,
+      "h": 163
+    },
+    "f8uuudch19": {
+      "w": 407,
+      "h": 62
+    },
+    "7pu8azdz43": {
+      "w": 360,
+      "h": 751
+    },
+    "zvk3tg09by": {
+      "w": 294,
+      "h": 67
+    },
+    "gtt9j5iala": {
+      "w": 300,
+      "h": 55
+    },
+    "vxtywiu1nq": {
+      "w": 294,
+      "h": 344
+    },
+    "fhmj937519": {
+      "w": 127,
+      "h": 186
+    },
+    "q3rdcmxwhf": {
+      "w": 294,
+      "h": 44
+    },
+    "dl8b78nt3y": {
+      "w": 294,
+      "h": 67
+    },
+    "m0wk5zid59": {
+      "w": 294,
+      "h": 90
+    },
+    "2myk02w62k": {
+      "w": 241,
+      "h": 44
+    },
+    "2eidc0pm4m": {
+      "w": 153,
+      "h": 101
+    },
+    "umvtu5mya8": {
+      "w": 300,
+      "h": 430
+    },
+    "qba1p2guzt": {
+      "w": 1078,
+      "h": 1157
+    },
+    "1snov08ptw": {
+      "w": 298,
+      "h": 44
+    },
+    "kh8ie2msv6": {
+      "w": 376,
+      "h": 122
+    },
+    "odqzb0msv6": {
+      "w": 376,
+      "h": 260
+    },
+    "7xl2sw2t28": {
+      "w": 376,
+      "h": 188
+    },
+    "c02r01htos": {
+      "w": 376,
+      "h": 618
+    },
+    "mkhfn0iu6x": {
+      "w": 376,
+      "h": 406
+    },
+    "u3r41pmudr": {
+      "w": 376,
+      "h": 322
+    },
+    "1jrrcst9gj": {
+      "w": 376,
+      "h": 122
+    },
+    "wne7wlf9gj": {
+      "w": 376,
+      "h": 308
+    },
+    "viv32p59or": {
+      "w": 376,
+      "h": 308
+    },
+    "ud9mupca79": {
+      "w": 376,
+      "h": 332
+    },
+    "m9rhkpyaf7": {
+      "w": 376,
+      "h": 308
+    },
+    "n3k7x8cazw": {
+      "w": 376,
+      "h": 404
+    },
+    "ujbovqpyle": {
+      "w": 376,
+      "h": 122
+    },
+    "cxu2113yle": {
+      "w": 376,
+      "h": 212
+    },
+    "1alc1utyy9": {
+      "w": 376,
+      "h": 283
+    },
+    "wg8k4lqz5s": {
+      "w": 376,
+      "h": 260
+    },
+    "g4xl9lszds": {
+      "w": 376,
+      "h": 308
+    },
+    "5hg0gbxzq1": {
+      "w": 376,
+      "h": 260
+    },
+    "js34xf9zy9": {
+      "w": 376,
+      "h": 304
+    },
+    "wsb456smn9": {
+      "w": 345,
+      "h": 60
+    },
+    "wvk3033mn9": {
+      "w": 376,
+      "h": 305
+    },
+    "j27kaatmvr": {
+      "w": 354,
+      "h": 284
+    },
+    "a4qla9en4u": {
+      "w": 337,
+      "h": 348
+    },
+    "70xhj90ndw": {
+      "w": 376,
+      "h": 188
+    },
+    "gyj4swpnmz": {
+      "w": 376,
+      "h": 188
+    },
+    "axtesafnyw": {
+      "w": 259,
+      "h": 236
+    },
+    "hokkppu5ul": {
+      "w": 376,
+      "h": 153
+    },
+    "mu9y36m5ul": {
+      "w": 376,
+      "h": 257
+    },
+    "y2exjdq6hq": {
+      "w": 376,
+      "h": 188
+    },
+    "b90yfoi74m": {
+      "w": 376,
+      "h": 236
+    },
+    "axayww474v": {
+      "w": 376,
+      "h": 326
+    },
+    "tleyjul7wu": {
+      "w": 376,
+      "h": 236
+    },
+    "enbx9jcl7y": {
+      "w": 653,
+      "h": 373
+    }
+  },
+  "flat": true,
+  "media": [
+    {
+      "id": "0d600a4e-6317-4611-bc74-255c8a78c397",
+      "name": "截图测试.png",
+      "mime": "image/png",
+      "bytes": 40704,
+      "sourceMap": "e16f85d7-9f2a-4a78-9b79-1cfe07b953c6"
+    },
+    {
+      "id": "903fd0c9-dfab-44a3-aefc-653d229172c6",
+      "name": "2025西交高数A.pdf",
+      "mime": "application/pdf",
+      "bytes": 1566396,
+      "sourceMap": "e16f85d7-9f2a-4a78-9b79-1cfe07b953c6"
+    },
+    {
+      "id": "e36a3ff5-7e3a-4a95-ac30-a6d82b066e11",
+      "name": "GPT示例.png",
+      "mime": "image/png",
+      "bytes": 333984,
+      "sourceMap": "e16f85d7-9f2a-4a78-9b79-1cfe07b953c6"
+    }
+  ],
+  "annotations": [
+    {
+      "id": "c035ed0b-351b-4063-abb2-8878eac614e3",
+      "type": "rect",
+      "x1": 2513.2010256365666,
+      "y1": 339.1273624502639,
+      "x2": 2686.996858719197,
+      "y2": 409.12017277133026,
+      "color": "#ad6c62",
+      "width": 3
+    },
+    {
+      "id": "88be3dcd-d780-4ace-92cb-27017c700bce",
+      "type": "line",
+      "x1": 2526.8437353153085,
+      "y1": 315.9941335141467,
+      "x2": 2672.1679020150254,
+      "y2": 245.40809106957772,
+      "color": "#00eeff",
+      "width": 3
+    },
+    {
+      "id": "96637f26-8337-41cb-85d0-c6078f638766",
+      "type": "ellipse",
+      "x1": 2515.5737369090016,
+      "y1": 441.1507974521079,
+      "x2": 2683.437900421333,
+      "y2": 538.4290271306583,
+      "color": "#ff4d00",
+      "width": 3
+    }
+  ],
+  "groups": [
+    {
+      "id": "dfb38229-71e7-4860-a941-13d2d091c41e",
+      "title": "演示组1 - 节点与边",
+      "x": -575,
+      "y": -170,
+      "w": 843,
+      "h": 1381,
+      "color": "#8a6cf0",
+      "opacity": 15,
+      "width": 4
+    }
+  ],
+  "sizing": {
+    "pavc1tmth6": {
+      "h": true
+    },
+    "evs63y6xto": {
+      "h": true
+    },
+    "gtt9j5iala": {
+      "w": true,
+      "h": true
+    },
+    "qba1p2guzt": {
+      "w": true,
+      "h": true
+    },
+    "vxtywiu1nq": {
+      "h": true
+    },
+    "a7p75iwhhk": {
+      "h": true
+    },
+    "enbx9jcl7y": {
+      "w": true,
+      "h": true
+    },
+    "viv32p59or": {
+      "w": true,
+      "h": true
+    },
+    "el4t77lu0q": {
+      "h": true
+    },
+    "s5vtuparmb": {
+      "h": true
+    },
+    "q3rdcmxwhf": {
+      "h": true
+    }
+  },
+  "pdfViews": {
+    "qba1p2guzt": {
+      "page": 2,
+      "scale": "page-width",
+      "top": 2464.800048828125,
+      "left": 0,
+      "offset": 0.5214286014951509
+    }
+  },
+  "pdfTitlebarVersion": 1,
+  "aiMemory": {
+    "version": 1,
+    "membership": {
+      "ae26p9ut1v": "tree-ae26p9ut1v",
+      "s5vtuparmb": "tree-ae26p9ut1v",
+      "447xkj4gep": "tree-447xkj4gep",
+      "el4t77lu0q": "tree-447xkj4gep",
+      "4smmw0a5xg": "tree-4smmw0a5xg",
+      "a7p75iwhhk": "tree-a7p75iwhhk",
+      "evs63y6xto": "tree-evs63y6xto",
+      "1duan44y2m": "tree-1duan44y2m",
+      "1vwp58o5w9": "tree-1vwp58o5w9",
+      "pavc1tmth6": "tree-pavc1tmth6",
+      "9ravsip74z": "tree-9ravsip74z",
+      "f8uuudch19": "tree-f8uuudch19",
+      "7pu8azdz43": "tree-7pu8azdz43",
+      "zvk3tg09by": "tree-zvk3tg09by",
+      "gtt9j5iala": "tree-gtt9j5iala",
+      "vxtywiu1nq": "tree-vxtywiu1nq",
+      "fhmj937519": "tree-fhmj937519",
+      "q3rdcmxwhf": "tree-q3rdcmxwhf",
+      "dl8b78nt3y": "tree-dl8b78nt3y",
+      "m0wk5zid59": "tree-m0wk5zid59",
+      "2myk02w62k": "tree-2myk02w62k",
+      "2eidc0pm4m": "tree-2eidc0pm4m",
+      "umvtu5mya8": "tree-umvtu5mya8",
+      "qba1p2guzt": "tree-qba1p2guzt",
+      "1snov08ptw": "tree-1snov08ptw",
+      "onwqn8qg9y": "tree-qba1p2guzt",
+      "9j5o0bxg9y": "tree-qba1p2guzt",
+      "9532og1g9y": "tree-qba1p2guzt",
+      "yhlxngvg9y": "tree-qba1p2guzt",
+      "gpj4qlpg9y": "tree-qba1p2guzt",
+      "npx03pbg9y": "tree-qba1p2guzt",
+      "ap3lrveutc": "tree-qba1p2guzt",
+      "juh8p1iutc": "tree-qba1p2guzt",
+      "2dmhde9utc": "tree-qba1p2guzt",
+      "5xvsjpqutc": "tree-qba1p2guzt",
+      "19s3azcutc": "tree-qba1p2guzt",
+      "ebhdakgutc": "tree-qba1p2guzt",
+      "fqjnbg8utc": "tree-qba1p2guzt",
+      "139wah1utc": "tree-qba1p2guzt",
+      "r49g0vtutc": "tree-qba1p2guzt",
+      "8ovx0jj4n5": "tree-qba1p2guzt",
+      "mfvit734n7": "tree-qba1p2guzt",
+      "vojbq6b4zz": "tree-qba1p2guzt",
+      "z7nro8u57b": "tree-qba1p2guzt",
+      "i77qp9886w": "tree-qba1p2guzt",
+      "gb8z9mz86y": "tree-qba1p2guzt",
+      "qyzls1f8l3": "tree-qba1p2guzt",
+      "s5longi943": "tree-qba1p2guzt",
+      "ois2x3c9hs": "tree-qba1p2guzt",
+      "97jg8ck9qe": "tree-qba1p2guzt",
+      "2ymfm6607i": "tree-qba1p2guzt",
+      "5gptct107i": "tree-qba1p2guzt",
+      "0bnu5aq0pk": "tree-qba1p2guzt",
+      "n4e14n517q": "tree-qba1p2guzt",
+      "jf5dob726a": "tree-qba1p2guzt",
+      "8lwos0n2gy": "tree-qba1p2guzt",
+      "kh8ie2msv6": "tree-qba1p2guzt",
+      "odqzb0msv6": "tree-qba1p2guzt",
+      "7xl2sw2t28": "tree-qba1p2guzt",
+      "c02r01htos": "tree-qba1p2guzt",
+      "mkhfn0iu6x": "tree-qba1p2guzt",
+      "u3r41pmudr": "tree-qba1p2guzt",
+      "1jrrcst9gj": "tree-qba1p2guzt",
+      "wne7wlf9gj": "tree-qba1p2guzt",
+      "viv32p59or": "tree-qba1p2guzt",
+      "ud9mupca79": "tree-qba1p2guzt",
+      "m9rhkpyaf7": "tree-qba1p2guzt",
+      "n3k7x8cazw": "tree-qba1p2guzt",
+      "ujbovqpyle": "tree-qba1p2guzt",
+      "cxu2113yle": "tree-qba1p2guzt",
+      "1alc1utyy9": "tree-qba1p2guzt",
+      "wg8k4lqz5s": "tree-qba1p2guzt",
+      "g4xl9lszds": "tree-qba1p2guzt",
+      "5hg0gbxzq1": "tree-qba1p2guzt",
+      "js34xf9zy9": "tree-qba1p2guzt",
+      "wsb456smn9": "tree-qba1p2guzt",
+      "wvk3033mn9": "tree-qba1p2guzt",
+      "j27kaatmvr": "tree-qba1p2guzt",
+      "a4qla9en4u": "tree-qba1p2guzt",
+      "70xhj90ndw": "tree-qba1p2guzt",
+      "gyj4swpnmz": "tree-qba1p2guzt",
+      "axtesafnyw": "tree-qba1p2guzt",
+      "hokkppu5ul": "tree-qba1p2guzt",
+      "mu9y36m5ul": "tree-qba1p2guzt",
+      "y2exjdq6hq": "tree-qba1p2guzt",
+      "b90yfoi74m": "tree-qba1p2guzt",
+      "axayww474v": "tree-qba1p2guzt",
+      "tleyjul7wu": "tree-qba1p2guzt"
+    },
+    "trees": {
+      "tree-ae26p9ut1v": {
+        "id": "tree-ae26p9ut1v",
+        "root": "ae26p9ut1v",
+        "title": "在空白位置双击创建新节点"
+      },
+      "tree-447xkj4gep": {
+        "id": "tree-447xkj4gep",
+        "root": "447xkj4gep",
+        "title": "右键节点可以："
+      },
+      "tree-4smmw0a5xg": {
+        "id": "tree-4smmw0a5xg",
+        "root": "4smmw0a5xg",
+        "title": "对已有节点鼠标操作总览："
+      },
+      "tree-a7p75iwhhk": {
+        "id": "tree-a7p75iwhhk",
+        "root": "a7p75iwhhk",
+        "title": "可以多选"
+      },
+      "tree-evs63y6xto": {
+        "id": "tree-evs63y6xto",
+        "root": "evs63y6xto",
+        "title": "画布操作"
+      },
+      "tree-1duan44y2m": {
+        "id": "tree-1duan44y2m",
+        "root": "1duan44y2m",
+        "title": "Obsidian canvas左键与箭头交互："
+      },
+      "tree-1vwp58o5w9": {
+        "id": "tree-1vwp58o5w9",
+        "root": "1vwp58o5w9",
+        "title": "一个节点上的不同磁吸点可以互连了，方便表示循环或递归的过程"
+      },
+      "tree-pavc1tmth6": {
+        "id": "tree-pavc1tmth6",
+        "root": "pavc1tmth6",
+        "title": "Md演示"
+      },
+      "tree-9ravsip74z": {
+        "id": "tree-9ravsip74z",
+        "root": "9ravsip74z",
+        "title": "节点的内容自适应模式与手动缩放模式"
+      },
+      "tree-f8uuudch19": {
+        "id": "tree-f8uuudch19",
+        "root": "f8uuudch19",
+        "title": "还能从一个磁吸点拖到空白处以创建新节点！"
+      },
+      "tree-7pu8azdz43": {
+        "id": "tree-7pu8azdz43",
+        "root": "7pu8azdz43",
+        "title": "LaTeX演示"
+      },
+      "tree-zvk3tg09by": {
+        "id": "tree-zvk3tg09by",
+        "root": "zvk3tg09by",
+        "title": "还没有代码块按类型渲染"
+      },
+      "tree-gtt9j5iala": {
+        "id": "tree-gtt9j5iala",
+        "root": "gtt9j5iala",
+        "title": "$\\int_{0}^{1} \\frac{1}{1+x^2}\\,\\mathrm{d}x = \\frac{\\pi}{4}$"
+      },
+      "tree-vxtywiu1nq": {
+        "id": "tree-vxtywiu1nq",
+        "root": "vxtywiu1nq",
+        "title": "矩阵快捷补全"
+      },
+      "tree-fhmj937519": {
+        "id": "tree-fhmj937519",
+        "root": "fhmj937519",
+        "title": "$\\begin{pmatrix} 1 & 2 \\\\ 3 & 4 \\end{pmatrix}$"
+      },
+      "tree-q3rdcmxwhf": {
+        "id": "tree-q3rdcmxwhf",
+        "root": "q3rdcmxwhf",
+        "title": "$\\alpha,\\beta,\\gamma,\\delta,\\epsilon,\\mu,\\lambda,\\theta,\\pi,\\infty$"
+      },
+      "tree-dl8b78nt3y": {
+        "id": "tree-dl8b78nt3y",
+        "root": "dl8b78nt3y",
+        "title": "一味填快捷键是没有前途的"
+      },
+      "tree-m0wk5zid59": {
+        "id": "tree-m0wk5zid59",
+        "root": "m0wk5zid59",
+        "title": "大纲功能咱先去掉吧。"
+      },
+      "tree-2myk02w62k": {
+        "id": "tree-2myk02w62k",
+        "root": "2myk02w62k",
+        "title": "图片、PDF标签可以重命名了"
+      },
+      "tree-2eidc0pm4m": {
+        "id": "tree-2eidc0pm4m",
+        "root": "2eidc0pm4m",
+        "title": "媒体文件显示"
+      },
+      "tree-umvtu5mya8": {
+        "id": "tree-umvtu5mya8",
+        "root": "umvtu5mya8",
+        "title": "未命名节点"
+      },
+      "tree-qba1p2guzt": {
+        "id": "tree-qba1p2guzt",
+        "root": "qba1p2guzt",
+        "title": "未命名节点"
+      },
+      "tree-1snov08ptw": {
+        "id": "tree-1snov08ptw",
+        "root": "1snov08ptw",
+        "title": "这个checkbox渲染出来后是可点击的"
+      }
+    },
+    "turns": [
+      {
+        "id": "legacy-897l0x",
+        "treeId": "tree-qba1p2guzt",
+        "sourceId": "qba1p2guzt",
+        "sourceTitle": "未命名节点",
+        "question": "为第五问解决写出详细步骤",
+        "answer": "第五题：\n\n\\[\nL=\\lim_{x\\to 0}\\left(1+\\int_0^x \\sin(t^2)\\,dt\\right)^{\\frac1{x^2}}\n\\]\n\n当 \\(x\\to0\\) 时，\\(\\int_0^x \\sin(t^2)\\,dt\\to0\\)，所以这是 \\(1^\\infty\\) 型极限，取对数计算。\n\n\\[\n\\ln L=\\lim_{x\\to0}\\frac{\\ln\\left(1+\\int_0^x \\sin(t^2)\\,dt\\right)}{x^2}\n\\]\n\n因为 \\(\\int_0^x \\sin(t^2)\\,dt\\to0\\)，利用等价无穷小 \\(\\ln(1+u)\\sim u\\)，得\n\n\\[\n\\ln L=\\lim_{x\\to0}\\frac{\\int_0^x \\sin(t^2)\\,dt}{x^2}\n\\]\n\n当 \\(t\\to0\\) 时，\\(\\sin(t^2)\\sim t^2\\)，因此\n\n\\[\n\\int_0^x \\sin(t^2)\\,dt\\sim \\int_0^x t^2\\,dt=\\frac{x^3}{3}\n\\]\n\n代入得\n\n\\[\n\\ln L=\\lim_{x\\to0}\\frac{\\frac{x^3}{3}}{x^2}=0\n\\]\n\n所以\n\n\\[\n\\ln L=0\n\\]\n\n因此\n\n\\[\nL=e^0=1\n\\]\n\n最终答案：\n\n\\[\n\\boxed{1}\n\\]",
+        "attachment": "2025西交高数A.pdf · 第2页",
+        "number": 1,
+        "status": "completed",
+        "generatedIds": [
+          "onwqn8qg9y",
+          "9j5o0bxg9y",
+          "9532og1g9y",
+          "yhlxngvg9y",
+          "gpj4qlpg9y",
+          "npx03pbg9y"
+        ],
+        "nodeCount": 5,
+        "createdAt": 0,
+        "legacy": true
+      },
+      {
+        "id": "legacy-1pt2n7u",
+        "treeId": "tree-qba1p2guzt",
+        "sourceId": "qba1p2guzt",
+        "sourceTitle": "未命名节点",
+        "question": "解决第七题，暂时不生图。",
+        "answer": "# 第七题：平面图形面积与绕 y 轴旋转体体积\n\n## 一、分析积分区域（文字示意，暂不生图）\n\n曲线 $y=x^2-2x=(x-1)^2-1$ 是顶点在 $(1,-1)$ 的抛物线：\n\n- $x=1$ 时 $y=-1$（顶点），$x=2$ 时 $y=0$（过 $x$ 轴），$x=3$ 时 $y=3$\n- 在 $[1,2]$ 上曲线位于 $x$ 轴**下方**，区域上边界为 $y=0$，下边界为抛物线\n- 在 $[2,3]$ 上曲线位于 $x$ 轴**上方**，区域下边界为 $y=0$，上边界为抛物线\n- 左右边界为 $x=1$ 与 $x=3$\n\n即区域被 $x$ 轴上的点 $(2,0)$ 分成上、下两块。\n\n## 二、求面积\n\n曲线与 $y=0$ 的符号随区间不同，需分两段去绝对值：\n\n$$S=\\int_1^2\\big[0-(x^2-2x)\\big]\\,dx+\\int_2^3\\big[(x^2-2x)-0\\big]\\,dx$$\n\n第一段（曲线在轴下方，取负）：\n\n$$\\int_1^2(2x-x^2)\\,dx=\\Big[x^2-\\frac{x^3}{3}\\Big]_1^2=\\frac{4}{3}-\\frac{2}{3}=\\frac{2}{3}$$\n\n第二段（曲线在轴上方）：\n\n$$\\int_2^3(x^2-2x)\\,dx=\\Big[\\frac{x^3}{3}-x^2\\Big]_2^3=0-\\Big(-\\frac{4}{3}\\Big)=\\frac{4}{3}$$\n\n相加得面积：\n\n$$S=\\frac{2}{3}+\\frac{4}{3}=2$$\n\n## 三、求绕 y 轴旋转的体积\n\n区域全部在 $y$ 轴右侧（$1\\le x\\le3$），用**柱壳法**最方便：半径 $x$，条带高度 $h(x)=|x^2-2x|$：\n\n$$V=2\\pi\\int_1^3 x\\,h(x)\\,dx=2\\pi\\left[\\int_1^2 x(2x-x^2)\\,dx+\\int_2^3 x(x^2-2x)\\,dx\\right]$$\n\n第一个积分（$x$ 乘下块高度）：\n\n$$\\int_1^2(2x^2-x^3)\\,dx=\\Big[\\frac{2x^3}{3}-\\frac{x^4}{4}\\Big]_1^2=\\frac{4}{3}-\\frac{5}{12}=\\frac{11}{12}$$\n\n第二个积分（$x$ 乘上块高度）：\n\n$$\\int_2^3(x^3-2x^2)\\,dx=\\Big[\\frac{x^4}{4}-\\frac{2x^3}{3}\\Big]_2^3=\\frac{9}{4}+\\frac{4}{3}=\\frac{43}{12}$$\n\n代入柱壳公式：\n\n$$V=2\\pi\\left(\\frac{11}{12}+\\frac{43}{12}\\right)=2\\pi\\cdot\\frac{9}{2}=9\\pi$$\n\n（可用切片法验证：$V=\\pi\\int_{-1}^{0}\\big[(1+\\sqrt{y+1})^2-1\\big]dy+\\pi\\int_0^3\\big[9-(1+\\sqrt{y+1})^2\\big]dy=\\dfrac{11\\pi}{6}+\\dfrac{43\\pi}{6}=9\\pi$，结果一致。）\n\n## 四、结论\n\n$$\\boxed{S=2,\\qquad V=9\\pi}$$",
+        "attachment": "2025西交高数A.pdf · 第2页",
+        "number": 4,
+        "status": "completed",
+        "generatedIds": [
+          "ap3lrveutc",
+          "juh8p1iutc",
+          "2dmhde9utc",
+          "5xvsjpqutc",
+          "19s3azcutc",
+          "ebhdakgutc",
+          "fqjnbg8utc",
+          "139wah1utc",
+          "r49g0vtutc"
+        ],
+        "nodeCount": 8,
+        "createdAt": 0,
+        "legacy": true
+      },
+      {
+        "id": "legacy-1pivr6b",
+        "treeId": "tree-qba1p2guzt",
+        "sourceId": "qba1p2guzt",
+        "sourceTitle": "未命名节点",
+        "question": "分步解决第八题",
+        "answer": "# 当前页面可见范围\n\n本次附件所选页面为第1页，图中可见单选题第1—6题，以及填空题开头部分。\n\n该页没有出现第八题题干，因此不能从当前图片确定第八题的条件与所求。\n\n# 第八题题干缺失\n\n分步解答必须以完整题干为依据；在看不到第八题的情况下，不能编造函数、积分区域或方程。\n\n需要先确认第八题位于哪一页，并取得该页的清晰图片或可核对文字。\n\n# 补充题干所需信息\n\n请上传包含第八题的页面，或直接给出第八题完整文字与必要图形。\n\n若第八题含分段函数、矩阵、积分区域或图形，请保证条件、上下限和所求量完整可辨；收到后再按条件识别、公式推导、结果验证的顺序分步解答。",
+        "attachment": "2025西交高数A.pdf · 第1页",
+        "number": 5,
+        "status": "completed",
+        "generatedIds": [
+          "8ovx0jj4n5",
+          "mfvit734n7",
+          "vojbq6b4zz",
+          "z7nro8u57b"
+        ],
+        "nodeCount": 3,
+        "createdAt": 0,
+        "legacy": true
+      },
+      {
+        "id": "legacy-1jd553r",
+        "treeId": "tree-qba1p2guzt",
+        "sourceId": "qba1p2guzt",
+        "sourceTitle": "未命名节点",
+        "question": "页码2：分步解决第八题",
+        "answer": "# 方程类型与齐次解\n\n先判断方程类型：二阶常系数非齐次线性方程。令右端为零，得到齐次方程。\n\n$$\ny''+6y'+9y=0\n$$\n\n写出特征方程并求根。\n\n$$\nr^2+6r+9=0\n$$\n\n$$\n(r+3)^2=0\n$$\n\n$$\nr_1=r_2=-3\n$$\n\n二重根对应含 x 因子的齐次解。\n\n$$\ny_h=(C_1+C_2 x)e^{-3x}\n$$\n\n# 右端分解与特解形式\n\n右端为两项之和，可分别求特解后再叠加。注意两项的指数系数是否与特征根重合。\n\n$$\nf(x)=e^{-3x}(4+3x)+2e^{-x}\n$$\n\n第一项中 -3 是特征方程的二重根，因此特解要额外乘 x^2。\n\n$$\ny_{p1}=x^2 e^{-3x}(Ax+B)\n$$\n\n第二项中 -1 不是特征根，不乘 x。\n\n$$\ny_{p2}=C e^{-x}\n$$\n\n# 求第一项特解\n\n求第一项特解时用指数移位：令 y=e^{-3x}u，可将二阶算子化为对 u 的二阶导数。\n\n$$\n(D+3)^2\\left(e^{-3x}u\\right)=e^{-3x}u''\n$$\n\n原方程左端等于右端中的第一项，指数因子约去。\n\n$$\ne^{-3x}u''=e^{-3x}(4+3x)\n$$\n\n$$\nu''=4+3x\n$$\n\n连续积分两次。\n\n$$\nu'=4x+\\frac{3}{2}x^2\n$$\n\n$$\nu=2x^2+\\frac12 x^3\n$$\n\n积分常数项与线性项可被齐次解吸收，故取此特解。\n\n$$\ny_{p1}=e^{-3x}\\left(2x^2+\\frac12 x^3\\right)\n$$\n\n# 求第二项特解\n\n将待定特解代入原方程左端，先算导数。\n\n$$\ny_{p2}=Ce^{-x}\n$$\n\n$$\ny_{p2}'=-Ce^{-x}\n$$\n\n$$\ny_{p2}''=Ce^{-x}\n$$\n\n合并同类项，左端为系数的 4 倍。\n\n$$\ny_{p2}''+6y_{p2}'+9y_{p2}=4Ce^{-x}\n$$\n\n与右端第二项比较系数。\n\n$$\n4C=2\n$$\n\n$$\nC=\\frac12\n$$\n\n$$\ny_{p2}=\\frac12 e^{-x}\n$$\n\n# 叠加得通解\n\n由叠加原理，通解等于齐次解加两个特解。\n\n$$\ny=y_h+y_{p1}+y_{p2}\n$$\n\n合并 e^{-3x} 的同类项，得到最终通解。\n\n$$\ny=e^{-3x}\\left(C_1+C_2 x+2x^2+\\frac12 x^3\\right)+\\frac12 e^{-x}\n$$\n\n其中 C_1、C_2 为任意常数；各特解项不与齐次解重复。",
+        "attachment": "2025西交高数A.pdf · 第2页",
+        "number": 6,
+        "status": "completed",
+        "generatedIds": [
+          "i77qp9886w",
+          "gb8z9mz86y",
+          "qyzls1f8l3",
+          "s5longi943",
+          "ois2x3c9hs",
+          "97jg8ck9qe"
+        ],
+        "nodeCount": 5,
+        "createdAt": 0,
+        "legacy": true
+      },
+      {
+        "id": "5b0da276-72a7-44d9-ad3a-7621f56dfb64",
+        "treeId": "tree-qba1p2guzt",
+        "sourceId": "qba1p2guzt",
+        "sourceTitle": "未命名节点",
+        "parentTurnId": "legacy-1jd553r",
+        "number": 7,
+        "question": "我把原来的节点删掉了，重新整理以上各轮内容，再生成一遍。",
+        "answer": "# 第2页题型分布\n\n所选页面文字提取为空，以下按 PDF 第2页图像识别题干；只整理题目，不展开求解。\n\n题目可按填空第3—6题、计算题第三至第六题、应用与微分方程第七至第九题、证明题第十题四组整理。\n\n# 隐函数、最值与简单积分\n\n第3题：由隐式方程确定 y(x)，求 y'(x)。\n\n$$\nx\\sin y+y e^x=0,\\quad y=y(x)\n$$\n\n$$\ny'(x)=\\underline{\\qquad}\n$$\n\n第4题：求函数在给定闭区间上的最小值。\n\n$$\ny=x-2\\sin x,\\quad x\\in\\left[0,\\frac{\\pi}{2}\\right]\n$$\n\n$$\ny_{\\min}=\\underline{\\qquad}\n$$\n\n第5题：计算半角形式三角函数的不定积分。\n\n$$\n\\int\\left(1-\\sin^2\\frac{x}{2}\\right)\\,dx=\\underline{\\qquad}\n$$\n\n第6题：求一阶微分方程的通解。\n\n$$\ny^2\\,dx+(x-2xy)\\,dy=0\n$$\n\n$$\n\\underline{\\qquad}\n$$\n\n# 参数方程、积分与极限\n\n第三题：由参数方程求一阶导数与二阶导数。\n\n$$\n\\begin{cases}x=2t-t^2,\\\\ y=3t-t^3\\end{cases}\n$$\n\n$$\n\\frac{dy}{dx},\\quad \\frac{d^2y}{dx^2}\n$$\n\n第四题（1）：求不定积分。\n\n$$\n\\int x^2\\sin x\\,dx\n$$\n\n第四题（2）：求定积分。\n\n$$\n\\int_0^{1/2}\\frac{dx}{(1+x^2)\\sqrt{1-x^2}}\n$$\n\n第五题：求含变上限积分的极限。\n\n$$\n\\lim_{x\\to0}\\left(1+\\int_0^x\\sin t^2\\,dt\\right)^{\\frac{1}{x^2}}\n$$\n\n第六题：计算无穷区间上的广义积分。\n\n$$\n\\int_1^{+\\infty}\\frac{\\arctan x}{x^2}\\,dx\n$$\n\n# 平面图形、旋转体与微分方程\n\n第七题：求平面图形面积，并求该图形绕 y 轴旋转所得立体体积。\n\n$$\ny=x^2-2x\\ (x\\ge1),\\quad y=0,\\quad x=1,\\quad x=3\n$$\n\n第八题：求二阶常系数非齐次线性微分方程的通解。\n\n$$\ny''+6y'+9y=e^{-3x}(4+3x)+2e^{-x}\n$$\n\n第九题：求一阶微分方程组的通解。\n\n$$\n\\begin{cases}x'(t)=y+2-2t,\\\\ y'(t)=2x-y+1\\end{cases}\n$$\n\n# 积分条件下中值定理证明\n\n第十题：已知连续、可导条件及积分等式，证明存在内点满足给定恒等式。\n\n条件：f(x) 在 [0,1] 上连续，在 (0,1) 内可导，且满足积分等式。\n\n$$\n\\int_0^1 x f(x)\\,dx=\\frac12\n$$\n\n结论：存在 λ∈(0,1)，使含导数的表达式等于 1。\n\n$$\n\\exists\\lambda\\in(0,1),\\quad \\lambda f'(\\lambda)+f(\\lambda)=1\n$$\n\n这里仅整理条件与结论，不展开证明。",
+        "status": "completed",
+        "color": "#856697",
+        "createdAt": 1792422471406,
+        "workflow": {
+          "phase": "completed",
+          "direction": "基于用户附带的《2025西交高数A.pdf》第2页图像重新识别并整理页面内容；由于历史轮次为空、当前节点无正文，本次只能按新内容生成，不能假装合并旧回答。深度限于页面文字/题目的准确提取与结构化整理；若需解题，应先明确题干，不编造题目、条件或结论。",
+          "relation": "new",
+          "note": "历史为空且当前节点无正文；已提供的其他资料均为节点操作说明，与高数PDF第2页无关，故仅保留当前节点并提示以PDF图像为准。",
+          "sources": [
+            {
+              "id": "qba1p2guzt",
+              "nodeId": "qba1p2guzt",
+              "treeId": "tree-qba1p2guzt",
+              "treeTitle": "未命名节点",
+              "title": "未命名节点",
+              "text": "",
+              "kind": "current",
+              "reason": "本次发问节点",
+              "revision": "ztntfp"
+            }
+          ],
+          "planningStatus": "completed"
+        },
+        "nodeCount": 5,
+        "generatedIds": [
+          "2ymfm6607i",
+          "5gptct107i",
+          "0bnu5aq0pk",
+          "n4e14n517q",
+          "jf5dob726a",
+          "8lwos0n2gy"
+        ],
+        "error": "",
+        "updatedAt": 1792422513110,
+        "attachment": "2025西交高数A.pdf · 第2页"
+      },
+      {
+        "id": "02d0a078-4736-4fe1-91a1-4156e4da3515",
+        "treeId": "tree-qba1p2guzt",
+        "sourceId": "qba1p2guzt",
+        "sourceTitle": "未命名节点",
+        "parentTurnId": "5b0da276-72a7-44d9-ad3a-7621f56dfb64",
+        "number": 8,
+        "question": "第八题解答的上下文已经丢失了吗？好吧，重新解答一遍第八题",
+        "answer": "# 方程与齐次特征方程\n\n按图像读数，方程为二阶常系数非齐次线性方程，右端由两项相加。先处理齐次部分。\n\n$$\ny''+6y'+9y=e^{-3x}(4+3x)+2e^{-x}\n$$\n\n齐次方程的特征方程为\n\n$$\nr^2+6r+9=(r+3)^2=0\n$$\n\n故 r=-3 是二重根。\n\n# 齐次通解\n\n二重根对应的齐次通解为\n\n$$\ny_h=(C_1+C_2x)e^{-3x}\n$$\n\n其中 C_1,C_2 为任意常数。非齐次方程的特解可按右端两项分别求，再叠加。\n\n# 右端共振项的特解\n\n先只保留右端第一项。指数 e^{-3x} 与二重根共振，用移位算子化简。令\n\n$$\ny=e^{-3x}u\n$$\n\n则左端算子满足\n\n$$\n(D+3)^2[e^{-3x}u]=e^{-3x}u''\n$$\n\n于是对应第一项的方程化为\n\n$$\nu''=4+3x\n$$\n\n连续积分并取积分常数为零，先得\n\n$$\nu'=4x+\\frac32x^2\n$$\n\n再积分得一个特解\n\n$$\nu=2x^2+\\frac12x^3\n$$\n\n因此第一项对应的特解为\n\n$$\ny_{p1}=e^{-3x}\\left(\\frac12x^3+2x^2\\right)\n$$\n\n其中可能出现的线性项与常数项已归入齐次解。\n\n# 右端指数项的特解\n\n再处理右端第二项 2e^{-x}。因 r=-1 不是特征根，设\n\n$$\ny_{p2}=Ae^{-x}\n$$\n\n求导后代入方程左端，得\n\n$$\ny_{p2}''+6y_{p2}'+9y_{p2}=4Ae^{-x}\n$$\n\n令其等于 2e^{-x}，比较系数\n\n$$\n4A=2\\Rightarrow A=\\frac12\n$$\n\n故第二项对应的特解为\n\n$$\ny_{p2}=\\frac12e^{-x}\n$$\n\n# 叠加得通解\n\n非齐次方程通解等于齐次通解与两个特解之和。\n\n$$\ny=e^{-3x}(C_1+C_2x)+e^{-3x}\\left(\\frac12x^3+2x^2\\right)+\\frac12e^{-x}\n$$\n\n合并 e^{-3x} 的同类项，得\n\n$$\ny=e^{-3x}\\left(C_1+C_2x+2x^2+\\frac12x^3\\right)+\\frac12e^{-x}\n$$\n\n其中 C_1,C_2 为任意常数。",
+        "status": "completed",
+        "color": "#527f96",
+        "createdAt": 1792422619525,
+        "workflow": {
+          "phase": "completed",
+          "direction": "基于用户所附《2025西交高数A.pdf》第2页图像重新解答第八题，给出完整解题步骤和结果；以图像为准，题干或数据不清处需明确说明，不编造题目。",
+          "relation": "continue",
+          "note": "仅当前节点与本次第八题重新解答相关；其余资料均为界面操作说明，与高数题无关，且当前可提取文字未包含第八题题干，需以所附图像为准。",
+          "sources": [
+            {
+              "id": "qba1p2guzt",
+              "nodeId": "qba1p2guzt",
+              "treeId": "tree-qba1p2guzt",
+              "treeTitle": "未命名节点",
+              "title": "未命名节点",
+              "text": "",
+              "kind": "current",
+              "reason": "本次发问节点",
+              "revision": "ztntfp"
+            }
+          ],
+          "planningStatus": "completed"
+        },
+        "nodeCount": 5,
+        "generatedIds": [
+          "kh8ie2msv6",
+          "odqzb0msv6",
+          "7xl2sw2t28",
+          "c02r01htos",
+          "mkhfn0iu6x",
+          "u3r41pmudr"
+        ],
+        "error": "",
+        "updatedAt": 1792422642843,
+        "attachment": "2025西交高数A.pdf · 第2页"
+      },
+      {
+        "id": "fa30ed6a-d5bf-41bf-9edf-5bb6047925c1",
+        "treeId": "tree-qba1p2guzt",
+        "sourceId": "odqzb0msv6",
+        "sourceTitle": "方程与齐次特征方程",
+        "parentTurnId": "02d0a078-4736-4fe1-91a1-4156e4da3515",
+        "number": 9,
+        "question": "简要回答什么是特征方程？我联想起了线性代数中的特征向量与特征值。",
+        "answer": "",
+        "status": "failed",
+        "color": "#a08743",
+        "createdAt": 1792422781424,
+        "workflow": {
+          "phase": "failed",
+          "planningStatus": "running",
+          "direction": "",
+          "sources": [],
+          "note": ""
+        },
+        "nodeCount": 0,
+        "generatedIds": [],
+        "error": "模型返回内容过大，已停止",
+        "updatedAt": 1792422787784
+      },
+      {
+        "id": "87872a9e-012d-47ee-abfb-839c53fb4648",
+        "treeId": "tree-qba1p2guzt",
+        "sourceId": "odqzb0msv6",
+        "sourceTitle": "方程与齐次特征方程",
+        "parentTurnId": "02d0a078-4736-4fe1-91a1-4156e4da3515",
+        "number": 10,
+        "question": "简要回答什么是特征方程？我联想起了线性代数中的特征向量与特征值。",
+        "answer": "# 特征方程的来源\n\n对常系数线性齐次微分方程，先尝试指数型解，因为指数函数求导后仍保持同一形式。\n\n$$\ny=e^{rx}\n$$\n\n把试解代入方程，各项都含有同一个指数因子，可以约去。\n\n$$\ne^{rx}P(r)=0\n$$\n\n由于指数因子不为零，问题就化为关于 r 的代数方程。\n\n# 特征方程与特征根\n\n约去指数因子后得到的多项式方程，称为该微分方程的特征方程。\n\n$$\na_n r^n+\\cdots+a_1r+a_0=0\n$$\n\n特征方程的根称为特征根，每个根对应一个指数型齐次解。\n\n$$\ny=e^{rx}\n$$\n\n若根重复，还要补充乘以 x 的幂的独立解，使解空间维数足够。\n\n# 特征根决定通解形式\n\n不同特征根给出不同的指数基函数，齐次通解是这些基函数的线性组合。\n\n$$\ny_h=C_1e^{r_1x}+C_2e^{r_2x}\n$$\n\n若 r 是二重根，则对应两个线性无关解。\n\n$$\ne^{rx},\\quad xe^{rx}\n$$\n\n若出现共轭复根，则可用实值正余弦函数表示相应解。\n\n$$\nr=\\alpha\\pm i\\beta\\ \\Rightarrow\\ e^{\\alpha x}\\cos\\beta x,\\ e^{\\alpha x}\\sin\\beta x\n$$\n\n# 线性代数中的特征方程\n\n在线性代数中，寻找矩阵作用下方向不变的向量，会得到特征值方程。\n\n$$\nAv=\\lambda v\n$$\n\n移项后，非零特征向量存在要求系数矩阵奇异。\n\n$$\n\\det(A-\\lambda I)=0\n$$\n\n这个行列式方程同样称为特征方程，它的根是矩阵的特征值。\n\n# 两类特征方程的类比与区别\n\n共同点是：都把寻找特殊解或特殊方向的问题，转化为多项式求根。\n\n$$\nP(r)=0\\quad\\text{与}\\quad\\det(A-\\lambda I)=0\n$$\n\n区别在于：微分方程中 r 是试解指数 y=e^{rx} 的参数，根决定齐次解的基函数。\n\n$$\nr\\ \\text{决定}\\ e^{rx}\n$$\n\n线性代数中 λ 是矩阵作用在特征向量上的伸缩因子，根决定不变方向。\n\n$$\nAv=\\lambda v\n$$\n\n因此二者可类比为“由方程求根”，但不能把微分方程的特征根直接当作矩阵特征值使用。",
+        "status": "completed",
+        "color": "#9c6b4f",
+        "createdAt": 1792422833241,
+        "workflow": {
+          "phase": "completed",
+          "direction": "简要解释特征方程：在常系数线性齐次微分方程中，令解为 e^{rx} 代入后得到的关于 r 的多项式方程，其根决定齐次通解形式；可类比线性代数中由 det(A-λI)=0 求特征值，但说明二者对象不同，不展开矩阵特征值理论。深度限于概念、来源与类比，不重推第八题。",
+          "relation": "continue",
+          "note": "选取当前特征方程节点及齐次通解、共振特解、非共振特解、叠加通解节点，用来说明特征根如何决定解的形式；线性代数类比仅作概念辨析，资料未展开。",
+          "sources": [
+            {
+              "id": "odqzb0msv6",
+              "nodeId": "odqzb0msv6",
+              "treeId": "tree-qba1p2guzt",
+              "treeTitle": "未命名节点",
+              "title": "方程与齐次特征方程",
+              "text": "# 方程与齐次特征方程\n\n按图像读数，方程为二阶常系数非齐次线性方程，右端由两项相加。先处理齐次部分。\n\n$$\ny''+6y'+9y=e^{-3x}(4+3x)+2e^{-x}\n$$\n\n齐次方程的特征方程为\n\n$$\nr^2+6r+9=(r+3)^2=0\n$$\n\n故 r=-3 是二重根。",
+              "kind": "current",
+              "reason": "本次发问节点",
+              "revision": "199r7is"
+            },
+            {
+              "id": "7xl2sw2t28",
+              "nodeId": "7xl2sw2t28",
+              "treeId": "tree-qba1p2guzt",
+              "treeTitle": "未命名节点",
+              "title": "齐次通解",
+              "text": "# 齐次通解\n\n二重根对应的齐次通解为\n\n$$\ny_h=(C_1+C_2x)e^{-3x}\n$$\n\n其中 C_1,C_2 为任意常数。非齐次方程的特解可按右端两项分别求，再叠加。",
+              "kind": "tree",
+              "reason": "已有连线关联",
+              "revision": "n3p0y0"
+            },
+            {
+              "id": "c02r01htos",
+              "nodeId": "c02r01htos",
+              "treeId": "tree-qba1p2guzt",
+              "treeTitle": "未命名节点",
+              "title": "右端共振项的特解",
+              "text": "# 右端共振项的特解\n\n先只保留右端第一项。指数 e^{-3x} 与二重根共振，用移位算子化简。令\n\n$$\ny=e^{-3x}u\n$$\n\n则左端算子满足\n\n$$\n(D+3)^2[e^{-3x}u]=e^{-3x}u''\n$$\n\n于是对应第一项的方程化为\n\n$$\nu''=4+3x\n$$\n\n连续积分并取积分常数为零，先得\n\n$$\nu'=4x+\\frac32x^2\n$$\n\n再积分得一个特解\n\n$$\nu=2x^2+\\frac12x^3\n$$\n\n因此第一项对应的特解为\n\n$$\ny_{p1}=e^{-3x}\\left(\\frac12x^3+2x^2\\right)\n$$\n\n其中可能出现的线性项与常数项已归入齐次解。",
+              "kind": "tree",
+              "reason": "同树相关内容",
+              "revision": "1slpxz0"
+            },
+            {
+              "id": "mkhfn0iu6x",
+              "nodeId": "mkhfn0iu6x",
+              "treeId": "tree-qba1p2guzt",
+              "treeTitle": "未命名节点",
+              "title": "右端指数项的特解",
+              "text": "# 右端指数项的特解\n\n再处理右端第二项 2e^{-x}。因 r=-1 不是特征根，设\n\n$$\ny_{p2}=Ae^{-x}\n$$\n\n求导后代入方程左端，得\n\n$$\ny_{p2}''+6y_{p2}'+9y_{p2}=4Ae^{-x}\n$$\n\n令其等于 2e^{-x}，比较系数\n\n$$\n4A=2\\Rightarrow A=\\frac12\n$$\n\n故第二项对应的特解为\n\n$$\ny_{p2}=\\frac12e^{-x}\n$$",
+              "kind": "tree",
+              "reason": "同树相关内容",
+              "revision": "1kz0yte"
+            },
+            {
+              "id": "u3r41pmudr",
+              "nodeId": "u3r41pmudr",
+              "treeId": "tree-qba1p2guzt",
+              "treeTitle": "未命名节点",
+              "title": "叠加得通解",
+              "text": "# 叠加得通解\n\n非齐次方程通解等于齐次通解与两个特解之和。\n\n$$\ny=e^{-3x}(C_1+C_2x)+e^{-3x}\\left(\\frac12x^3+2x^2\\right)+\\frac12e^{-x}\n$$\n\n合并 e^{-3x} 的同类项，得\n\n$$\ny=e^{-3x}\\left(C_1+C_2x+2x^2+\\frac12x^3\\right)+\\frac12e^{-x}\n$$\n\n其中 C_1,C_2 为任意常数。",
+              "kind": "tree",
+              "reason": "同树相关内容",
+              "revision": "1y9okdq"
+            }
+          ],
+          "planningStatus": "completed"
+        },
+        "nodeCount": 5,
+        "generatedIds": [
+          "1jrrcst9gj",
+          "wne7wlf9gj",
+          "viv32p59or",
+          "ud9mupca79",
+          "m9rhkpyaf7",
+          "n3k7x8cazw"
+        ],
+        "error": "",
+        "updatedAt": 1792422850731
+      },
+      {
+        "id": "610fc9f2-a1e1-4855-8973-7be94177f4f6",
+        "treeId": "tree-qba1p2guzt",
+        "sourceId": "ud9mupca79",
+        "sourceTitle": "特征根决定通解形式",
+        "parentTurnId": "87872a9e-012d-47ee-abfb-839c53fb4648",
+        "number": 11,
+        "question": "线性无关解为什么用幂函数乘以指数函数构造？单幂函数不行吗？",
+        "answer": "",
+        "status": "failed",
+        "color": "#527f96",
+        "createdAt": 1792423035225,
+        "workflow": {
+          "phase": "failed",
+          "planningStatus": "running",
+          "direction": "",
+          "sources": [],
+          "note": ""
+        },
+        "nodeCount": 0,
+        "generatedIds": [],
+        "error": "模型返回内容过大，已停止",
+        "updatedAt": 1792423041206
+      },
+      {
+        "id": "0dccad6a-d4de-418a-b448-3fdc4e090150",
+        "treeId": "tree-qba1p2guzt",
+        "sourceId": "ud9mupca79",
+        "sourceTitle": "特征根决定通解形式",
+        "parentTurnId": "87872a9e-012d-47ee-abfb-839c53fb4648",
+        "number": 12,
+        "question": "线性无关解为什么用幂函数乘以指数函数构造？单幂函数不行吗？",
+        "answer": "",
+        "status": "failed",
+        "color": "#477f77",
+        "createdAt": 1792423057980,
+        "workflow": {
+          "phase": "failed",
+          "planningStatus": "running",
+          "direction": "",
+          "sources": [],
+          "note": ""
+        },
+        "nodeCount": 0,
+        "generatedIds": [],
+        "error": "模型返回内容过大，已停止",
+        "updatedAt": 1792423064325
+      },
+      {
+        "id": "75eccd7b-2fb2-4606-bd90-121d46e432e6",
+        "treeId": "tree-qba1p2guzt",
+        "sourceId": "ud9mupca79",
+        "sourceTitle": "特征根决定通解形式",
+        "parentTurnId": "87872a9e-012d-47ee-abfb-839c53fb4648",
+        "number": 13,
+        "question": "线性无关解为什么用幂函数乘以指数函数构造？单幂函数不行吗？",
+        "answer": "# 重根只提供一个独立指数解\n\n二阶齐次方程的解空间是二维的。以 r=-3 为二重根时，特征方程只给出一个指数解。\n\n$$\ny_1=e^{-3x}\n$$\n\n因此还需要一个与它线性无关的齐次解，才能组成通解。\n\n# 单幂函数不满足齐次方程\n\n若直接取幂函数 y=x，代入方程左端不为零。\n\n$$\ny=x:\\quad y''+6y'+9y=6+9x\\ne0\n$$\n\n再取 y=x^2，代入后仍含多项式项。\n\n$$\ny=x^2:\\quad y''+6y'+9y=2+12x+9x^2\\ne0\n$$\n\n所以单幂函数本身不能充当重根对应的第二个齐次解。\n\n# 设指数因子乘待定函数\n\n为了保持指数求导后的形式闭合，设第二个候选解为待定函数乘指数因子。\n\n$$\ny=v(x)e^{rx}\n$$\n\n本题 r=-3，因此设\n\n$$\ny=v(x)e^{-3x}\n$$\n\n再把它代入齐次方程，用重根条件化简。\n\n# 重根使待定函数满足 v''=0\n\n代入后，含 v' 和 v 的项因 r=-3 是重根而抵消，只剩二阶导数项。\n\n$$\ne^{-3x}v''=0\n$$\n\n指数因子不为零，故待定函数满足\n\n$$\nv''=0\n$$\n\n积分两次得 v 为线性函数。\n\n$$\nv=C_1+C_2x\n$$\n\n# 得到两个线性无关解\n\n代回候选形式，得到齐次通解。\n\n$$\ny_h=e^{-3x}(C_1+C_2x)\n$$\n\n两个基函数为\n\n$$\ne^{-3x},\\quad xe^{-3x}\n$$\n\n二者比值是 x，不是常数，故线性无关；第二个解就是 x 乘指数函数。\n\n# 区别于非齐次特解的高次幂\n\n第八题右端含 e^{-3x}(4+3x)，共振特解会出现 x^2、x^3 项，但这些项属于非齐次特解。\n\n$$\ny_{p1}=e^{-3x}\\left(\\frac12x^3+2x^2\\right)\n$$\n\n齐次部分只保留 e^{-3x} 与 x e^{-3x} 两个基函数；高次幂来自对右端多项式积分，不能并入齐次通解。\n\n$$\ny_h=e^{-3x}(C_1+C_2x)\n$$",
+        "status": "completed",
+        "color": "#527f96",
+        "createdAt": 1792424211010,
+        "workflow": {
+          "phase": "completed",
+          "direction": "本次解释重根情形下齐次解为何取 e^{rx} 与 x e^{rx}：指数函数保证求导后形式闭合，重根使 e^{rx} 只提供一个独立解，需用 x 倍构造第二个线性无关解；单幂函数 x 或 x^2 本身不是该齐次方程的解。深度限定在二阶常系数齐次线性方程，结合 r=-3 二重根说明，并注意与非齐次特解中的 x^2、x^3 项区分。",
+          "relation": "continue",
+          "note": "以当前节点“二重根对应 e^{rx}, xe^{rx}”为核心，补充特征方程来源、重复根需乘 x 的幂、具体 r=-3 例子，并用特解资料避免把非齐次中的幂项误当齐次基函数。",
+          "sources": [
+            {
+              "id": "ud9mupca79",
+              "nodeId": "ud9mupca79",
+              "treeId": "tree-qba1p2guzt",
+              "treeTitle": "未命名节点",
+              "title": "特征根决定通解形式",
+              "text": "# 特征根决定通解形式\n\n不同特征根给出不同的指数基函数，齐次通解是这些基函数的线性组合。\n\n$$\ny_h=C_1e^{r_1x}+C_2e^{r_2x}\n$$\n\n若 r 是二重根，则对应两个线性无关解。\n\n$$\ne^{rx},\\quad xe^{rx}\n$$\n\n若出现共轭复根，则可用实值正余弦函数表示相应解。\n\n$$\nr=\\alpha\\pm i\\beta\\ \\Rightarrow\\ e^{\\alpha x}\\cos\\beta x,\\ e^{\\alpha x}\\sin\\beta x\n$$",
+              "kind": "current",
+              "reason": "本次发问节点",
+              "revision": "nm2e8l"
+            },
+            {
+              "id": "odqzb0msv6",
+              "nodeId": "odqzb0msv6",
+              "treeId": "tree-qba1p2guzt",
+              "treeTitle": "未命名节点",
+              "title": "方程与齐次特征方程",
+              "text": "# 方程与齐次特征方程\n\n按图像读数，方程为二阶常系数非齐次线性方程，右端由两项相加。先处理齐次部分。\n\n$$\ny''+6y'+9y=e^{-3x}(4+3x)+2e^{-x}\n$$\n\n齐次方程的特征方程为\n\n$$\nr^2+6r+9=(r+3)^2=0\n$$\n\n故 r=-3 是二重根。",
+              "kind": "ancestor",
+              "reason": "当前推导路径",
+              "revision": "199r7is"
+            },
+            {
+              "id": "wne7wlf9gj",
+              "nodeId": "wne7wlf9gj",
+              "treeId": "tree-qba1p2guzt",
+              "treeTitle": "未命名节点",
+              "title": "特征方程的来源",
+              "text": "# 特征方程的来源\n\n对常系数线性齐次微分方程，先尝试指数型解，因为指数函数求导后仍保持同一形式。\n\n$$\ny=e^{rx}\n$$\n\n把试解代入方程，各项都含有同一个指数因子，可以约去。\n\n$$\ne^{rx}P(r)=0\n$$\n\n由于指数因子不为零，问题就化为关于 r 的代数方程。",
+              "kind": "ancestor",
+              "reason": "当前推导路径",
+              "revision": "1v6w6ht"
+            },
+            {
+              "id": "viv32p59or",
+              "nodeId": "viv32p59or",
+              "treeId": "tree-qba1p2guzt",
+              "treeTitle": "未命名节点",
+              "title": "特征方程与特征根",
+              "text": "# 特征方程与特征根\n\n约去指数因子后得到的多项式方程，称为该微分方程的特征方程。\n\n$$\na_n r^n+\\cdots+a_1r+a_0=0\n$$\n\n特征方程的根称为特征根，每个根对应一个指数型齐次解。\n\n$$\ny=e^{rx}\n$$\n\n若根重复，还要补充乘以 x 的幂的独立解，使解空间维数足够。",
+              "kind": "ancestor",
+              "reason": "当前推导路径",
+              "revision": "1aa9rcl"
+            },
+            {
+              "id": "c02r01htos",
+              "nodeId": "c02r01htos",
+              "treeId": "tree-qba1p2guzt",
+              "treeTitle": "未命名节点",
+              "title": "右端共振项的特解",
+              "text": "# 右端共振项的特解\n\n先只保留右端第一项。指数 e^{-3x} 与二重根共振，用移位算子化简。令\n\n$$\ny=e^{-3x}u\n$$\n\n则左端算子满足\n\n$$\n(D+3)^2[e^{-3x}u]=e^{-3x}u''\n$$\n\n于是对应第一项的方程化为\n\n$$\nu''=4+3x\n$$\n\n连续积分并取积分常数为零，先得\n\n$$\nu'=4x+\\frac32x^2\n$$\n\n再积分得一个特解\n\n$$\nu=2x^2+\\frac12x^3\n$$\n\n因此第一项对应的特解为\n\n$$\ny_{p1}=e^{-3x}\\left(\\frac12x^3+2x^2\\right)\n$$\n\n其中可能出现的线性项与常数项已归入齐次解。",
+              "kind": "tree",
+              "reason": "同树相关内容",
+              "revision": "1slpxz0"
+            },
+            {
+              "id": "7xl2sw2t28",
+              "nodeId": "7xl2sw2t28",
+              "treeId": "tree-qba1p2guzt",
+              "treeTitle": "未命名节点",
+              "title": "齐次通解",
+              "text": "# 齐次通解\n\n二重根对应的齐次通解为\n\n$$\ny_h=(C_1+C_2x)e^{-3x}\n$$\n\n其中 C_1,C_2 为任意常数。非齐次方程的特解可按右端两项分别求，再叠加。",
+              "kind": "tree",
+              "reason": "同树相关内容",
+              "revision": "n3p0y0"
+            },
+            {
+              "id": "u3r41pmudr",
+              "nodeId": "u3r41pmudr",
+              "treeId": "tree-qba1p2guzt",
+              "treeTitle": "未命名节点",
+              "title": "叠加得通解",
+              "text": "# 叠加得通解\n\n非齐次方程通解等于齐次通解与两个特解之和。\n\n$$\ny=e^{-3x}(C_1+C_2x)+e^{-3x}\\left(\\frac12x^3+2x^2\\right)+\\frac12e^{-x}\n$$\n\n合并 e^{-3x} 的同类项，得\n\n$$\ny=e^{-3x}\\left(C_1+C_2x+2x^2+\\frac12x^3\\right)+\\frac12e^{-x}\n$$\n\n其中 C_1,C_2 为任意常数。",
+              "kind": "tree",
+              "reason": "同树相关内容",
+              "revision": "1y9okdq"
+            }
+          ],
+          "planningStatus": "completed"
+        },
+        "nodeCount": 6,
+        "generatedIds": [
+          "ujbovqpyle",
+          "cxu2113yle",
+          "1alc1utyy9",
+          "wg8k4lqz5s",
+          "g4xl9lszds",
+          "5hg0gbxzq1",
+          "js34xf9zy9"
+        ],
+        "error": "",
+        "updatedAt": 1792424236413,
+        "transfer": {
+          "planning": {
+            "transportBytes": 263799,
+            "answerBytes": 759,
+            "reasoningBytes": 2271,
+            "events": 877
+          },
+          "answer": {
+            "transportBytes": 1393214,
+            "answerBytes": 2806,
+            "reasoningBytes": 11242,
+            "events": 4640
+          }
+        },
+        "learning": {
+          "checked": [
+            false,
+            false,
+            false,
+            false
+          ],
+          "expanded": true
+        }
+      },
+      {
+        "id": "a2ca8297-0da4-40f8-aedf-b802e096c25e",
+        "treeId": "tree-qba1p2guzt",
+        "sourceId": "qba1p2guzt",
+        "sourceTitle": "未命名节点",
+        "parentTurnId": "02d0a078-4736-4fe1-91a1-4156e4da3515",
+        "number": 14,
+        "question": "求解第十题。",
+        "answer": "# 题干与目标\n\n已知 f 在闭区间连续、开区间可导，积分条件为：\n\n$$\n\\int_0^1 x f(x)\\,dx=\\frac12\n$$\n\n目标是证明存在内部点 λ，使目标式中的导数值为零：\n\n$$\n\\lambda f'(\\lambda)+f(\\lambda)-1=0\n$$\n\n它对应辅助函数导数的零点。\n\n# 构造辅助函数\n\n构造辅助函数，使其导数正好包含目标式：\n\n$$\nF(x)=x f(x)-x\n$$\n\n该函数连续可导，且端点值为：\n\n$$\nF(0)=0\n$$\n\n其导数为：\n\n$$\nF'(x)=x f'(x)+f(x)-1\n$$\n\n# 积分条件转化\n\n把已知积分条件改写成 F 的积分：\n\n$$\n\\int_0^1 F(x)\\,dx=\\int_0^1 x f(x)\\,dx-\\int_0^1 x\\,dx\n$$\n\n因为已知第一项为二分之一，且\n\n$$\n\\int_0^1 x\\,dx=\\frac12\n$$\n\n所以\n\n$$\n\\int_0^1 F(x)\\,dx=0\n$$\n\n# 内部零点\n\n由 F(0)=0 且积分为零，可知 F 在内部必有零点。若 F≡0，则任取内部点都有 F'=0，结论已成立；否则存在内部零点：\n\n$$\n\\exists c\\in(0,1),\\quad F(c)=0\n$$\n\n# Rolle定理\n\n在区间 [0,c] 上对 F 应用 Rolle 定理。因为 F(0)=F(c)=0，且 F 连续可导，故存在\n\n$$\n\\exists \\lambda\\in(0,c)\\subset(0,1),\\quad F'(\\lambda)=0\n$$\n\n其中 λ 落在所需开区间内。\n\n# 结论回代\n\n将 F' 的表达式代入 F'(λ)=0：\n\n$$\n\\lambda f'(\\lambda)+f(\\lambda)-1=0\n$$\n\n移项即得所需等式：\n\n$$\n\\lambda f'(\\lambda)+f(\\lambda)=1\n$$\n\n证毕。",
+        "status": "completed",
+        "color": "#a08743",
+        "createdAt": 1792424520000,
+        "workflow": {
+          "phase": "completed",
+          "direction": "依据当前提问和 PDF 第2页图像，解释并完整求解“第十题”；先确认题干、条件和所求，再给出必要推导与最终结果，不把第八题的微分方程解法直接套用到第十题。",
+          "relation": "branch",
+          "note": "当前节点是第十题求解请求；第八题旧解仅用于区分题号与上下文，不应当作第十题题干或答案。",
+          "sources": [
+            {
+              "id": "qba1p2guzt",
+              "nodeId": "qba1p2guzt",
+              "treeId": "tree-qba1p2guzt",
+              "treeTitle": "未命名节点",
+              "title": "未命名节点",
+              "text": "",
+              "kind": "current",
+              "reason": "本次发问节点",
+              "revision": "ztntfp"
+            },
+            {
+              "id": "kh8ie2msv6",
+              "nodeId": "kh8ie2msv6",
+              "treeId": "tree-qba1p2guzt",
+              "treeTitle": "未命名节点",
+              "title": "第8次提问：第八题解答的上下文已经丢失了吗？好吧，重新解答一遍第八题",
+              "text": "# 第8次提问：第八题解答的上下文已经丢失了吗？好吧，重新解答一遍第八题",
+              "kind": "tree",
+              "reason": "已有连线关联",
+              "revision": "vgqkzx"
+            }
+          ],
+          "planningStatus": "completed"
+        },
+        "nodeCount": 6,
+        "generatedIds": [
+          "wsb456smn9",
+          "wvk3033mn9",
+          "j27kaatmvr",
+          "a4qla9en4u",
+          "70xhj90ndw",
+          "gyj4swpnmz",
+          "axtesafnyw"
+        ],
+        "error": "",
+        "updatedAt": 1792424547144,
+        "attachment": "2025西交高数A.pdf · 第2页",
+        "transfer": {
+          "planning": {
+            "transportBytes": 289711,
+            "answerBytes": 434,
+            "reasoningBytes": 3547,
+            "events": 961
+          },
+          "answer": {
+            "transportBytes": 1182329,
+            "answerBytes": 2453,
+            "reasoningBytes": 9622,
+            "events": 3937
+          }
+        }
+      },
+      {
+        "id": "dd008e94-4a52-41dd-8c4a-09e3fb986f89",
+        "treeId": "tree-qba1p2guzt",
+        "sourceId": "70xhj90ndw",
+        "sourceTitle": "内部零点",
+        "parentTurnId": "a2ca8297-0da4-40f8-aedf-b802e096c25e",
+        "number": 15,
+        "question": "这一节点的内容可以展开证明一下吗？为什么F不恒为0的时候必然存在内部零点？",
+        "answer": "# 内部零点目标\n\n已知辅助函数满足两个条件：端点值 F(0)=0，且积分值为零。目标是说明在开区间 (0,1) 内必有一点使 F 为零。\n\n$$\nF(0)=0,\\quad \\int_0^1 F(x)\\,dx=0\n$$\n\n实际上，无论 F 是否恒为零，这两个条件都已经保证内部零点存在。\n\n# 反设无内部零点\n\n为了证明内部零点存在，先反设 F 在 (0,1) 内没有零点。\n\n$$\nF(x)\\neq 0,\\quad \\forall x\\in(0,1)\n$$\n\n接下来利用连续函数的介值性导出矛盾。\n\n# 连续函数的符号恒定\n\nF 在 [0,1] 上连续。若 F 在 (0,1) 内没有零点，则它不能从正变负或从负变正；否则由介值定理会产生一个内部零点。\n\n$$\nF(x)>0\\ \\text{或}\\ F(x)<0,\\quad \\forall x\\in(0,1)\n$$\n\n也就是说，在反设下，F 在开区间内必须保持同一个符号。\n\n# 积分符号矛盾\n\n若 F 在 (0,1) 内恒正，则其积分严格大于零；若恒负，则积分严格小于零。端点 x=0 处 F(0)=0 不影响积分符号。\n\n$$\n\\int_0^1 F(x)\\,dx>0\\quad \\text{或}\\quad \\int_0^1 F(x)\\,dx<0\n$$\n\n但这与已知积分等于零矛盾：\n\n$$\n\\int_0^1 F(x)\\,dx=0\n$$\n\n因此反设不成立。\n\n# 结论与平凡情形\n\n所以 (0,1) 内至少存在一个零点：\n\n$$\n\\exists c\\in(0,1),\\quad F(c)=0\n$$\n\n若 F 恒为零，则每个内部点都是零点，且 F' 恒为零，结论更直接；若 F 不恒为零，上述反证同样给出内部零点 c。之后可在 [0,c] 上对 F 使用 Rolle 定理。",
+        "status": "completed",
+        "color": "#527f96",
+        "createdAt": 1792424739503,
+        "workflow": {
+          "phase": "completed",
+          "direction": "围绕当前节点回答最后一个问题，保留本条推导的假设与符号。",
+          "relation": "continue",
+          "note": "关联分析暂不可用，已按当前节点和推导路径选取资料。",
+          "sources": [
+            {
+              "id": "70xhj90ndw",
+              "nodeId": "70xhj90ndw",
+              "treeId": "tree-qba1p2guzt",
+              "treeTitle": "未命名节点",
+              "title": "内部零点",
+              "text": "# 内部零点\n\n由 F(0)=0 且积分为零，可知 F 在内部必有零点。若 F≡0，则任取内部点都有 F'=0，结论已成立；否则存在内部零点：\n\n$$\n\\exists c\\in(0,1),\\quad F(c)=0\n$$",
+              "kind": "current",
+              "reason": "本次发问节点",
+              "revision": "1dsla20"
+            },
+            {
+              "id": "qba1p2guzt",
+              "nodeId": "qba1p2guzt",
+              "treeId": "tree-qba1p2guzt",
+              "treeTitle": "未命名节点",
+              "title": "未命名节点",
+              "text": "",
+              "kind": "ancestor",
+              "reason": "当前推导路径",
+              "revision": "ztntfp"
+            },
+            {
+              "id": "wsb456smn9",
+              "nodeId": "wsb456smn9",
+              "treeId": "tree-qba1p2guzt",
+              "treeTitle": "未命名节点",
+              "title": "第14次提问：求解第十题。",
+              "text": "# 第14次提问：求解第十题。",
+              "kind": "ancestor",
+              "reason": "当前推导路径",
+              "revision": "hhqorw"
+            },
+            {
+              "id": "wvk3033mn9",
+              "nodeId": "wvk3033mn9",
+              "treeId": "tree-qba1p2guzt",
+              "treeTitle": "未命名节点",
+              "title": "题干与目标",
+              "text": "# 题干与目标\n\n已知 f 在闭区间连续、开区间可导，积分条件为：\n\n$$\n\\int_0^1 x f(x)\\,dx=\\frac12\n$$\n\n目标是证明存在内部点 λ，使目标式中的导数值为零：\n\n$$\n\\lambda f'(\\lambda)+f(\\lambda)-1=0\n$$\n\n它对应辅助函数导数的零点。",
+              "kind": "ancestor",
+              "reason": "当前推导路径",
+              "revision": "yesbna"
+            },
+            {
+              "id": "j27kaatmvr",
+              "nodeId": "j27kaatmvr",
+              "treeId": "tree-qba1p2guzt",
+              "treeTitle": "未命名节点",
+              "title": "构造辅助函数",
+              "text": "# 构造辅助函数\n\n构造辅助函数，使其导数正好包含目标式：\n\n$$\nF(x)=x f(x)-x\n$$\n\n该函数连续可导，且端点值为：\n\n$$\nF(0)=0\n$$\n\n其导数为：\n\n$$\nF'(x)=x f'(x)+f(x)-1\n$$",
+              "kind": "ancestor",
+              "reason": "当前推导路径",
+              "revision": "1bpp7tc"
+            },
+            {
+              "id": "a4qla9en4u",
+              "nodeId": "a4qla9en4u",
+              "treeId": "tree-qba1p2guzt",
+              "treeTitle": "未命名节点",
+              "title": "积分条件转化",
+              "text": "# 积分条件转化\n\n把已知积分条件改写成 F 的积分：\n\n$$\n\\int_0^1 F(x)\\,dx=\\int_0^1 x f(x)\\,dx-\\int_0^1 x\\,dx\n$$\n\n因为已知第一项为二分之一，且\n\n$$\n\\int_0^1 x\\,dx=\\frac12\n$$\n\n所以\n\n$$\n\\int_0^1 F(x)\\,dx=0\n$$",
+              "kind": "ancestor",
+              "reason": "当前推导路径",
+              "revision": "6s7tml"
+            }
+          ],
+          "planningStatus": "fallback"
+        },
+        "nodeCount": 5,
+        "generatedIds": [
+          "hokkppu5ul",
+          "mu9y36m5ul",
+          "y2exjdq6hq",
+          "b90yfoi74m",
+          "axayww474v",
+          "tleyjul7wu"
+        ],
+        "error": "",
+        "updatedAt": 1792424759816,
+        "transfer": {
+          "planning": {
+            "transportBytes": 361404,
+            "answerBytes": 0,
+            "reasoningBytes": 4131,
+            "events": 1202
+          },
+          "answer": {
+            "transportBytes": 727487,
+            "answerBytes": 2281,
+            "reasoningBytes": 6165,
+            "events": 2419
+          }
+        },
+        "learning": {
+          "checked": [
+            false,
+            false,
+            false,
+            false
+          ],
+          "expanded": true
+        }
+      }
+    ]
+  }
+}
