@@ -15841,7 +15841,9 @@ class PDFPageProxy {
     isEditing = false,
     recordImages = false,
     recordOperations = false,
-    operationsFilter = null
+    operationsFilter = null,
+    // Local extension for offscreen generation; ordinary readers retain frame scheduling.
+    useRequestAnimationFrame = true
   }) {
     this._stats?.time("Overall");
     const intentArgs = this._transport.getRenderingIntent(intent, annotationMode, printAnnotationStorage, isEditing);
@@ -15932,7 +15934,7 @@ class PDFPageProxy {
       pageIndex: this._pageIndex,
       canvasFactory: this._transport.canvasFactory,
       filterFactory: this._transport.filterFactory,
-      useRequestAnimationFrame: !intentPrint,
+      useRequestAnimationFrame: useRequestAnimationFrame && !intentPrint,
       pdfBug: this._pdfBug,
       pageColors,
       enableHWA: this._transport.enableHWA,

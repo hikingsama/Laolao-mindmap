@@ -1,5 +1,6 @@
 (function(root){
  'use strict';
+ const edgePolicy=typeof module==='object' && module.exports?require('./edge-policy.js'):root.MMEdgePolicy;
  const bad=s=>{throw new Error('结构复核：'+s);},safe=id=>typeof id==='string' && /^[A-Za-z0-9_-]{1,100}$/.test(id) && !['__proto__','constructor','prototype'].includes(id);
  const str=(v,max,label)=>{if(typeof v!=='string' || !v.trim() || v.length>max)bad(label+'无效');return v.trim();};
  function input(v){
@@ -26,9 +27,10 @@
    for(const id of plan.root.nodeIds){const n=byId.get(id);n.structureScope=scope;n.structureRoot=id===plan.root.nodeId;delete n.topic;delete n.topicScope;}
    for(const id of ids){const n=byId.get(id);if(parent.has(id))n.layoutParent=parent.get(id);else delete n.layoutParent;}
    // Hierarchy is editable structure; inference/application/reference edges retain their meaning.
-   map.edges=(map.edges || []).filter(e=>!(ids.has(e.from.node) && ids.has(e.to.node) && (['hierarchy','contains'].includes(e.kind) || e.lectureStructure || e.structureReviewId)));
+   map.edges=(map.edges || []).filter(e=>!(ids.has(e.from.node) && ids.has(e.to.node) && (['hierarchy','contains'].includes(e.kind) || e.lectureStructure || e.structureReviewId || e.kind==='mainline' && e.label==='阅读顺序')));
    for(const e of map.edges)if(!ids.has(e.from.node) && ids.has(e.to.node) && e.label==='整理')e.to={...e.to,node:plan.root.nodeId};
    for(const [to,from] of parent){if(from===to)continue;map.edges.push({id:'sr_'+scope+'_'+to,from:{node:from,side:'e'},to:{node:to,side:'w'},kind:'hierarchy',label:'',dir:'fwd',structureReviewId:scope});}
+   map.edges=edgePolicy.clean(map.edges,ids);
    for(const [key,s]of Object.entries(map.structures || {}))if(s.sourceIds?.some(id=>ids.has(id)))delete map.structures[key];
    (map.structures ||= {})[scope]={plan:clone(plan),sourceIds};
  }

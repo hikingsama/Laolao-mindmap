@@ -1,4 +1,13 @@
 #!/usr/bin/env node
+// Current workflow delegates to the semantic PDF suite. --legacy-v1 retains the old page-batch fixture.
+if(!process.argv.includes('--legacy-v1')){
+  const {spawn:launchSemantic}=await import('node:child_process'),{fileURLToPath}=await import('node:url'),semanticPath=await import('node:path');
+  const args=process.argv.slice(2),at=args.indexOf('--project'),inline=args.find(a=>a.startsWith('--project='));
+  const project=at>=0?args[at+1]:inline?inline.slice('--project='.length):semanticPath.resolve(semanticPath.dirname(fileURLToPath(import.meta.url)),'..');
+  const target=semanticPath.join(project,'tools','verify-lecture-semantics-ui.cjs');
+  const child=launchSemantic(process.execPath,[target,...args],{cwd:project,env:process.env,windowsHide:true,stdio:'inherit'});
+  const code=await new Promise((resolve,reject)=>{child.once('error',reject);child.once('exit',resolve);});process.exit(code??1);
+}
 /* 多PDF课件生成导图与提示词调查浏览器验证。使用独立端口、随机临时导图与假API配置、临时浏览器资料；
  * 不读取个人导图或真实密钥。需要本机Edge/Chrome与Node>=22。
  * node tools/verify-ai-files-ui.mjs --port 8897 --project <项目路径>

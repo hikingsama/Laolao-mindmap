@@ -168,10 +168,11 @@
     return {map,recovery,changed:await changed(map) || await changed(recovery?.map)};
   }
   async function pullList(){
+    if(window.MMWorkspaceHost?.libraryBusy?.())return;
     if(fileListRequest){fileListRevision++;return fileListRequest;}
     fileListRequest=(async()=>{
       let retry=true;
-      while(retry && !cur){
+      while(retry && !cur && !window.MMWorkspaceHost?.libraryBusy?.()){
         retry=false;const serial=openSerial,revision=fileListRevision;
         const data=await fileRequest('/api/maps');
         if(!Array.isArray(data.maps))throw new Error('本地导图列表格式无效');
@@ -193,7 +194,7 @@
           if(local.changed)updates.push({entry:{...entry,fileMissing:true,hasDraft:true},map:null,recovery:null});
           else removed.push(entry.id);
         }
-        if(cur)return;
+        if(cur || window.MMWorkspaceHost?.libraryBusy?.())return;
         if(serial!==openSerial || revision!==fileListRevision){retry=true;continue;}
         // Apply only after the entire scan succeeded; an offline or invalid file
         // must never turn an incomplete response into a deletion.
@@ -205,11 +206,11 @@
         for(const id of removed){lsDel(mapKey(id));lsDel(recoveryKey(id));}
         index=index.filter(e=>!removed.includes(e.id)).sort((a,b)=>b.updated-a.updated);idxSave();
       }
-    })().catch(error=>{console.warn('[local map list]',error);tip('更新本地导图列表失败，原列表和草稿已保留。请检查服务后刷新。',5000);});
+    })().catch(error=>{if(window.MMWorkspaceHost?.libraryBusy?.())return;console.warn('[local map list]',error);tip('更新本地导图列表失败，原列表和草稿已保留。请检查服务后刷新。',5000);});
     try{await fileListRequest;}
     finally{fileListRequest=null;}
   }
-  function refreshHome(){renderList();pullList().then(()=>{if(!cur && currentView()==='mindmap')renderList();});}
+  function refreshHome(){renderList();if(window.MMWorkspaceHost?.libraryBusy?.())return Promise.resolve();return pullList().then(()=>{if(!cur && currentView()==='mindmap')renderList();});}
 
   // ---------------- 状态 ----------------
   const aiBatches=new Set();
@@ -249,6 +250,7 @@
     if (!cur) return;
     hist.push(historyJSON()); if (hist.length > 120) {hist.shift();for(const batch of aiBatches)batch.historyIndex--;} redo = [];
     fn();
+    if(window.MMEdgePolicy)cur.edges=window.MMEdgePolicy.unique(cur.edges);
     if (!cur.flat) cur.title = String((topNode() || {}).text || "未命名导图").split("\n")[0].slice(0, 80) || "未命名导图";
     storeLocal(cur); scheduleCloud(); draw();
   }
@@ -789,19 +791,17 @@
     }
     return null;
   }
-  /* 【独立版·平级】同一对端点**唯一，且含反向**：已经 A.e↔B.w 之后，无论从 A.e 拖到 B.w、
-     还是从 B.w 拖回 A.e，都是同一条线（拦下并给可见提示，不许静默丢）。
-     注意**磁吸点本身不独占**：同一个点上可以挂多条边（扇出是正常需求）；
-     平行边靠"不同的端点对"成立（A.e→B.n 与 A.s→B.w 是两条合法边）。 */
+  /* 每对不同节点最多一条连接。更换侧边、offset、标签或反向拖动都不新建第二条线。
+     同一个磁吸点仍可连接不同节点；这里只限制节点对，不限制正常分支。 */
   function edgeDup(from, to) {
     return (cur.edges || []).some((e) => e && e.from && e.to && (
-      (e.from.node === from.node && e.from.side === from.side && e.to.node === to.node && e.to.side === to.side) ||
-      (e.from.node === to.node && e.from.side === to.side && e.to.node === from.node && e.to.side === from.side)));
+      (e.from.node === from.node && e.to.node === to.node) ||
+      (e.from.node === to.node && e.to.node === from.node)));
   }
   function addEdge(from, to, dir) {
     if (!cur || !from || !to) return null;
-    if (from.node === to.node && from.side === to.side) { tip("请连接不同的磁吸点"); return null; }
-    if (edgeDup(from, to)) { tip("这两个点之间已经有一条线了（换个点连，或先删掉那条）"); return null; }
+    if (from.node === to.node) { tip("请连接两个不同的节点"); return null; }
+    if (edgeDup(from, to)) { tip("这两个节点之间已经有一条连接，请编辑或先删除原连接"); return null; }
     const e = { id: eid(), from: { node: from.node, side: from.side }, to: { node: to.node, side: to.side }, dir: dir || "fwd" };
     change(() => { (cur.edges ||= []).push(e); });     // 走 change：可撤销、能落盘
     return e;
@@ -899,8 +899,8 @@
         html.push(window.MMAILearning?.render(s,record) || '');
         html.push(`<button type="button" class="mm-ai-task-badge ${status==='running'?'running':status==='completed'?'complete':'incomplete'}" data-ai-turn="${E(n.aiTurnId)}" title="查看本次提问的方向、参考资料和生成过程" style="left:${s.x}px;top:${s.y-29}px;--ai-chain-color:${E(n.color || '#667e51')}"><span aria-hidden="true">${status==='running'?'◉':status==='completed'?'✓':'○'}</span> ${status==='running'?'生成中':status==='completed'?'查看过程':'未完成 · 查看过程'}</button>`);
       }
-      if(n.mathWarnings?.length && (!window.MMAIMathCheck || window.MMAIMathCheck.inspect(n.text).length))html.push(`<button type="button" class="mm-math-warning" data-math-warning="${E(n.id)}" title="${E(n.mathWarnings.join('；'))}" style="left:${s.x+(n.citations?.length?90:0)}px;top:${s.y+s.h+6}px">公式待检查</button>`);
-      if(n.citations?.length)html.push(`<button type="button" class="mm-node-citations" data-node-citations="${E(n.id)}" style="left:${s.x}px;top:${s.y+s.h+6}px">出处 ${n.citations.length}</button>`);
+      if(n.mathWarnings?.length && (!window.MMAIMathCheck || window.MMAIMathCheck.inspect(n.text).length))html.push(`<button type="button" class="mm-math-warning" data-math-warning="${E(n.id)}" title="${E(n.mathWarnings.join('；'))}" style="left:${s.x+((n.citations?.length||n.textSourceIds?.length)?90:0)}px;top:${s.y+s.h+6}px">公式待检查</button>`);
+      if(n.citations?.length||n.textSourceIds?.length)html.push(`<button type="button" class="mm-node-citations" data-node-citations="${E(n.id)}" style="left:${s.x}px;top:${s.y+s.h+6}px">出处 ${n.citations?.length||n.textSourceIds.length}</button>`);
       if(n.image){const name=media?.name || (n.pdf?'PDF文档':'图片');html.push(`<button type="button" class="mm-image-label${isSel?' sel':''}" data-image-label="${E(n.id)}" title="${E(name)}" style="left:${s.x}px;top:${s.y-34}px;max-width:${s.w}px;--image-color:${s.color}">${E(name)}</button>`);}
     }
     /* 磁吸点画成**独立覆盖层**（在节点之上、不放进 .mm-node 里）：.mm-node 是 overflow:hidden，
@@ -1095,14 +1095,14 @@
     if(!cur || cur.id!==mapId || (sourceId && !findNode(sourceId)) || (!outline && !sourceId))throw new Error('来源节点已删除或导图已切换');
     if(!batch || batch.mapId && (batch.mapId!==mapId || batch.sourceId!==sourceId))throw new Error('生成批次无效');
     if(typeof entryText!=='string' || !entryText.trim() || entryText.length>500)throw new Error('提问入口标题无效');
-    const S=window.MMAISummary,plan=S.normalizeSummary(summary,{partial:!final,...(outline?{outline:true,lecture:!!batch.lecture,documents:batch.documents,allowSupplement:batch.allowSupplement}: {})});
+    const S=window.MMAISummary,plan=S.normalizeSummary(summary,{partial:!final,...(batch.shortChain?{shortChain:true}:{}),...(outline?{outline:true,lecture:!!batch.lecture,documents:batch.documents,allowSupplement:batch.allowSupplement}: {})});
     if(!batch.mapping){window.MMTopicUI?.setMode('detail');endEdit();batch.mapping={};batch.mapId=mapId;batch.sourceId=sourceId;
       if((batch.turnId || outline && sourceId) && window.MMAIBranch){batch.color ||= window.MMAIBranch.color(L.nodes.get(sourceId)?.color,(cur.aiMemory?.turns || []).filter(t=>t.sourceId===sourceId).map(t=>t.color),cur.aiMemory?.turns?.length || 0);batch.sourcePort=window.MMAIBranch.port(sourceId,cur.edges || []);}
     }
     const mapping=batch.mapping,anchor=sourceId?L.nodes.get(sourceId):{x:Math.max(-110,...[...L.nodes.values()].map(b=>b.x+b.w)),y:0,w:0,h:0};if(!anchor)throw new Error('来源节点尚未完成布局');
     if(mapping.__entry && !findNode(mapping.__entry))throw new Error('本次提问入口已删除，生成已停止');
     if(outline && batch.rootKey && mapping[batch.rootKey] && !findNode(mapping[batch.rootKey]))throw new Error('本次整理的中心节点已删除，生成已停止');
-    const items=[],occupied=[...L.nodes.values()].flatMap(s=>{
+    const items=[],updates=[],occupied=[...L.nodes.values()].flatMap(s=>{
       const record=cur.aiMemory?.turns?.find(t=>t.id===s.n.aiTurnId),b=window.MMAILearning?.box(s,record,true);return b?[s,b]:[s];
     }).concat((L.moduleCards || []).map(c=>c.box));
     function place(key,text,at,extra={}){
@@ -1110,7 +1110,7 @@
       const reserve=n.aiEntry && window.MMAILearning?{w:Math.max(220,box.w),h:box.h+174}:box;
       while(true){const hits=occupied.filter(b=>p.x<b.x+b.w+24 && p.x+reserve.w+24>b.x && p.y<b.y+b.h+24 && p.y+reserve.h+24>b.y);if(!hits.length)break;p.y=Math.max(...hits.map(b=>b.y+b.h+40));}
       if(batch.lecture && (key==='lecture_root' || n.layoutRole==='document') && window.MMLectureCleanup?.placeholder(n))n.lecturePlaceholderText=n.text;
-      mapping[key]=n.id;(batch.generatedPos ||= {})[n.id]={...p};(batch.initialColors ||= {})[n.id]=n.color || null;items.push({node:n,pos:p,size:{w:box.w,h:box.h}});const result={x:p.x,y:p.y,w:box.w,h:box.h};occupied.push({...result,...reserve});return result;
+      (batch.generatedText ||= {})[key]=text;(batch.generatedSize ||= {})[n.id]={w:box.w,h:box.h};mapping[key]=n.id;(batch.generatedPos ||= {})[n.id]={...p};(batch.initialColors ||= {})[n.id]=n.color || null;items.push({node:n,pos:p,size:{w:box.w,h:box.h}});const result={x:p.x,y:p.y,w:box.w,h:box.h};occupied.push({...result,...reserve});return result;
     }
     for(const asset of batch.pdfAssets || [])if(!mapping['pdf-'+asset.documentId])place('pdf-'+asset.documentId,'',{x:anchor.x-600,y:anchor.y},{pdf:asset.media.id});
     const boxOf=key=>{const id=mapping[key],n=items.find(v=>v.node.id===id);return n?{...n.pos,...n.size}:L.nodes.get(id);};
@@ -1118,15 +1118,20 @@
       const at=side==='s'?{x:anchor.x,y:anchor.y+anchor.h+100}:side==='n'?{x:anchor.x,y:anchor.y-box.h-100}:side==='w'?{x:anchor.x-box.w-100,y:anchor.y}:{x:anchor.x+anchor.w+100,y:anchor.y};place('__entry','# '+entryText,at);
     }
     for(const n of plan.nodes){
-      if(mapping[n.id])continue; // A user-deleted generated node stays deleted.
+      if(mapping[n.id]){
+        // Insert reviewed headings only while the streamed text is still untouched.
+        const existing=findNode(mapping[n.id])?.n,from=batch.generatedText?.[n.id],to=S.nodeText(n),plain=text=>text.replace(/^###[^\n]*(?:\n|$)/gm,'').replace(/\s/g,'');
+        if(final && batch.sectionReviewed && existing && editing!==existing.id && typeof from==='string' && existing.text===from && from!==to && plain(from)===plain(to))updates.push({key:n.id,id:existing.id,from,to});
+        continue; // A user-deleted generated node stays deleted.
+      }
       const parent=plan.edges.find(e=>e.to===n.id && boxOf(e.from)),base=parent?boxOf(parent.from):outline?(boxOf(batch.rootKey) || anchor):boxOf('__entry');
       if(outline)batch.rootKey ||= n.id;
-      place(n.id,S.nodeText(n),{x:base.x+base.w+110,y:base.y},{...(n.brief?{brief:n.brief}:{}),...(n.topic?{topic:n.topic,topicScope:batch.recordId || batch.turnId || mapId}:{}),...(n.layoutRole?{layoutRole:n.layoutRole}:n.id===plan.nodes[0].id && !n.topic?{layoutRole:'overview'}:{}),...(n.parentId && mapping[n.parentId]?{layoutParent:mapping[n.parentId]}:{}),...(summary.nodes.find(v=>v.id===n.id)?.mapReferences?{mapReferences:clone(summary.nodes.find(v=>v.id===n.id).mapReferences)}:{}),...(n.citations?{citations:clone(n.citations)}:{}),...(n.mathWarnings?.length?{mathWarnings:clone(n.mathWarnings)}:{})});
+      place(n.id,S.nodeText(n),{x:base.x+base.w+110,y:base.y},{...(n.brief?{brief:n.brief}:{}),...(n.topic?{topic:n.topic,topicScope:batch.recordId || batch.turnId || mapId}:{}),...(n.layoutRole?{layoutRole:n.layoutRole}:n.id===plan.nodes[0].id && !n.topic?{layoutRole:'overview'}:{}),...(n.parentId && mapping[n.parentId]?{layoutParent:mapping[n.parentId]}:{}),...(summary.nodes.find(v=>v.id===n.id)?.mapReferences?{mapReferences:clone(summary.nodes.find(v=>v.id===n.id).mapReferences)}:{}),...(n.citations?{citations:clone(n.citations)}:{}),...(summary.nodes.find(v=>v.id===n.id)?.textSourceIds?{textSourceIds:clone(summary.nodes.find(v=>v.id===n.id).textSourceIds)}:{}),...(n.mathWarnings?.length?{mathWarnings:clone(n.mathWarnings)}:{})});
     }
     const exists=id=>items.some(v=>v.node.id===id) || !!findNode(id),edges=[];
     function connect(from,to,label,dir='fwd',fromSide='e',toSide='w',fixed=null){
       if(!from || !to || !exists(from) || !exists(to))return;
-      if(!(cur.edges || []).some(e=>e.from.node===from && e.to.node===to && e.label===label)){
+      if(![...(cur.edges || []),...edges].some(e=>e.from.node===from && e.to.node===to || e.from.node===to && e.to.node===from)){
         const all=[...(cur.edges || []),...edges],B=(batch.turnId || outline) && window.MMAIBranch;
         const a=fixed || (B?B.port(from,all,[fromSide,...['e','s','n','w'].filter(s=>s!==fromSide)]):{side:fromSide}),b=B?B.port(to,all,[toSide,...['w','n','s','e'].filter(s=>s!==toSide)]):{side:toSide};
         edges.push({id:eid(),from:{node:from,...a},to:{node:to,...b},dir,label,...(batch.color?{color:batch.color}: {})});
@@ -1138,12 +1143,14 @@
     for(const edge of edges){const original=plan.edges.find(e=>mapping[e.from]===edge.from.node && mapping[e.to]===edge.to.node);if(original)edge.kind=original.kind;}
     if(!outline && final){for(const n of plan.nodes)if(!plan.edges.some(e=>e.to===n.id))connect(mapping.__entry,mapping[n.id],'展开');}
     else if(!outline && plan.nodes[0])connect(mapping.__entry,mapping[plan.nodes[0].id],'展开');
-    if(!items.length && !edges.length)return {ids:[],mapping};
+    if(!items.length && !edges.length && !updates.length)return {ids:[],mapping};
     function apply(map,current=false){
+      for(const update of updates){const node=map.nodes.find(n=>n.id===update.id);if(!node || node.text!==update.from)continue;node.text=update.to;const size=map.size?.[node.id],initial=batch.generatedSize?.[node.id];if(size && initial && size.w===initial.w && size.h===initial.h){size.h=Math.max(size.h,measure(node,0,size.w).h);}}
       for(const v of items){map.nodes.push(clone(v.node));if(v.node.pdf){const media=batch.pdfAssets.find(a=>a.media.id===v.node.pdf)?.media;if(media && !(map.media ||= []).some(m=>m.id===media.id))map.media.push(clone(media));}if(current)putLayerPos(v.node.id,clone(v.pos));else (map.pos ||= {})[v.node.id]=clone(v.pos);(map.size ||= {})[v.node.id]=clone(v.size);}
       for(const n of plan.nodes)if(n.parentId && mapping[n.parentId]){const target=map.nodes.find(v=>v.id===mapping[n.id]);if(target)target.layoutParent=mapping[n.parentId];}
       const live=new Set(map.nodes.map(n=>n.id));
       for(const e of edges)if(live.has(e.from.node) && live.has(e.to.node))(map.edges ||= []).push(clone(e));
+      if(window.MMEdgePolicy)map.edges=window.MMEdgePolicy.unique(map.edges);
     }
     if(!batch.before){batch.before=historyJSON();batch.historyIndex=hist.length;aiBatches.add(batch);change(()=>apply(cur,true));const focus=mapping[plan.nodes[0].id];selectNodes([focus]);reveal(focus);}
     else{
@@ -1151,6 +1158,7 @@
       for(let i=start;i<hist.length;i++){const snapshot=JSON.parse(hist[i]);apply(snapshot);hist[i]=JSON.stringify(snapshot);}
       redo=[];apply(cur,true);storeLocal(cur);scheduleCloud();draw();
     }
+    for(const update of updates)batch.generatedText[update.key]=update.to;
     if(final)aiBatches.delete(batch);return {ids:items.map(v=>v.node.id),mapping};
   }
   function applyTopicPlan(map,plan){
@@ -1525,10 +1533,12 @@
   }
   function listHtml() {
     const kw = listQ.trim().toLowerCase();
-    const items = index.filter((e) => !me() || !e.uid || e.uid === me().id).filter((e) => !kw || String(e.title).toLowerCase().includes(kw));
-    return `<section class="mm-home-hero"><div><span class="mm-home-eyebrow">捞捞 / 学习书桌</span><h1>给知识一点<br>生长的空间。</h1><p>把公式、想法与资料铺在一起，<br>慢慢连成自己的理解。</p><div class="mm-home-actions" role="group" aria-label="创建导图"><button type="button" class="mm-b pri mm-home-create" data-mm="new" data-tpl="blank"><span aria-hidden="true">＋</span> 新建空白导图 <span aria-hidden="true">↗</span></button><button type="button" class="mm-b mm-home-generate" data-mm="paste-new">大纲 / 正文生成导图 <span aria-hidden="true">↗</span></button><button type="button" class="mm-b mm-home-generate" data-mm="lecture-new">课件 / 讲义生成导图 <span aria-hidden="true">↗</span></button></div></div><div class="mm-home-art" aria-hidden="true"><span class="mm-art-kicker">从记录，到理解</span><span class="mm-art-line one"></span><span class="mm-art-line two"></span><span class="mm-art-note one">一个想法<small>让思考发生</small></span><span class="mm-art-note two">一种联系<small>把知识连接起来</small></span><span class="mm-art-note three">自己的理解<small>慢慢积累，逐渐清晰</small></span><span class="mm-art-footer">A LITTLE ROOM FOR THINKING</span></div></section>
+    const entries = index.filter((e) => !me() || !e.uid || e.uid === me().id);
+    const items = (window.MMLibrary?.homeItems(entries) || entries).filter((e) => !kw || String(e.title).toLowerCase().includes(kw));
+    return `<section class="mm-home-hero"><div class="mm-home-intro"><div class="mm-home-intro-grid"><div class="mm-home-copy"><span class="mm-home-eyebrow">捞捞 / 学习书桌</span><h1>给知识一点<br>生长的空间。</h1><p>把公式、想法与资料铺在一起，<br>慢慢连成自己的理解。</p></div><aside class="mm-home-student" aria-labelledby="mmHomeStudentTitle"><span class="mm-home-student-kicker">为你调整讲解深度</span><h2 id="mmHomeStudentTitle">你的学习背景</h2><p data-student-description>填写年级、专业和已学课程，让每次解释更贴合你的基础。</p><dl class="mm-home-student-summary" data-student-summary hidden><dt>年级</dt><dd data-student-grade></dd><dt>专业</dt><dd data-student-major></dd><dt>已学课程</dt><dd data-student-courses></dd></dl><button class="mm-b pri" type="button" data-student-settings aria-haspopup="dialog" aria-controls="mmStudentSettingsDialog">填写学习背景</button><p class="mm-home-student-state" data-student-state role="status">全模块共用 · 可随时修改</p></aside></div><div class="mm-home-actions" role="group" aria-label="创建导图"><button type="button" class="mm-b pri mm-home-create" data-mm="new" data-tpl="blank"><span aria-hidden="true">＋</span> 新建空白导图 <span aria-hidden="true">↗</span></button><button type="button" class="mm-b mm-home-generate" data-mm="paste-new">大纲 / 正文生成导图 <span aria-hidden="true">↗</span></button><button type="button" class="mm-b mm-home-generate" data-mm="lecture-new">课件 / 讲义生成导图 <span aria-hidden="true">↗</span></button></div></div><div class="mm-home-art" aria-hidden="true"><span class="mm-art-kicker">从记录，到理解</span><span class="mm-art-line one"></span><span class="mm-art-line two"></span><span class="mm-art-note one">一个想法<small>让思考发生</small></span><span class="mm-art-note two">一种联系<small>把知识连接起来</small></span><span class="mm-art-note three">自己的理解<small>慢慢积累，逐渐清晰</small></span><span class="mm-art-footer">A LITTLE ROOM FOR THINKING</span></div></section>
       <section class="mm-home-library" aria-label="我的导图"><div class="mm-library-head"><div class="mm-sec"><b>我的导图</b><span>${items.length} 张${kw?'匹配':''} · 保存在本机</span></div><input id="mmListQ" class="mm-search" type="search" aria-label="搜索导图" placeholder="搜索导图名称…" value="${E(listQ)}" maxlength="40"></div>
-      ${items.length ? `<div class="mm-cards">${items.map(e=>`<div class="mm-card" data-mm="open" data-id="${E(e.id)}" tabindex="0" role="button" aria-label="打开 ${E(e.title)}"><div class="mc-preview">${homePreview(e)}<span class="mc-open-hint">打开导图 ↗</span></div><div class="mc-details"><div class="mc-top"><b>${E(e.title)}</b><button type="button" class="mm-more" data-mm="menu" data-id="${E(e.id)}" aria-label="更多：${E(e.title)}">⋯</button></div><div class="mc-meta">${e.nodes || 1} 个节点 <span>·</span> ${when(e.updated)}</div>${e.fileMissing || e.hasDraft?`<span class="mc-draft">${e.fileMissing?'文件已移除，草稿已保留':'有未保存草稿'}</span>`:''}</div></div>`).join('')}</div>`:`<div class="mm-empty"><span class="mm-empty-mark" aria-hidden="true">${kw?'⌕':'＋'}</span><b>${kw?'没有找到这张导图':'你的第一张导图，从这里开始'}</b><p>${kw?'试试其他名称，或清空搜索框。':'从上方新建空白导图，或用文字、课件生成。'}</p></div>`}</section>
+      ${window.MMLibrary?.homeNavigation(listQ) || ""}
+      ${items.length ? `<div class="mm-cards">${items.map(e=>`<div class="mm-card" data-mm="open" data-id="${E(e.id)}" tabindex="0" role="button" aria-label="打开 ${E(e.title)}"><div class="mc-preview">${homePreview(e)}<span class="mc-open-hint">打开导图 ↗</span></div><div class="mc-details"><div class="mc-top"><b>${E(e.title)}</b><button type="button" class="mm-more" data-mm="menu" data-id="${E(e.id)}" aria-label="更多：${E(e.title)}">⋯</button></div><div class="mc-meta">${e.nodes || 1} 个节点 <span>·</span> ${when(e.updated)}</div>${e.fileMissing || e.hasDraft?`<span class="mc-draft">${e.fileMissing?'文件已移除，草稿已保留':'有未保存草稿'}</span>`:''}</div></div>`).join('')}</div>`:(window.MMLibrary?.homeEmpty(kw) || `<div class="mm-empty"><span class="mm-empty-mark" aria-hidden="true">${kw?'⌕':'＋'}</span><b>${kw?'没有找到这张导图':'你的第一张导图，从这里开始'}</b><p>${kw?'试试其他名称，或清空搜索框。':'从上方新建空白导图，或用文字、课件生成。'}</p></div>`)}</section>
 
 <footer class="mm-home-footer"><span>捞捞 · 留一张画布给思考</span><span>本地保存 / 自由连接</span></footer>`;
   }
@@ -1538,6 +1548,7 @@
     $('mmSaveExit')?.classList.add('hidden');$('mmDiscardExit')?.classList.add('hidden');
     box.className = "mm-box list"; box.style.height = "";
     box.innerHTML = listHtml();
+    window.MMLibrary?.decorate();
     window.MMWorkspaceHost?.onDraw(null);
     const s = $("mmListQ"); if (s && s.dataset.f) s.focus();
   }
@@ -2478,7 +2489,7 @@
     },
     applyReviewedStructure:(plan,scope)=>{const working=clone(cur),cleanup=window.MMLectureCleanup?.plan(working);if(cleanup)window.MMLectureCleanup.apply(working,cleanup,LAYER_MAPS);window.MMStructurePlan.apply(working,plan,scope);const layout=window.MMTopicLayout.organize(working,L.nodes,{ids:[...plan.root.nodeIds,...plan.modules.flatMap(window.MMStructurePlan.members)],scope:'review-'+scope});change(()=>{if(cleanup)window.MMLectureCleanup.apply(cur,cleanup,LAYER_MAPS);window.MMStructurePlan.apply(cur,plan,scope);applyTopicPlan(cur,layout);});fit(true);},
     finalizeAIOrganization:batch=>{
-      if(!cur || cur.id!==batch.mapId || !window.MMTopicLayout)return;
+      if(!cur || cur.id!==batch.mapId || !window.MMTopicLayout || batch.shortChain)return;
       const all=Object.values(batch.mapping || {}).filter(id=>findNode(id)),working=clone(cur),cleanup=batch.lecture?window.MMLectureCleanup?.plan(working,{ids:all,recordId:batch.recordId,force:true}):null;
       if(cleanup)window.MMLectureCleanup.apply(working,cleanup,LAYER_MAPS);if(batch.structurePlan)window.MMStructurePlan.apply(working,batch.structurePlan,batch.recordId);const live=new Set(working.nodes.map(n=>n.id)),ids=all.filter(id=>live.has(id)),fixed=ids.filter(id=>{const a=cur.pos[id],b=batch.generatedPos?.[id];return !b || a.x!==b.x || a.y!==b.y;}),movable=ids.filter(id=>!fixed.includes(id));
       if(!movable.length && !cleanup?.removed.length)return;
@@ -2552,6 +2563,8 @@
       record.learning=state;storeLocal(cur);scheduleCloud();draw();return true;
     },
     measureAINode: text => measure({text},0),
+    renderLibraryHome: () => { if (!cur) renderList(); },
+    refreshLibraryHome: () => { if (!cur) return refreshHome(); },
     refresh: () => { if (cur) draw(); },
     parseText, toMarkdown,
     /* 【独立版】**"扫哪些表"的唯一真相来源**：del 清理 / 读取容错 / 导入 / 自测台孤儿判据

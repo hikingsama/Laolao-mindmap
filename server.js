@@ -74,3 +74,4 @@ server.listen(PORT, HOST, () => {
 
 // The console launcher owns shutdown; direct `node server.js` remains supported.
 module.exports=server;
+server.on('close',()=>ai.handle.dispose?.());

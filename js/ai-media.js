@@ -39,7 +39,7 @@
   async function prepare(media,signal,progress=()=>{}){
     if(!media)return null;
     signal.throwIfAborted();
-    const url="/api/maps/"+encodeURIComponent(media.mapId)+"/media/"+encodeURIComponent(media.id)+"?draft=1";
+    const url=media.taskId&&!media.id?"/api/ai/lecture-tasks/"+encodeURIComponent(media.taskId)+"/pdf/"+encodeURIComponent(media.documentId):"/api/maps/"+encodeURIComponent(media.mapId)+"/media/"+encodeURIComponent(media.id)+"?draft=1";
     const r=await fetch(url,{signal});if(!r.ok)throw new Error("无法读取附件，请确认文件仍在当前导图中");
     const blob=await r.blob();signal.throwIfAborted();
     if(media.kind==="image"){
@@ -66,7 +66,7 @@
       for(const n of pages){
         signal.throwIfAborted();progress("正在准备PDF · "+(images.length+1)+"/"+pages.length+" 页…");
         const page=await doc.getPage(n),unit=page.getViewport({scale:1}),scale=Math.min(2,2000/Math.max(unit.width,unit.height)),viewport=page.getViewport({scale}),c=canvas(Math.ceil(viewport.width),Math.ceil(viewport.height));
-        renderTask=page.render({canvas:c,canvasContext:c.getContext("2d"),viewport,background:"rgb(255,255,255)",annotationMode:0});await renderTask.promise;renderTask=null;signal.throwIfAborted();
+        renderTask=page.render({canvas:c,canvasContext:c.getContext("2d"),viewport,background:"rgb(255,255,255)",annotationMode:0,useRequestAnimationFrame:false});await renderTask.promise;renderTask=null;signal.throwIfAborted();
         images.push({page:n,dataUrl:encode(c)});
         try{const content=await page.getTextContent();texts.push("第"+n+"页：\n"+content.items.map(t=>t.str+(t.hasEOL?"\n":" ")).join(""));}catch{signal.throwIfAborted();}
         page.cleanup();c.width=c.height=1;
@@ -75,6 +75,16 @@
     }catch(e){if(signal.aborted)throw signal.reason;if(/页码|最多|过大/.test(e.message))throw e;throw new Error("PDF无法读取或已加密，请使用可正常打开的PDF");}
     finally{signal.removeEventListener("abort",abort);await task.destroy().catch(()=>{});}
   }
-  const api={parsePages,pageSpec,prepare};
+  async function prepareSources(context,question,signal,progress=()=>{}){
+    const sources=[];
+    for(const ref of context.references){
+      const whole=/全文|全部页面|全部页|所有页|整[份个本](?:PDF|pdf|文档|文件)|whole\s+(?:PDF|document)|all\s+pages/i.test(question),explicit=pageSpec(question);
+      const pages=whole?'':explicit || (ref.pages?.length?ref.pages.join(','):undefined);
+      const value=await prepare({...ref,question,pages},signal,progress);
+      sources.push({...value,sourceNodeId:ref.sourceNodeId,documentId:ref.documentId});
+    }
+    return{version:1,sources,evidence:context.evidence,unavailable:context.unavailable};
+  }
+  const api={parsePages,pageSpec,prepare,prepareSources};
   if(typeof module==="object" && module.exports)module.exports=api;else root.MMAIMedia=api;
 })(typeof window==="object"?window:globalThis);

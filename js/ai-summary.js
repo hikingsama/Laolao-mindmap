@@ -3,7 +3,7 @@
   const noteFormat=typeof module==="object" && module.exports?require("./ai-note-format.js"):root.MMAINoteFormat;
   function normalizeSummary(value, options = {}) {
     if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("总结返回格式错误：需要包含标题和正文的对象，请重试。");
-    const maxNodes=options.lecture?64:options.outline?40:12, maxEdges=options.lecture?160:options.outline?120:30;
+    const maxNodes=options.shortChain?3:options.lecture?64:options.outline?40:12, maxEdges=options.lecture?160:options.outline?120:30;
     const kinds=["hierarchy","inference","relation","mainline","progression","parallel","supplement","contains","prerequisite","contrast","application"];
     const raw = value.nodes === undefined ? [value] : value.nodes;
     if (!Array.isArray(raw) || !raw.length || raw.length > maxNodes) throw new Error(`总结应包含1–${maxNodes}个文字节点，请重新整理。`);
@@ -34,14 +34,15 @@
     const rawEdges = value.edges === undefined ? nodes.slice(1).map(n=>({from:nodes[0].id,to:n.id,kind:"parallel"})) : value.edges;
     if (!Array.isArray(rawEdges) || rawEdges.length > maxEdges) throw new Error(`总结关系应为最多${maxEdges}条连线。`);
     const seen = new Set();
-    const edges = rawEdges.map(e=>{
+    let edges = rawEdges.map(e=>{
       if (!e || !ids.has(e.from) || !ids.has(e.to) || e.from===e.to || !kinds.includes(e.kind===undefined?"relation":e.kind)) throw new Error("总结关系引用了无效节点或关系类型，请重新整理。");
-      const key=e.from+":"+e.to;
-      if(seen.has(key))throw new Error("总结关系重复，请重新整理。");
-      seen.add(key);
+      const key=JSON.stringify([e.from,e.to].sort());
+      const duplicate=seen.has(key);seen.add(key);
       if(e.label!==undefined && (typeof e.label!=="string" || e.label.length>40 || /[\x00-\x1f\x7f-\x9f]/.test(e.label)))throw new Error("总结连线文字应为40字符以内的单行文本");
+      if(duplicate)return null;
       return {from:e.from,to:e.to,kind:e.kind===undefined?"relation":e.kind,...(e.label!==undefined?{label:e.label.trim()}: {})};
-    });
+    }).filter(Boolean);
+    if(options.shortChain)edges=nodes.slice(1).map((n,i)=>edges.find(e=>e.from===nodes[i].id && e.to===n.id) || {from:nodes[i].id,to:n.id,kind:"mainline",label:"阅读顺序"});
     // Logical flow must be acyclic; this also bounds layout depth.
     const visiting=new Set(),done=new Set();
     function visit(id){if(visiting.has(id))throw new Error("总结关系形成循环，请按主线重新整理。");if(done.has(id))return;visiting.add(id);edges.filter(e=>e.from===id).forEach(e=>visit(e.to));visiting.delete(id);done.add(id);}

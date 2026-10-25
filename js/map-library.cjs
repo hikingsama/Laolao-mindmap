@@ -7,9 +7,16 @@ function catalog(){return (fs.existsSync(root)?fs.readdirSync(root,{withFileType
 exports.catalog=catalog;
 exports.handle=async(req,res,port)=>{
  if(![`127.0.0.1:${port}`,`localhost:${port}`].includes(req.headers.host)||req.headers.origin&&!['http://127.0.0.1:'+port,'http://localhost:'+port].includes(req.headers.origin)){req.resume();return json(res,403,{error:'仅允许本机页面访问'});}
- try{if(req.url!=='/api/library')return json(res,404,{error:'导图库接口不存在'});
-  if(req.method==='GET')return json(res,200,{version:1,maps:catalog(),library:folders.read(),trash:trash.list()});
-  if(req.method==='PATCH'){if(!/^application\/json(?:\s*;|$)/i.test(req.headers['content-type']||''))throw Object.assign(Error('请使用JSON提交归类操作'),{status:415});let length=0,parts=[];for await(const part of req){length+=part.length;if(length>128000)throw Object.assign(Error('归类操作过大'),{status:413});parts.push(part);}let input;try{input=JSON.parse(Buffer.concat(parts).toString('utf8'));}catch{throw Error('归类操作不是有效JSON');}if(input.op==='restoreMap'){const restored=trash.restore(input.trashId);return json(res,200,{restored,library:folders.read()});}const library=folders.update(input,new Set(catalog().filter(m=>!m.unavailable).map(m=>m.id)));return json(res,200,{library});}
+ try{if(req.url!=='/api/library')return json(res,404,{error:'导图库接口不存在'});trash.recover();
+  if(req.method==='GET')return json(res,200,{version:1,features:{folderTrash:'tree-v1'},maps:catalog(),library:folders.read(),trash:trash.list()});
+  if(req.method==='PATCH'){
+   if(!/^application\/json(?:\s*;|$)/i.test(req.headers['content-type']||''))throw Object.assign(Error('请使用JSON提交归类操作'),{status:415});let length=0,parts=[];
+   for await(const part of req){length+=part.length;if(length>4*1024*1024)throw Object.assign(Error('归类操作过大'),{status:413});parts.push(part);}let input;try{input=JSON.parse(Buffer.concat(parts).toString('utf8'));}catch{throw Error('归类操作不是有效JSON');}
+   if(input.op==='restoreMap'){const restored=trash.restore(input.trashId);return json(res,200,{restored,library:folders.read()});}
+   if(input.op==='trashSelection'){const removed=trash.removeSelection(input,catalog());return json(res,200,{removed,library:folders.read()});}
+   if(input.op==='trashBatch')return json(res,200,{...trash.batch(input),library:folders.read()});
+   const library=folders.update(input,new Set(catalog().filter(m=>!m.unavailable).map(m=>m.id)));return json(res,200,{library});
+  }
   req.resume();return json(res,405,{error:'请求方法不支持'});
  }catch(e){req.resume();json(res,e.status||400,{error:e.message});}
 };

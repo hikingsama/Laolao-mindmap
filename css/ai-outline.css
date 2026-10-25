@@ -29,3 +29,5 @@
 .mm-outline-records button { text-align:left; padding:12px; border:1px solid #d8dfcc; border-radius:8px; background:#f8f9f1; color:inherit; font:inherit; cursor:pointer; }
 .mm-outline-records small { display:block; margin-top:5px; color:#748269; }
 @media(max-width:720px) { .mm-outline-progress {left:12px; bottom:12px; width:calc(100vw - 24px);} }
+
+.mm-text-plan fieldset{border:1px solid #d1d8c2;border-radius:10px;padding:14px;margin:16px 0}.mm-text-plan label,#mmTextReview>label{display:grid;gap:6px;margin:10px 0}#mmTextReview :is(input,textarea){box-sizing:border-box;width:100%;padding:10px;border:1px solid #c6cfb7;border-radius:7px;background:#fffef8;color:inherit;font:inherit}#mmTextReview textarea{resize:vertical;line-height:1.7}.mm-text-source-image{display:block;max-width:100%;max-height:650px;object-fit:contain;margin:12px auto}.mm-text-source-body{white-space:pre-wrap;overflow-wrap:anywhere;font:14px/1.8 system-ui;background:#f4f5eb;padding:12px;border-radius:8px}

@@ -20,14 +20,14 @@ function parse(reply,lookup,allowed){
  return graph;
 }
 exports.prepare=prepare;exports.parse=parse;
-exports.createService=({getConfig,fetchImpl=globalThis.fetch,timeoutMs=15*60*1000,ttlMs=30*60*1000}={})=>{
+exports.createService=({getConfig,getStudentProfile=()=>({}),fetchImpl=globalThis.fetch,timeoutMs=15*60*1000,ttlMs=30*60*1000}={})=>{
  const jobs=new Map();
  const remove=id=>{const j=jobs.get(id);if(j){clearTimeout(j.timer);j.controller.abort();jobs.delete(id);}};
  const publicJob=j=>({id:j.id,status:j.status,stage:j.stage,sources:j.sources,options:j.options,fragments:j.fragments,audit:j.audit,...(j.result?{summary:j.result}:{}),...(j.message?{error:j.message}:{})});
  async function execute(job,prepared,config){
   const timeout=setTimeout(()=>job.controller.abort(),timeoutMs),signal=job.controller.signal;
   async function call(stage,data,allowed){
-   signal.throwIfAborted();const messages=[{role:'system',content:prompts.render('map-summary')},{role:'user',content:JSON.stringify({stage,...prepared.options,...data})}];
+   signal.throwIfAborted();const messages=[{role:'system',content:prompts.render('map-summary',{studentProfile:prepared.studentProfile})},{role:'user',content:JSON.stringify({stage,...prepared.options,...data})}];
    const inspection=prompts.snapshot('map-summary',messages,config.model,config.apiKey);inspection.limits={maxOutputTokens:capacity.outputTokens(config)};job.audit.calls.push(inspection);
    const response=await fetchImpl(config.baseURL+'/chat/completions',{method:'POST',redirect:'error',signal,headers:{'Content-Type':'application/json',Authorization:'Bearer '+config.apiKey},body:JSON.stringify({model:config.model,messages,stream:true,...require('./ai-stream.cjs').usageOptions(config),max_tokens:capacity.outputTokens(config,'answer')})});
    if(!response.ok){await response.body?.cancel();throw error(response.status===401?'模型密钥验证失败':response.status===429?'模型平台限流，请稍后重新总结':'模型平台请求失败（HTTP '+response.status+'）');}
@@ -59,7 +59,7 @@ exports.createService=({getConfig,fetchImpl=globalThis.fetch,timeoutMs=15*60*100
   if(req.url==='/api/ai/map-summary'&&req.method==='POST'){
    try{if(!/^application\/json(?:;|$)/i.test(req.headers['content-type']||''))throw error('请使用JSON提交总结选项',415);let bytes=0,parts=[];for await(const part of req){bytes+=part.length;if(bytes>16000)throw error('总结选项过大',413);parts.push(part);}let input;try{input=JSON.parse(Buffer.concat(parts).toString());}catch{throw error('总结选项不是有效JSON');}
     if([...jobs.values()].some(j=>j.status==='running'))throw error('已有多图总结正在进行，请先停止或等待完成',429);
-    const prepared=prepare(input),config=getConfig();if(jobs.size>=8)for(const [id,j]of jobs)if(j.status!=='running'){remove(id);break;}
+    const prepared={...prepare(input),studentProfile:getStudentProfile()},config=getConfig();if(jobs.size>=8)for(const [id,j]of jobs)if(j.status!=='running'){remove(id);break;}
     const job={id:randomUUID(),status:'running',stage:'已锁定来源版本',sources:prepared.sources,options:prepared.options,fragments:[],audit:{createdAt:Date.now(),model:config.model,calls:[]},controller:new AbortController()};job.timer=setTimeout(()=>remove(job.id),ttlMs);job.timer.unref?.();jobs.set(job.id,job);json(res,202,publicJob(job));void execute(job,prepared,config);
    }catch(e){req.resume();json(res,e.status||400,{error:e.message});}return true;
   }

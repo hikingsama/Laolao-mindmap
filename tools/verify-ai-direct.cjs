@@ -47,7 +47,7 @@ async function api(service,url,method='GET',value){
   const settings=require('../js/ai-config.cjs').createService({configFile:cfgFile});let cfg=(await api(settings,'/api/ai/config')).data;
   check('Old enabled drawing configuration is inert and absent from public settings/status',()=>{assert(!('drawing' in cfg));assert(!('drawingAvailable' in settings.status()));assert.equal(typeof settings.drawing,'undefined');});
   await api(settings,'/api/ai/config','PUT',{...cfg,profiles:Object.fromEntries(Object.entries(cfg.profiles).map(([id,v])=>[id,{...v,apiKey:''}]))});
-  check('Saving chat settings preserves saved provider keys and legacy private configuration',()=>{const stored=JSON.parse(fs.readFileSync(cfgFile,'utf8'));assert.deepEqual(stored.profiles,profiles);assert.deepEqual(stored.drawing,old.drawing);});
+  check('Saving chat settings preserves provider keys, adds the existing default budget and keeps legacy private configuration',()=>{const stored=JSON.parse(fs.readFileSync(cfgFile,'utf8'));assert.deepEqual(stored.profiles,Object.fromEntries(Object.entries(profiles).map(([id,p])=>[id,{...p,maxOutputTokens:32768}])));assert.deepEqual(stored.drawing,old.drawing);});
   let imageCalls=0;const handler=require('../js/ai-server.cjs').createHandler({settings,chat:{handle:async()=>false},images:{handle:async()=>{imageCalls++;return true;}}});
   const removed=await api(handler,'/api/ai/images','POST',{prompt:'test'});
   check('Retired image endpoint cannot invoke an image service',()=>{assert.equal(removed.status,404);assert.equal(imageCalls,0);});

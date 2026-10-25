@@ -33,13 +33,13 @@
       const own=info.membership[n.id]===treeId,isCurrent=n.id===sourceId,isAncestor=ancestors.has(n.id),explicit=direct.has(n.id),shared=(n.pdf || n.image) && (n.pdf || n.image)===(source.pdf || source.image),match=overlap(query,terms(n.text));
       const kind=isCurrent?'current':own?(isAncestor?'ancestor':'tree'):'related';
       const score=isCurrent?1000:isAncestor?300:explicit?200:shared?150:match*10;
-      return {id:n.id,nodeId:n.id,treeId:info.membership[n.id],treeTitle:info.trees[info.membership[n.id]]?.title || '关联树',title:title(n),text:String(n.text || '').slice(0,isCurrent?8000:2400),kind,score,reason:isCurrent?'本次发问节点':isAncestor?'当前推导路径':explicit?'已有连线关联':shared?'共同引用同一附件':own?'同树相关内容':match?'主题词相关':'其他树的主题概览',revision:fingerprint(n.text)};
+      return {id:n.id,nodeId:n.id,treeId:info.membership[n.id],treeTitle:info.trees[info.membership[n.id]]?.title || '关联树',title:title(n),text:String(n.text || ''),kind,score,reason:isCurrent?'本次发问节点':isAncestor?'当前推导路径':explicit?'已有连线关联':shared?'共同引用同一附件':own?'同树相关内容':match?'主题词相关':'其他树的主题概览',revision:fingerprint(n.text)};
     }).filter(n=>n.kind==='current' || scope!=='node' && (n.treeId===treeId || scope==='project') && (n.score>=20 || direct.has(n.id) || scope==='project' && otherRoots.has(n.id))).sort((a,b)=>b.score-a.score).slice(0,18);
     // Raw revisions stay local. The model receives bounded source snapshots only.
     const sources=candidates.map(({score,...n})=>n);
     const relevant=info.turns.filter(t=>t.treeId===treeId && (t.sourceId===sourceId || t.generatedIds?.some(id=>ancestors.has(id)) || !t.generatedIds?.length && ancestors.has(t.sourceId)) && t.answer && t.status==='completed' && (!t.generatedIds?.length || t.generatedIds.some(id=>nodes.has(id)))).slice(-8);
     const history=[];let size=0;
-    for(const t of relevant.slice().reverse()){const answer=t.answer.slice(0,14000),question=t.question.slice(0,10000);if(size+answer.length+question.length>65000)break;history.unshift({role:'user',content:question},{role:'assistant',content:answer});size+=answer.length+question.length;}
+    for(const t of relevant.slice().reverse()){const answer=t.answer,question=t.question;if(size+answer.length+question.length>600000)throw new Error('提问历史超过完整资料容量，请选择较小参考范围；未截断历史正文');history.unshift({role:'user',content:question},{role:'assistant',content:answer});size+=answer.length+question.length;}
     return {...info,treeId,treeTitle:info.trees[treeId]?.title || title(source),candidates:sources,history,ancestors:[...ancestors]};
   }
   function merge(map,record,ownership){

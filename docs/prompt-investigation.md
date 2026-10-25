@@ -7,8 +7,11 @@
 | 文件 | 用途 |
 | --- | --- |
 | prompts/outline.md | 粘贴大纲、正文或笔记的结构整理 |
-| prompts/lecture-extract.md | 一份讲义一个页段的节点提炼及出处 |
-| prompts/lecture-merge.md | 多讲义/章节的主题融合、分级汇总 |
+| prompts/lecture-survey.md | 通览全部材料，建立内容索引和跨页承接线索 |
+| prompts/lecture-plan.md | 阅读完整索引，安排主题、完整内容单元与前后依赖 |
+| prompts/lecture-extract.md | 回读完整内容单元的原文及页图，提炼节点与出处 |
+| prompts/lecture-merge.md | 仅保留旧版章节汇总调用兼容 |
+| prompts/content-sections.md | 正文生成共用的节点内分节、分步和题目排版规则 |
 | prompts/planner.md | 节点提问的关联资料选择、回答定向 |
 | prompts/node-graph.md | 节点提问直接生成导图 |
 | prompts/node-summary.md | 问答内容节点整理兼容模式 |
@@ -23,7 +26,7 @@ js/ai-prompts.cjs注册及渲染模板；js/ai-outline-prompt.cjs保留旧调用
 1. “提示词模板”查看当前文件内容与哈希版本。
 2. “当前导图的生成记录”查看相应任务的已完成、未完成页码与错误。
 3. 展开模型阶段，查看实际系统提示词、模型、输入、输出。节点提问还可查看关联与定向的输入、输出。
-4. 对照模板版本和实际版本：{{supplementRule}}会按是否允许补充替换，所以实际版本可能不同。
+4. 对照模板版本和实际版本：{{supplementRule}}会按是否允许补充替换，正文生成会附加content-sections.md与已填写的学习背景，所以实际版本可能不同。模板查看入口同时显示共用规则，历史阶段保留当时实际系统提示词。
 5. 确认问题发生于文字提取、来源范围还是融合，再调整对应文件。模板每次新请求重新读取，历史保留当时的实际版本。
 
 图像输入使用说明占位，不保存图片编码、密钥或思考正文。文字输入与输出会随导图保存、JSON导出，应按自己的学习资料管理。旧记录可能没有快照，界面会说明。
@@ -34,7 +37,7 @@ js/ai-prompts.cjs注册及渲染模板；js/ai-outline-prompt.cjs保留旧调用
 
 当前没有用户自定义编辑器。后续可以在注册表之上加入用户覆盖、恢复默认、修改预览和版本管理，结构校验继续由程序执行。
 
-验证：node tools/verify-ai-files.cjs；浏览器：node tools/verify-ai-files-ui.mjs --port 8897。浏览器测试使用临时目录、假模型与临时浏览器资料，不调用真实账号。
+验证：node tools/verify-ai-files.cjs、node tools/verify-lecture-semantics.cjs；浏览器：node tools/verify-lecture-semantics-ui.cjs（需要Playwright及Edge，或通过--edge/--chrome指定浏览器）。旧浏览器测试入口verify-ai-files-ui.mjs默认转到新版语义流程；--legacy-v1仅用于旧版协议的历史样例。浏览器测试使用自动分配的独立端口、临时目录、假模型与临时浏览器资料，不调用真实账号。
 
 ## 知识单元与连线格式（2026-10-22）
 
@@ -47,7 +50,7 @@ js/ai-prompts.cjs注册及渲染模板；js/ai-outline-prompt.cjs保留旧调用
 - 提供label时优先展示label，未提供时使用该kind的默认文字。新hierarchy默认空标签。parallel兼容无箭头并列，其他关系默认from指向to；措辞应与此方向一致。
 - 端点、重复、环、连通性与出处仍严格校验，不能通过自定义文字绕过。
 
-改变模板只影响之后生成的内容，不自动合并、重排或改写已保存节点。每个PDF批次只整合实际提供页，跨批次暂不进行自动的原节点语义合并；融合模式继续保留各批详细记录。
+改变模板只影响之后生成的内容，不自动合并、重排或改写已保存节点。新版PDF在生成知识正文前，先收齐所有文件的内容索引，统一规划完整语义单元，再回读相应原文；不再用最初的传输窗口决定知识边界。当前单元直接依赖的前文携带完整正文，来源与范围均受校验，所有阶段保留详细记录。
 
 新增验证：`node tools/verify-ai-relations.cjs`，覆盖标签、流式解析、默认值、旧关系兼容及整批撤销/重做。
 

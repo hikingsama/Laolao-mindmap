@@ -12,7 +12,7 @@
        const previous=into.get(v.callId);if(!previous||(v.updatedAt||0)>=(previous.updatedAt||0))into.set(v.callId,{...previous,...v});return;
      }
      if(Array.isArray(v)){for(const x of v)walk(x);return;}
-     for(const key of ['transfer','inspection','planning','mathReview','structureReview','stages','calls','audit','runs','answer','math','structure','planningInspection'])walk(v[key]);
+     for(const key of ['transfer','inspection','planning','mathReview','sectionReview','batches','structureReview','stages','calls','audit','runs','answer','math','structure','planningInspection'])walk(v[key]);
    }
    walk(value);return into;
  }
@@ -35,7 +35,7 @@
      const cell=(label,value,hint='')=>'<div><dt>'+esc(label)+'</dt><dd>'+esc(value)+'</dd>'+(hint?'<small>'+esc(hint)+'</small>':'')+'</div>';
      const token=(field)=>valid(current?.[field])?number(current[field]):done?'平台未提供':'等待平台统计';
      const total=(field)=>totals[field]===null?'平台未提供':number(totals[field])+(totals[field+'Known']<totals.calls?'（部分）':'');
-     const nodeCount=meta.nodeCount??(map?.id===mapId?map.nodes?.length:undefined);
+     const nodeCount=meta.nodeCount??(map&&map.id===mapId?map.nodes?.length:undefined);
      body.innerHTML='<p class="mm-ai-usage-stage">'+esc(meta.stage||'等待模型响应')+(Number.isFinite(nodeCount)?' · '+nodeCount+' 个节点':'')+' · '+Math.max(0,Math.floor(((meta.finishedAt||Date.now())-startedAt)/1000))+' 秒</p>'+
        (meta.coverage?'<p class="mm-ai-usage-coverage">'+esc(meta.coverage)+'</p>':'')+
        '<dl class="mm-ai-usage-grid">'+cell('当前请求输入',token('promptTokens'),'tokens')+cell('当前请求输出',token('completionTokens'),'tokens · 请求预算 '+number(current?.maxOutputTokens??meta.maxOutputTokens))+cell('缓存命中输入',token('cacheHitTokens'),'tokens')+cell('缓存未命中输入',token('cacheMissTokens'),'tokens'+(current?.cacheMissDerived?' · 由输入总量减命中量计算':''))+

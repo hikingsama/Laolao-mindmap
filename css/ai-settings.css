@@ -19,7 +19,7 @@
 .mm-api-notice p { margin: 5px 0 0; }
 .mm-api-field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
 .mm-api-field label { font-size: 13px; font-weight: 600; }
-.mm-api-field input, .mm-api-field select { min-width: 0; width: 100%; min-height: 36px; padding: 7px 10px; border: 1px solid var(--mm-line); border-radius: 8px; color: inherit; background: #fbfcfe; font: inherit; font-size: 13px; }
+.mm-api-field input, .mm-api-field select, .mm-api-field textarea { min-width: 0; width: 100%; min-height: 36px; padding: 7px 10px; border: 1px solid var(--mm-line); border-radius: 8px; color: inherit; background: #fbfcfe; font: inherit; font-size: 13px; }
 .mm-api-field input::placeholder { color: #7b8799; }
 .mm-api-field small, .mm-api-protocol { color: var(--mm-sub); font-size: 12px; line-height: 1.6; }
 .mm-api-secret { display: flex; align-items: center; gap: 8px; }
@@ -39,7 +39,7 @@
 .mm-ai-attachment { display:block; color:#63718a; font-size:12px; overflow-wrap:anywhere; }
 .mm-api-actions { display: flex; align-items: center; gap: 8px; }
 .mm-api-action-gap { flex: 1; }
-.mm-api-dialog :is(input, select, button):focus-visible { outline: 2px solid var(--mm-ink); outline-offset: 2px; }
+.mm-api-dialog :is(input, select, textarea, button):focus-visible { outline: 2px solid var(--mm-ink); outline-offset: 2px; }
 @media (max-width: 480px) {
   .mm-api-heading { padding: 14px 16px; }
   .mm-api-body { padding: 14px 16px 6px; }

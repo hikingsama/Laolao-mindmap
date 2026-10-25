@@ -66,6 +66,7 @@ const drafts=require('./draft-files.cjs')({validId,folder,read,write,sniff,manif
 exports.handle = async (req,res,port) => {
   if(![`127.0.0.1:${port}`,`localhost:${port}`].includes(req.headers.host) || (req.headers.origin && ![`http://127.0.0.1:${port}`,`http://localhost:${port}`].includes(req.headers.origin))) return json(res,403,{error:"仅允许本机页面访问"});
   try {
+    mapTrash.recover();
     const url = new URL(req.url,"http://local"), parts=url.pathname.split("/").filter(Boolean).map(decodeURIComponent), id=parts[2];
     if(parts.length===2 && req.method==="GET") {
       const maps=fs.existsSync(ROOT)?fs.readdirSync(ROOT,{withFileTypes:true}).filter(e=>e.isDirectory() && validId(e.name)).flatMap(e=>{drafts.recover(e.name);const file=path.join(folder(e.name),"map.json"),m=read(file,null);if(m && m.id!==e.name)throw new Error('导图编号与文件夹不一致：'+e.name);return m?[{id:m.id,title:m.title,updated:fs.statSync(file).mtimeMs}]:[];}):[];

@@ -14,8 +14,11 @@ node_modules/
 # Generated browser-test screenshots and local publishing scratch files
 tools/*-preview.png
 .publish/
+storage/
 .local/
 
-# Local scratch and deleted content; current maps, attachments and drafts are tracked.
-/tmp/
-storage/**/.trash/
+# Generated test output and scratch files
+tmp/
+output/
+__pycache__/
+*.log

@@ -3,12 +3,12 @@
   "license": "Apache-2.0",
   "source": "https://registry.npmjs.org/pdfjs-dist/-/pdfjs-dist-6.4.299.tgz",
   "integrity": "sha512-AVl138zALtfaAPvADulE0PZThbYzCBS79nL4pOSL/6Sm/4AH5A21BD9VHt97OlCuzJuCpmeZtAtkinisF4Vb1g==",
-  "bytes": 7180145,
+  "bytes": 7180301,
   "files": [
     {
       "path": "build/pdf.mjs",
-      "bytes": 860818,
-      "sha256": "dd13af821c9c3e1778653340d6539a1ba07bc56cba40073a4c727864cf0c232a"
+      "bytes": 860974,
+      "sha256": "84b8e0bebd82372ea86e4be733258b5073d1b802c721b6754975b25641ca8d2c"
     },
     {
       "path": "build/pdf.worker.mjs",
@@ -1430,5 +1430,8 @@
       "bytes": 319973,
       "sha256": "2e112bf95cf962bcc9d3ace10d5bc74b3c5095245baa3eacd6bbbb9fc9a940a3"
     }
+  ],
+  "patches": [
+    "offscreen-render-scheduling-v1"
   ]
 }

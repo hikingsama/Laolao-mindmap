@@ -34,6 +34,7 @@
     <span id="mmSync" class="mm-sync"></span>
     <span class="mm-head-gap"></span>
     <button class="mm-b" id="mmOpenLocal" type="button">本地导图</button>
+    <button class="mm-b" id="mmStudentSettingsButton" type="button" aria-haspopup="dialog" aria-controls="mmStudentSettingsDialog">学习背景</button>
     <button class="mm-b" id="mmAPISettingsButton" type="button" aria-haspopup="dialog" aria-controls="mmAPISettingsDialog">大模型 API 接入</button>
     <button class="mm-b mm-shortcuts-button" id="mmShortcutsButton" type="button" aria-controls="mmShortcuts" aria-expanded="false">补全快捷键</button>
     <a class="mm-head-link" href="docs/user-manual/index.html" target="_blank" rel="noopener">使用指南 ↗</a>
@@ -54,6 +55,7 @@
   <script src="js/zoom-guard.js"></script>
   <script src="js/host-bridge.js"></script>
   <script src="js/edge-router.js"></script>
+  <script src="js/edge-policy.js"></script>
   <script src="vendor/markdown-it/markdown-it.min.js"></script>
   <script src="vendor/katex/katex.min.js"></script>
   <script src="vendor/html-to-image/html-to-image.js"></script>
@@ -65,6 +67,7 @@
   <script src="js/node-align.js"></script>
   <script src="js/editor-format.js"></script>
   <script src="js/ai-settings.js"></script>
+  <script src="js/student-settings.js"></script>
   <script src="js/lecture-cleanup.js"></script>
   <script src="js/structure-plan.js"></script>
   <script src="js/module-learning.js"></script>
@@ -82,6 +85,7 @@
   <script src="js/ai-math-check.js"></script>
   <script src="js/ai-lecture-plan.js"></script>
   <script src="js/ai-summary.js"></script>
+  <script src="js/ai-source-context.js"></script>
   <script src="js/ai-media.js"></script>
   <script src="js/ai-memory.js"></script>
   <script src="js/ai-learning.js"></script>
@@ -93,10 +97,13 @@
   <script src="js/ai-structure-review-ui.js"></script>
   <script src="js/ai-outline.js"></script>
   <script src="js/ai-lecture.js"></script>
+  <script src="js/lecture-task-ui.js"></script>
+  <script src="js/text-task-ui.js"></script>
   <script src="js/ai-inspector.js"></script>
   <script src="js/ai-math-review-ui.js"></script>
   <script src="js/style-chrome.js"></script>
   <script src="js/mindmap-interchange.js"></script>
+  <script src="js/library-selection.js"></script>
   <script src="js/map-library-ui.js"></script>
   <script src="js/node-kinds-ui.js"></script>
   <script src="js/map-workspace.js"></script>

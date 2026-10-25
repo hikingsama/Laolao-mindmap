@@ -85,6 +85,7 @@
     if(diskMap===map.id)for(const f of disk)list.set(f.id,{...list.get(f.id),...f,sourceMap:map.id});
     return [...list.values()];
   }
+  function sourceUses(id){return (current()?.outlineSources||[]).filter(r=>r.sourceMaterials?.some(s=>s.id===id)).length;}
   function placements(id){return (current()?.nodes || []).filter(n=>(n.image || n.pdf)===id);}
   function locationLabel(node,index){
     const b=M().state().L?.nodes.get(node.id),groups=(current()?.groups || []).filter(g=>b && window.MMGroups?.contains(g,b)).sort((a,b)=>a.w*a.h-b.w*b.h);
@@ -92,9 +93,9 @@
   }
   function locate(id){const box=M().state().L?.nodes.get(id);if(!box)return;M().selectNode(id);M().revealBox(box);}
   function confirmDelete(media){
-    const count=placements(media.id).length,dlg=document.createElement('dialog');
+    const count=placements(media.id).length,sources=sourceUses(media.id),dlg=document.createElement('dialog');
     dlg.id='mmMediaDeleteDialog';dlg.className='mm-workspace-confirm';dlg.setAttribute('aria-labelledby','mmMediaDeleteTitle');dlg.setAttribute('aria-describedby','mmMediaDeleteDescription');
-    dlg.innerHTML=`<h3 id="mmMediaDeleteTitle">删除「${esc(media.name)}」？</h3><p id="mmMediaDeleteDescription">${count?`同时删除画布上使用此文件的 ${count} 个节点及相关连线。`:'此文件尚未放置到画布。'}删除操作可撤销。若仅需要删除某个位置，请在当前弹窗选择取消，然后在画布中单独删除目标节点。</p><div class="mm-label-buttons"><button type="button" class="mm-b" data-media-delete="cancel" autofocus>取消</button><button type="button" class="mm-b danger" data-media-delete="confirm">删除文件</button></div>`;
+    dlg.innerHTML=`<h3 id="mmMediaDeleteTitle">删除「${esc(media.name)}」？</h3><p id="mmMediaDeleteDescription">${count?`同时删除画布上使用此文件的 ${count} 个节点及相关连线。`:'此文件尚未放置到画布。'}${sources?`此文件还用于 ${sources} 份生成记录的识别依据，删除后相应原图核对入口会不可用。`:''}删除操作可撤销。若仅需要删除某个位置，请在当前弹窗选择取消，然后在画布中单独删除目标节点。</p><div class="mm-label-buttons"><button type="button" class="mm-b" data-media-delete="cancel" autofocus>取消</button><button type="button" class="mm-b danger" data-media-delete="confirm">删除文件</button></div>`;
     document.body.append(dlg);
     return new Promise(resolve=>{
       let settled=false;
@@ -132,7 +133,7 @@
   function renameNode(id){const node=M().findNode(id)?.n;if(node) return rename(node.image || node.pdf);}
   function renderList() {
     const list=$("mmMediaList");if(!list || !current())return;
-    list.innerHTML=items().map(f=>{const nodes=placements(f.id),show=expanded.has(f.id);return `<div class="mm-media-item" data-media-id="${esc(f.id)}"><button class="mm-media-open" data-file-action="locate" data-id="${esc(f.id)}" aria-expanded="${show}">${f.mime==='application/pdf'?'<span class="mm-media-pdf-icon">PDF</span>':`<img src="${url(current().id,f.id)}" alt="${esc(f.name)}">`}<span>${esc(f.name)}</span></button><small>${nodes.length?'使用中 · '+nodes.length+' 处':'未放置到画布'}${f.bytes?' · '+Math.round(f.bytes/1024)+' KB':''}</small><div class="mm-media-actions"><button class="mm-b" data-file-action="insert" data-id="${esc(f.id)}">插入</button><button class="mm-b" data-file-action="rename" data-id="${esc(f.id)}">改名</button><button class="mm-b danger" data-file-action="remove" data-id="${esc(f.id)}">删除文件</button></div>${show?`<div class="mm-media-places">${nodes.map((n,i)=>`<button data-file-action="location" data-id="${esc(f.id)}" data-node="${esc(n.id)}">${esc(locationLabel(n,i))}<small>定位 ↗</small></button>`).join('')}</div>`:''}</div>`;}).join('') || `<p class="mm-media-empty">还没有媒体文件。可选择或拖入图片、PDF，也可粘贴截图。</p>`;
+    list.innerHTML=items().map(f=>{const nodes=placements(f.id),sources=sourceUses(f.id),show=expanded.has(f.id);return `<div class="mm-media-item" data-media-id="${esc(f.id)}"><button class="mm-media-open" data-file-action="locate" data-id="${esc(f.id)}" aria-expanded="${show}">${f.mime==='application/pdf'?'<span class="mm-media-pdf-icon">PDF</span>':`<img src="${url(current().id,f.id)}" alt="${esc(f.name)}">`}<span>${esc(f.name)}</span></button><small>${nodes.length?'使用中 · '+nodes.length+' 处':'未放置到画布'}${sources?' · 识别依据 '+sources+' 份':''}${f.bytes?' · '+Math.round(f.bytes/1024)+' KB':''}</small><div class="mm-media-actions"><button class="mm-b" data-file-action="insert" data-id="${esc(f.id)}">插入</button><button class="mm-b" data-file-action="rename" data-id="${esc(f.id)}">改名</button><button class="mm-b danger" data-file-action="remove" data-id="${esc(f.id)}">删除文件</button></div>${show?`<div class="mm-media-places">${nodes.map((n,i)=>`<button data-file-action="location" data-id="${esc(f.id)}" data-node="${esc(n.id)}">${esc(locationLabel(n,i))}<small>定位 ↗</small></button>`).join('')}</div>`:''}</div>`;}).join('') || `<p class="mm-media-empty">还没有媒体文件。可选择或拖入图片、PDF，也可粘贴截图。</p>`;
     if(error) {const p=document.createElement("p");p.className="mm-file-error";p.textContent=error;list.prepend(p);}
   }
   async function refresh() {

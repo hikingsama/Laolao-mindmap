@@ -334,6 +334,7 @@ function bootAll() {
   const b = boot();
   loadInto(b.sandbox, "js/host-bridge.js", b.sandbox.window);
   loadInto(b.sandbox, "js/edge-router.js", b.sandbox.window);
+  loadInto(b.sandbox, "js/edge-policy.js", b.sandbox.window);
   /* 提示语取证：#showBanner 等宿主函数是在 **vendor 加载时**被当成参数绑进它的闭包的
      （loadInto 把沙箱的键列为 new Function 的形参），所以加载之后再改 window.showBanner 已经晚了。
      要断言"用户看得见的那句话"，必须在这里就换成记录版（并转发给真的那个，#banner 照旧可断）。 */

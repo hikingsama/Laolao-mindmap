@@ -76,7 +76,7 @@ function completeItems(raw,key,max){
 }
 exports.partialGraph=(raw,options={})=>{
   const nodes=[],ids=new Set();
-  for(const item of completeItems(raw,'nodes',options.outline?40:12)){
+  for(const item of completeItems(raw,'nodes',options.shortChain?3:options.outline?40:12)){
     if(!item || typeof item.id!=='string' || !/^[A-Za-z0-9_-]{1,60}$/.test(item.id) || ids.has(item.id))continue;
     try{const n=normalizeSummary({nodes:[{...item,text:noteFormat.generatedText(item),blocks:undefined}],edges:[]},{...options,partial:true}).nodes[0];
       if(n.id!==item.id)continue;ids.add(n.id);nodes.push(n);
@@ -85,10 +85,10 @@ exports.partialGraph=(raw,options={})=>{
   const edges=[],seen=new Set();
   for(const e of completeItems(raw,'edges',options.outline?120:30)){
     if(!e || !ids.has(e.from) || !ids.has(e.to) || e.from===e.to)continue;
-    const key=e.from+':'+e.to;if(seen.has(key))continue;
-    try{const normalized=normalizeSummary({nodes,edges:[...edges,e]},{...options,partial:true});edges.push(normalized.edges.at(-1));seen.add(key);}catch{}
+    const key=JSON.stringify([e.from,e.to].sort());if(seen.has(key))continue;
+    try{const normalized=normalizeSummary({nodes,edges:[...edges,e]},{...options,shortChain:false,partial:true});edges.push(normalized.edges.at(-1));seen.add(key);}catch{}
   }
-  return {nodes,edges};
+  return options.shortChain && nodes.length?normalizeSummary({nodes,edges},{...options,partial:true}):{nodes,edges};
 };
 // Legacy summary callers still receive the old progress shape.
 exports.partialNodes=raw=>{

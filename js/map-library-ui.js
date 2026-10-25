@@ -1,7 +1,10 @@
 (() => {
  'use strict';
  const M=window.Mindmap,P=window.MMMapLibraryModel,$=id=>document.getElementById(id),E=s=>window.MMContent.escape(String(s??'')),copy=v=>JSON.parse(JSON.stringify(v));
- let catalog=new Map(),loaded=false,refreshing=null,selecting=false,chosen=new Set(),cacheVersion=0,history=[],navigating=false,active=null,preparing=false,progressMap=null;
+ let catalog=new Map(),loaded=false,refreshing=null,cacheVersion=0,history=[],navigating=false,active=null,preparing=false,progressMap=null;
+ const selectionState=window.MMMapSelection,chosen=selectionState.ids;
+ let homeLibrary={folders:[],placements:{}},homeScope="all",trashCount=0;
+ const workspace=()=>window.MMWorkspace || (window.MMWorkspaceEmbedded?parent.MMWorkspace:null);
  const current=()=>M.state().cur;
  const dialog=document.createElement('dialog');dialog.id='mmLibraryDialog';document.body.append(dialog);
  const progress=document.createElement('aside');progress.id='mmMultiProgress';progress.hidden=true;progress.setAttribute('aria-live','polite');document.body.append(progress);
@@ -10,7 +13,7 @@
  function message(text){window.showBanner(text);}
  async function refresh(){
   if(refreshing)return refreshing;
-  refreshing=(async()=>{const data=await request('/api/library');catalog=new Map(data.maps.map(m=>[m.id,m]));loaded=true;cacheVersion++;chosen=new Set([...chosen].filter(id=>catalog.has(id)&&!catalog.get(id).unavailable));decorate();if(current())M.refresh();return catalog;})();
+  refreshing=(async()=>{const data=await request('/api/library');catalog=new Map(data.maps.map(m=>[m.id,m]));loaded=true;cacheVersion++;homeLibrary=data.library||homeLibrary;trashCount=(data.trash||[]).length;if(!['all','unfiled'].includes(homeScope)&&!homeLibrary.folders.some(f=>f.id===homeScope))homeScope='all';selectionState.configure(homeLibrary,catalog.keys());decorate();if(current())M.refresh();else await M.refreshLibraryHome();return catalog;})();
   try{return await refreshing;}finally{refreshing=null;}
  }
  const meta=id=>catalog.get(id);
@@ -22,18 +25,38 @@
  function renderReferences(node){if(!Array.isArray(node.mapReferences)||!node.mapReferences.length)return '';const refs=node.mapReferences,updated=refs.some(changed),gone=refs.some(r=>missing(r.mapId));
   return `<button type="button" class="mm-map-refs" data-map-refs="${E(node.id)}" title="打开来源节点">来源 ${refs.length}${gone?' · 目标不可用':updated?' · 已更新':''} ↗</button>`;
  }
+ function homeItems(entries){return homeScope==='all'?entries:entries.filter(m=>homeScope==='unfiled'?!homeLibrary.placements[m.id]:homeLibrary.placements[m.id]===homeScope);}
+ function openHomeFolder(id){if(!['all','unfiled'].includes(id)&&!homeLibrary.folders.some(f=>f.id===id))return;homeScope=id;M.renderLibraryHome();document.getElementById('mmHomeLibraryNav')?.focus({preventScroll:true});}
+ function homeNavigation(query=''){
+  const folders=homeLibrary.folders,parts=[];for(let f=folders.find(f=>f.id===homeScope),depth=0;f&&depth<17;f=folders.find(p=>p.id===f.parentId),depth++)parts.unshift(f);
+  const q=query.trim().toLowerCase(),children=homeScope==='unfiled'?[]:folders.filter(f=>f.parentId===(homeScope==='all'?null:homeScope)).sort((a,b)=>a.name.localeCompare(b.name,'zh-CN'));
+  const counts=new Map(folders.map(f=>[f.id,0])),parents=new Map(folders.map(f=>[f.id,f.parentId]));let unfiled=0;
+  for(const m of catalog.values()){let id=homeLibrary.placements[m.id];if(!id)unfiled++;for(let depth=0;id&&counts.has(id)&&depth<17;id=parents.get(id),depth++)counts.set(id,counts.get(id)+1);}
+  const crumbs=`<button type="button" class="mm-b" data-library="folder" data-folder="all" ${homeScope==='all'?'aria-current="page"':''}>全部导图</button>`+(homeScope==='unfiled'?'<span aria-hidden="true">/</span><span aria-current="page">未分类</span>':parts.map(f=>`<span aria-hidden="true">/</span><button type="button" class="mm-b" data-library="folder" data-folder="${E(f.id)}" ${f.id===homeScope?'aria-current="page"':''}>${E(f.name)}</button>`).join(''));
+  const rows=children.filter(f=>!q||f.name.toLowerCase().includes(q)).map(f=>`<div class="mm-home-folder" data-home-folder="${E(f.id)}"><button type="button" class="mm-folder-check" role="checkbox" aria-checked="${selectionState.state(f.id)}" aria-label="选择文件夹 ${E(f.name)} 及全部内容" data-library="pick-folder" data-folder="${E(f.id)}" ${selectionState.active?'':'hidden'}></button><button type="button" class="mm-home-folder-open" data-library="folder" data-folder="${E(f.id)}"><span aria-hidden="true">▱</span><b>${E(f.name)}</b><small>${counts.get(f.id)} 张 · 含子文件夹</small></button><button type="button" class="mm-b" data-library="folder-menu" data-folder="${E(f.id)}" aria-label="文件夹菜单：${E(f.name)}">⋯</button></div>`);
+  if(homeScope==='all'&&(!q||'未分类'.includes(q)))rows.push(`<div class="mm-home-folder"><button type="button" class="mm-home-folder-open" data-library="folder" data-folder="unfiled"><span aria-hidden="true">▱</span><b>未分类</b><small>${unfiled} 张</small></button></div>`);
+  const parent=homeScope==='unfiled'?'all':parts.at(-1)?.parentId||'all';
+  return `<div id="mmHomeLibraryNav" class="mm-home-library-nav" tabindex="-1"><nav class="mm-home-library-path" aria-label="导图文件夹路径">${homeScope!=='all'?`<button type="button" class="mm-b" data-library="folder" data-folder="${E(parent)}">← 返回上一级</button>`:''}${crumbs}</nav><div class="mm-home-library-actions"><button type="button" class="mm-b" data-library="new-folder">＋ 新建文件夹</button>${!['all','unfiled'].includes(homeScope)?`<button type="button" class="mm-b" data-library="folder-menu" data-folder="${E(homeScope)}">管理文件夹</button>`:''}<button type="button" class="mm-b" data-library="trash">回收站${trashCount?' · '+trashCount:''}</button></div></div>${rows.length?`<div class="mm-home-folders" aria-label="文件夹">${rows.join('')}</div>`:''}`;
+ }
+ function homeEmpty(query){if(homeScope==='all')return '';return `<div class="mm-empty"><b>${query?'当前位置没有匹配的导图':'这个文件夹还没有导图'}</b><p>${query?'试试其他名称，或返回“全部导图”搜索。':'可从全部导图多选后移动到这里。'}</p></div>`;}
+
  function decorate(){const head=document.querySelector('.mm-library-head');if(!head)return;
   if(!$('mmChooseMaps')){const b=document.createElement('button');b.id='mmChooseMaps';b.className='mm-b';b.type='button';b.dataset.library='select';head.insertBefore(b,head.querySelector('input'));}
-  $('mmChooseMaps').textContent=selecting?'退出多选':'多选导图';
-  document.querySelectorAll('.mm-card[data-id]').forEach(card=>{const id=card.dataset.id;card.classList.toggle('mm-map-picking',selecting);card.classList.toggle('mm-map-picked',chosen.has(id));let check=card.querySelector('.mm-map-check');
-   if(selecting&&!check){check=document.createElement('span');check.className='mm-map-check';card.append(check);}if(check){check.textContent=chosen.has(id)?'✓':'';check.hidden=!selecting;check.setAttribute('aria-hidden','true');}
-   if(selecting){card.setAttribute('role','checkbox');card.setAttribute('aria-checked',String(chosen.has(id)));card.setAttribute('aria-label','选择 '+(meta(id)?.title||'导图'));}else{card.setAttribute('role','button');card.removeAttribute('aria-checked');card.setAttribute('aria-label','打开 '+(meta(id)?.title||'导图'));}
+  $('mmChooseMaps').textContent=selectionState.active?'退出多选':'多选管理';
+  document.querySelectorAll('.mm-card[data-id]').forEach(card=>{const id=card.dataset.id;card.classList.toggle('mm-map-picking',selectionState.active);card.classList.toggle('mm-map-picked',chosen.has(id));let check=card.querySelector('.mm-map-check');
+   if(selectionState.active&&!check){check=document.createElement('span');check.className='mm-map-check';card.append(check);}if(check){check.textContent=chosen.has(id)?'✓':'';check.hidden=!selectionState.active;check.setAttribute('aria-hidden','true');}
+   if(selectionState.active){card.setAttribute('role','checkbox');card.setAttribute('aria-checked',String(chosen.has(id)));card.setAttribute('aria-label','选择 '+(meta(id)?.title||'导图'));}else{card.setAttribute('role','button');card.removeAttribute('aria-checked');card.setAttribute('aria-label','打开 '+(meta(id)?.title||'导图'));}
   });
-  let bar=$('mmSelectionBar');if(!bar){bar=document.createElement('div');bar.id='mmSelectionBar';bar.className='mm-selection-bar';document.querySelector('.mm-home-library').append(bar);}bar.hidden=!selecting;
-  if(selecting)bar.innerHTML=`<span>已选 ${chosen.size} 张</span><button class="mm-b" data-library="all">选择可见导图</button><button class="mm-b" data-library="clear">清空</button><button class="mm-b pri" data-library="summarize" ${chosen.size<2?'disabled':''}>多图总结</button><small>选择 2–8 张已保存的导图</small>`;
+  document.querySelectorAll('[data-library="pick-folder"]').forEach(b=>{const value=selectionState.state(b.dataset.folder);b.hidden=!selectionState.active;b.setAttribute('aria-checked',value);b.textContent=value==='true'?'✓':value==='mixed'?'−':'';b.closest('.mm-home-folder').classList.toggle('is-picked',value==='true');});
+  let bar=$('mmSelectionBar');if(!bar){bar=document.createElement('div');bar.id='mmSelectionBar';bar.className='mm-selection-bar';document.querySelector('.mm-home-library').append(bar);}bar.hidden=!selectionState.active;
+  if(selectionState.active){const scope=visibleMaps(),folders=visibleFolders(),all=selectionState.all(scope,folders),hasFolders=selectionState.folderIds.size>0;
+   bar.innerHTML=`<span role="status">已选 ${chosen.size} 张导图、${selectionState.folderIds.size} 个文件夹</span><button class="mm-b" data-library="all" aria-pressed="${all}" ${scope.length||folders.length||selectionState.size?'':'disabled'}>${all?'取消全选':folders.length?'全选可见内容':'全选可见导图'}</button><button class="mm-b" data-library="move" ${selectionState.size?'':'disabled'}>移动到…</button><button class="mm-b danger" data-library="delete" ${selectionState.size?'':'disabled'}>移入回收站</button><button class="mm-b pri" data-library="summarize" ${hasFolders||chosen.size<2||chosen.size>8?'disabled':''}>多图总结</button><small>${hasFolders?'选中文件夹包含全部子内容（含搜索隐藏内容）。多图总结请仅选择2–8张导图。':'多图总结每次支持2–8张；移动和删除不限8张。'}</small>`;
+  }
  }
- function toggle(id){if(!meta(id)||meta(id).unavailable){message('这张导图还没有正式保存，请先打开并保存');return;}if(chosen.has(id))chosen.delete(id);else if(chosen.size<8)chosen.add(id);else message('一次最多选择8张导图');decorate();}
- function selectionEvent(e){if(!selecting||current())return;const card=e.target.closest('.mm-card[data-id]');if(!card)return;if(e.type==='keydown'&&!['Enter',' '].includes(e.key))return;e.preventDefault();e.stopImmediatePropagation();toggle(card.dataset.id);}
+ function visibleFolders(){return [...document.querySelectorAll('[data-home-folder]')].map(el=>el.dataset.homeFolder);}
+ function visibleMaps(){return [...document.querySelectorAll('.mm-card[data-id]')].map(card=>card.dataset.id).filter(id=>meta(id)&&!meta(id).unavailable);}
+ function toggle(id){if(!meta(id)||meta(id).unavailable){message('这张导图还没有正式保存，请先打开并保存');return;}selectionState.toggle(id);}
+ function selectionEvent(e){if(!selectionState.active||current())return;const card=e.target.closest('.mm-card[data-id]');if(!card)return;if(e.type==='keydown'&&!['Enter',' '].includes(e.key))return;e.preventDefault();e.stopImmediatePropagation();toggle(card.dataset.id);}
  document.addEventListener('click',selectionEvent,true);document.addEventListener('keydown',selectionEvent,true);
  async function chooseReference(nodeId=null,at=null){
   const mapId=current()?.id;if(!mapId)return;M.finishEditing();await refresh();if(current()?.id!==mapId)return;
@@ -107,7 +130,7 @@
    check(run);run.record.audit=job.audit;run.record.fragments=job.fragments;if(job.status!=='completed')throw Error(job.error||'总结未完成');
    applyResult(run,job.summary);
    const reviewed=await window.MMAIStructureReview.run({mapId,ids:Object.values(run.batch.mapping),signal:(run.controller=new AbortController()).signal,onStage:s=>showProgress(s,true),onUsage:data=>run.usage.update(data),onAudit:a=>{run.record.audit.structureReview=a;run.usage.update(a);save(run);}});check(run);if(reviewed.plan)run.batch.structurePlan=reviewed.plan;finishLayout(run);
-   run.record.status='completed';run.record.finishedAt=Date.now();delete run.record.fragments;save(run);M.refresh();const saved=await window.MMFiles.save();showProgress(saved?'总结已生成并保存，点击节点的“来源”可跳转。':'总结已生成，正式保存失败，草稿已保留。');selecting=false;chosen.clear();await refresh().catch(()=>{});
+   run.record.status='completed';run.record.finishedAt=Date.now();delete run.record.fragments;save(run);M.refresh();const saved=await window.MMFiles.save();showProgress(saved?'总结已生成并保存，点击节点的“来源”可跳转。':'总结已生成，正式保存失败，草稿已保留。');selectionState.setActive(false);await refresh().catch(()=>{});
   }catch(error){
    if(run&&current()?.id===run.mapId){run.record.status=run.stopped?'stopped':'failed';run.record.error=run.stopped?'已停止，完成的逐图结果已保留':error.message;
     if(!run.interrupted&&!Object.keys(run.batch.mapping||{}).length&&job?.fragments?.length){const graph=partialGraph(job.fragments);
@@ -123,9 +146,11 @@
   const open=e.target.closest('[data-map-open]'),split=e.target.closest('[data-map-split]'),relink=e.target.closest('[data-map-relink]'),refs=e.target.closest('[data-map-refs]');
   if(open||split||relink||refs){e.preventDefault();e.stopPropagation();if(open)navigate(open.dataset.mapOpen);if(split)navigate(split.dataset.mapSplit,null,false,true);if(relink)chooseReference(relink.dataset.mapRelink).catch(e=>message(e.message));if(refs)references(refs.dataset.mapRefs);return;}
   const b=e.target.closest('[data-library]');if(!b)return;const action=b.dataset.library;
-  if(action==='close')dialog.close();if(action==='select'){selecting=!selecting;chosen.clear();refresh().catch(e=>message(e.message));decorate();}
-  if(action==='clear'){chosen.clear();decorate();}if(action==='all'){for(const card of document.querySelectorAll('.mm-card[data-id]'))if(chosen.size<8&&meta(card.dataset.id)&&!meta(card.dataset.id).unavailable)chosen.add(card.dataset.id);decorate();}
-  if(action==='summarize')summaryDialog().catch(e=>message(e.message));if(action==='reference')chooseReference().catch(e=>message(e.message));if(action==='back')navigate(history.at(-1)?.map.id,null,true);
+  if(action==='close')dialog.close();if(action==='select'){selectionState.setActive(!selectionState.active);refresh().catch(e=>message(e.message));}
+  if(action==='all')selectionState.toggleAll(visibleMaps(),visibleFolders());
+  if(action==='pick-folder')selectionState.toggleFolder(b.dataset.folder);if(action==='move'&&selectionState.size)workspace().moveDialog([],null,selectionState.snapshot());if(action==='delete'&&selectionState.size)workspace().deleteItems(selectionState.snapshot()).catch(e=>message(e.message));
+  if(action==='folder')openHomeFolder(b.dataset.folder);if(action==='new-folder')workspace().newFolder(['all','unfiled'].includes(homeScope)?null:homeScope);if(action==='trash')workspace().showTrash().catch(e=>message(e.message));if(action==='folder-menu')workspace().folderMenu(e,b.dataset.folder);
+  if(action==='summarize'&&!selectionState.folderIds.size)summaryDialog().catch(e=>message(e.message));if(action==='reference')chooseReference().catch(e=>message(e.message));if(action==='back')navigate(history.at(-1)?.map.id,null,true);
   if(action==='sources')sourcesDialog();if(action==='regenerate'){const info=current()?.mapSummary;if(info)summaryDialog(info.sources.map(s=>s.mapId),info.options).catch(e=>message(e.message));}
   if(action==='stop')stop();if(action==='hide')progress.hidden=true;if(action==='prompts'){dialog.close();window.MMAIInspector.open();}
  });
@@ -147,6 +172,7 @@
   }
  }
  document.addEventListener('keydown',e=>{if(placement&&e.key==='Escape'){e.preventDefault();e.stopImmediatePropagation();cancelPlacement();message('已取消放置');}},true);
- window.MMLibrary={referenceTitle:n=>meta(n.mapLink?.mapId)?.title || n.mapLink?.title || n.text,beginPlacement,addReference,get placing(){return !!placement;},showRecord:sourcesDialog,contextMenu,renderCard,renderReferences,onDraw,decorate,refresh,chooseReference,navigate,summaryDialog,start,get cacheVersion(){return cacheVersion;},get running(){return !!active||preparing;}};
+ const unsubscribeSelection=selectionState.subscribe(decorate);window.addEventListener('unload',unsubscribeSelection,{once:true});
+ window.MMLibrary={homeItems,homeNavigation,homeEmpty,referenceTitle:n=>meta(n.mapLink?.mapId)?.title || n.mapLink?.title || n.text,beginPlacement,addReference,get placing(){return !!placement;},showRecord:sourcesDialog,contextMenu,renderCard,renderReferences,onDraw,decorate,refresh,chooseReference,navigate,summaryDialog,start,get cacheVersion(){return cacheVersion;},get running(){return !!active||preparing;}};
  decorate();refresh().catch(()=>{});
 })();

@@ -1,7 +1,7 @@
 (() => {
   "use strict";
   const sidebar=document.createElement('aside');sidebar.id='mmAI';sidebar.className='mm-ai hidden';sidebar.setAttribute('aria-label','节点 AI 对话');
-  sidebar.innerHTML=`<div class="mm-ai-resizer" role="separator" tabindex="0" aria-label="调整提问侧栏宽度" aria-orientation="vertical" title="拖动调宽；方向键微调，双击恢复默认"></div><div class="mm-ai-heading"><b>✦ 节点提问</b><button class="mm-b" id="mmAIClose" aria-label="关闭 AI 对话">✕</button></div><div id="mmAIContext"></div><div id="mmAIMessages" role="log" aria-live="polite"></div><div id="mmAIUsage"></div><form id="mmAIForm"><details class="mm-ai-options"><summary>回答方向与参考范围</summary><label>本次方向<input id="mmAIDirection" type="text" maxlength="2000" placeholder="自动判断；也可指定解释依据、举例或另一种解法"></label><label>参考范围<select id="mmAIReferenceScope"><option value="project">当前树与相关树</option><option value="tree">仅当前树</option><option value="node">仅当前节点</option></select></label></details><textarea id="mmAIInput" rows="3" placeholder="针对这个节点提问，回答将直接生成导图…" aria-label="向 AI 提问" maxlength="${window.MMCapacity.inputChars}"></textarea><div class="mm-ai-send"><span id="mmAIStatus" role="status">AI 模型尚未接入</span><button class="mm-b" id="mmAIStop" type="button" hidden>停止</button><button class="mm-b" id="mmAISend" type="submit">发送</button></div></form>`;
+  sidebar.innerHTML=`<div class="mm-ai-resizer" role="separator" tabindex="0" aria-label="调整提问侧栏宽度" aria-orientation="vertical" title="拖动调宽；方向键微调，双击恢复默认"></div><div class="mm-ai-heading"><b>✦ 节点提问</b><button class="mm-b" id="mmAIClose" aria-label="关闭 AI 对话">✕</button></div><div id="mmAIContext"></div><div id="mmAIMessages" role="log" aria-live="polite"></div><div id="mmAIUsage"></div><form id="mmAIForm"><details class="mm-ai-options"><summary>回答方向与参考范围</summary><label>本次方向<input id="mmAIDirection" type="text" maxlength="2000" placeholder="自动判断；也可指定解释依据、举例或另一种解法"></label><label>参考范围<select id="mmAIReferenceScope"><option value="project">当前树与相关树</option><option value="tree">仅当前树</option><option value="node">仅当前节点</option></select></label></details><textarea id="mmAIInput" rows="3" placeholder="针对这个节点提问，每轮生成 1–3 个知识点的短链…" aria-label="向 AI 提问" maxlength="${window.MMCapacity.inputChars}"></textarea><div class="mm-ai-send"><span id="mmAIStatus" role="status">AI 模型尚未接入</span><button class="mm-b" id="mmAIStop" type="button" hidden>停止</button><button class="mm-b" id="mmAISend" type="submit">发送</button></div></form>`;
   document.body.appendChild(sidebar);
   const $=id=>document.getElementById(id),esc=window.MMContent.escape;
   let target=null,messages=[],pending=null,active=null,statusVersion=0;
@@ -30,11 +30,11 @@
     const edges=(map.edges || []).filter(e=>e.from.node===node.id || e.to.node===node.id),ids=new Set(edges.flatMap(e=>[e.from.node,e.to.node]));ids.delete(node.id);
     const mediaId=node.pdf || node.image,file=(map.media || []).find(m=>m.id===mediaId);
     const media=mediaId?{kind:node.pdf?'pdf':'image',id:mediaId,mapId:map.id,name:file?.name || (node.pdf?'PDF':'图片')}:null;
-    return {media,map:map.title,node:{id:node.id,text:(node.text || '').slice(0,12000)},neighbors:[...ids].slice(0,8).map(id=>({id,text:(window.Mindmap.findNode(id)?.n.text || '').slice(0,2000)})),edges};
+    return {media,map:map.title,node:{id:node.id,text:node.text || ''},neighbors:[...ids].slice(0,8).map(id=>({id,text:window.Mindmap.findNode(id)?.n.text || ''})),edges};
   }
   function render(){
     const scroller=$('mmAIMessages'),follow=scroller.scrollHeight-scroller.scrollTop-scroller.clientHeight<90,expanded=new Set([...scroller.querySelectorAll('[data-wf-details][open]')].map(d=>d.dataset.wfDetails));
-    scroller.innerHTML=messages.length?messages.map(m=>`<article class="mm-ai-message ${m.role}" data-turn-id="${esc(m.turnId || '')}"><small>${m.role==='user'?'你':'本次回答'}</small>${m.role==='user' && m.sourceTitle?`<small class="mm-ai-origin">提问于 <button type="button" data-wf-source="${esc(m.sourceId)}">${esc(m.sourceTitle)}</button></small>`:''}${m.attachment?`<small class="mm-ai-attachment">附带：${esc(m.attachment)}</small>`:''}${m.role==='assistant'?window.MMAIWorkflow.render(m,window.Mindmap.state().cur):''}<div class="mm-rich">${window.MMContent.render(m.content)}</div>${m.role==='assistant'?`<small class="mm-ai-result-state">${m.generating?`正在主导图生成 · 已完成 ${m.nodeCount || 0} 个知识点`:m.incomplete?'生成未完成，已完成的节点保留在导图中':m.nodeCount?`已在主导图生成 ${m.nodeCount} 个知识点，可直接编辑`:''}</small>`:''}</article>`).join(''):'<p class="mm-ai-empty">提问后，回答会直接在主导图逐步生成节点和连线。每次提问单独形成一组，可通过画布工具撤销。同一棵树的提问历史统一保存在导图中。</p>';
+    scroller.innerHTML=messages.length?messages.map(m=>`<article class="mm-ai-message ${m.role}" data-turn-id="${esc(m.turnId || '')}"><small>${m.role==='user'?'你':'本次回答'}</small>${m.role==='user' && m.sourceTitle?`<small class="mm-ai-origin">提问于 <button type="button" data-wf-source="${esc(m.sourceId)}">${esc(m.sourceTitle)}</button></small>`:''}${m.attachment?`<small class="mm-ai-attachment">附带：${esc(m.attachment)}</small>`:''}${m.role==='assistant'?window.MMAIWorkflow.render(m,window.Mindmap.state().cur):''}<div class="mm-rich">${window.MMContent.render(m.content)}</div>${m.role==='assistant'?`<small class="mm-ai-result-state">${m.generating?`正在主导图生成 · 已完成 ${m.nodeCount || 0} 个知识点`:m.incomplete?'生成未完成，已完成的节点保留在导图中':m.nodeCount?`已在主导图生成 ${m.nodeCount} 个知识点，可直接编辑`:''}</small>`:''}</article>`).join(''):'<p class="mm-ai-empty">提问后，回答会直接在主导图逐步生成节点和连线。每次提问单独形成一组，可通过画布工具撤销。默认每轮 1–3 个知识点，沿短链逐步追问。同一棵树的提问历史统一保存在导图中。</p>';
     for(const details of scroller.querySelectorAll('[data-wf-details]'))if(expanded.has(details.dataset.wfDetails))details.open=true;
     if(follow)scroller.scrollTop=scroller.scrollHeight;
   }
@@ -80,7 +80,7 @@
     if(target?.map===map.id && target?.node===id && pending){sidebar.classList.remove('hidden');document.body.classList.add('mm-ai-open');window.dispatchEvent(new Event('resize'));return;}
     cancelActive('已切换提问节点，已完成的内容已保留');target={map:map.id,node:id};
     try{$('mmAIInput').value=localStorage.getItem(key()+'_draft') || '';}catch{$('mmAIInput').value='';}
-    importLegacy(map);const info=window.MMAIMemory.collect(map,id,'');messages=window.MMAIMemory.messages(info);
+    importLegacy(map);const indexed=window.MMAIMemory.index(map),treeId=indexed.membership[id],info={...indexed,treeId,treeTitle:indexed.trees[treeId]?.title || window.MMAIMemory.title(node)};messages=window.MMAIMemory.messages(info);
     for(const m of messages)if(m.generating){m.generating=false;m.incomplete=true;const record=map.aiMemory.turns.find(t=>t.id===m.turnId);if(record){record.status='stopped';record.workflow={...record.workflow,phase:'stopped'};window.Mindmap.saveAIRecord(record);}}
     $('mmAIDirection').value='';$('mmAIReferenceScope').value='project';
     window.dispatchEvent(new Event('mm:close-shortcuts'));sidebar.classList.remove('hidden');document.body.classList.add('mm-ai-open');
@@ -93,8 +93,9 @@
   function applyGraph(run,graph,final=false){
     if(pending!==run.controller || run.controller.signal.aborted)return;context();
     if(!graph?.nodes?.length)return;
-    const plan=window.MMAISummary.normalizeSummary(graph,{partial:!final}),signature=JSON.stringify(plan);
+    const plan=window.MMAISummary.normalizeSummary(graph,{partial:!final,shortChain:true}),signature=JSON.stringify(plan);
     if(!final && run.signature===signature)return;run.signature=signature;
+    if(final)run.batch.sectionReviewed=!!run.message.inspection?.sectionReview?.changes?.length;
     const result=window.Mindmap.appendAIResult(run.map,run.node,plan,run.entryText,run.batch,final);
     run.message.content=plan.nodes.map(n=>window.MMAISummary.nodeText(n)).join('\n\n');run.message.nodeCount=plan.nodes.length;
     run.message.generatedIds=Object.values(result.mapping);run.message.color=run.batch.color;save(run);render();
@@ -104,25 +105,26 @@
     e.preventDefault();const input=$('mmAIInput'),question=input.value.trim();if(!question || pending)return;
     window.dispatchEvent(new Event('mm:ai-interrupt'));
     let ctx;try{ctx=context();}catch(error){$('mmAIStatus').textContent=error.message;return;}
+    let sourceContext,info;const map=window.Mindmap.state().cur,scope=$('mmAIReferenceScope').value;try{sourceContext=window.MMAISources.resolve(map,target.node);info=window.MMAIMemory.collect(map,target.node,question,{scope});}catch(error){$('mmAIStatus').textContent=error.message;return;}
     ++statusVersion;draft(question);const controller=new AbortController();pending=controller;busy(true);
-    const map=window.Mindmap.state().cur,scope=$('mmAIReferenceScope').value,info=window.MMAIMemory.collect(map,target.node,question,{scope});
     if(scope!=='project'){ctx.neighbors=ctx.neighbors.filter(n=>scope==='tree' && info.membership[n.id]===info.treeId);const allowed=new Set([target.node,...ctx.neighbors.map(n=>n.id)]);ctx.edges=ctx.edges.filter(e=>allowed.has(e.from.node) && allowed.has(e.to.node));}
     const turn=Math.max(0,...info.turns.filter(t=>t.treeId===info.treeId).map(t=>Number(t.number)||0))+1,turnId=crypto.randomUUID();
     const parent=info.turns.findLast(t=>t.generatedIds?.includes(target.node)) || info.turns.findLast(t=>t.treeId===info.treeId && t.sourceId===target.node);
     const color=window.MMAIBranch.color(window.Mindmap.state().L.nodes.get(target.node)?.color,info.turns.filter(t=>t.sourceId===target.node).map(t=>t.color),turn);
-    const record={id:turnId,treeId:info.treeId,sourceId:target.node,sourceTitle:window.MMAIMemory.title(window.Mindmap.findNode(target.node).n),parentTurnId:parent?.id || null,number:turn,question,answer:'',status:'running',color,createdAt:Date.now(),workflow:{phase:'preparing',planningStatus:'pending',sources:[]}};
+    const record={id:turnId,treeId:info.treeId,sourceId:target.node,sourceTitle:window.MMAIMemory.title(window.Mindmap.findNode(target.node).n),parentTurnId:parent?.id || null,number:turn,question,sourceMaterials:sourceContext.references,answer:'',status:'running',color,createdAt:Date.now(),workflow:{phase:'preparing',planningStatus:'pending',sources:[]}};
     const conversation=[...info.history,{role:'user',content:question}].slice(-20);messages=window.MMAIMemory.messages({...info,turns:[...info.turns,record]});
     const message=messages.at(-1),user=messages.at(-2);message.color=color;
-    const run={controller,message,user,record,ownership:info,map:target.map,node:target.node,question,batch:{turnId,treeId:info.treeId,color},entryText:`第${turn}次提问：${question.replace(/\s+/g,' ').slice(0,160)}`};active=run;$('mmAIUsage').replaceChildren();run.usage=window.MMAIUsage.attach($('mmAIUsage'),{mapId:run.map});
+    const run={controller,message,user,record,ownership:info,map:target.map,node:target.node,question,batch:{turnId,treeId:info.treeId,color,shortChain:true},entryText:`第${turn}次提问：${question.replace(/\s+/g,' ').slice(0,160)}`};active=run;$('mmAIUsage').replaceChildren();run.usage=window.MMAIUsage.attach($('mmAIUsage'),{mapId:run.map});
     save(run);render();input.value='';$('mmAIStatus').textContent='正在准备提问…';
     try{
-      const media=await window.MMAIMedia.prepare(ctx.media?{...ctx.media,question}:null,controller.signal,text=>{if(pending===controller)$('mmAIStatus').textContent=text;});
+      const state=await request('/api/ai/status',{signal:controller.signal});if(state.features?.questionSources!=='shared-sources-v1' || state.features?.sectionReview!=='node-sections-v1')throw new Error('请先重启本地服务并强制刷新页面，当前服务尚未支持完整原件共享及节点内分节复核');
+      const materials=await window.MMAIMedia.prepareSources(sourceContext,question,controller.signal,text=>{if(pending===controller)$('mmAIStatus').textContent=text;});
       if(pending!==controller)return;context();
-      if(media){user.attachment=media.kind==='pdf'?media.name+(media.allPages?' · 全部 '+media.pageCount+' 页':' · 第'+media.images.map(i=>i.page).join(',')+'页'):media.name;save(run);render();}
-      const data=await runAI({mode:'graph',context:ctx,messages:conversation,workflow:{candidates:info.candidates,history:info.history.slice(-6),direction:$('mmAIDirection').value,scope},...(media?{media}:{})},controller,progress=>{if(pending!==controller)return;run.usage.update(progress,{stage:progress.stage||'正在生成导图',nodeCount:message.nodeCount||0});if(progress.calls)record.calls=progress.calls;if(progress.transfer)message.transfer=progress.transfer;if(progress.inspection)message.inspection=progress.inspection;if(progress.workflow && JSON.stringify(message.workflow)!==JSON.stringify(progress.workflow)){message.workflow=progress.workflow;save(run);render();}applyGraph(run,progress.graph);});
+      if(materials.sources.length){user.attachment=materials.sources.map(s=>s.name+(s.kind==='pdf'?' · 第'+s.images.map(i=>i.page).join(',')+'页':'')).join('；');save(run);render();}
+      const data=await runAI({mode:'graph',context:ctx,messages:conversation,workflow:{candidates:info.candidates,history:info.history.slice(-6),direction:$('mmAIDirection').value,scope},materials},controller,progress=>{if(pending!==controller)return;run.usage.update(progress,{stage:progress.stage||'正在生成导图',nodeCount:message.nodeCount||0});if(progress.calls)record.calls=progress.calls;if(progress.transfer)message.transfer=progress.transfer;if(progress.inspection)message.inspection=progress.inspection;if(progress.workflow && JSON.stringify(message.workflow)!==JSON.stringify(progress.workflow)){message.workflow=progress.workflow;save(run);render();}applyGraph(run,progress.graph);});
       if(pending!==controller)return;if(data.inspection)message.inspection=data.inspection;if(data.workflow)message.workflow=data.workflow;applyGraph(run,data.summary,true);
       if(!message.nodeCount)throw new Error('模型未返回有效节点，请重试。');
-      window.Mindmap.finalizeAIOrganization(run.batch);message.generating=false;delete message.incomplete;record.status='completed';draft('');save(run);render();$('mmAIStatus').textContent=`已在主导图生成 ${message.nodeCount} 个知识点，可直接编辑或撤销。${data.summary.nodes.some(n=>n.mathWarnings?.length)?' 有公式待检查，请点击节点提示查看。':''}`;
+      window.Mindmap.finalizeAIOrganization(run.batch);message.generating=false;delete message.incomplete;record.status='completed';draft('');save(run);render();$('mmAIStatus').textContent=`已在主导图生成 ${message.nodeCount} 个知识点，可直接编辑或撤销。${data.summary.nodes.some(n=>n.mathWarnings?.length)?' 有公式待检查，请点击节点提示查看。':''}${['partial','failed'].includes(data.inspection?.sectionReview?.status)?' 部分节点分节待检查，可查看生成过程。':''}`;
     }catch(error){if(pending===controller){message.generating=false;message.incomplete=true;record.status=error.name==='AbortError'?'stopped':'failed';message.error=error.name==='AbortError'?'':error.message;if(message.workflow)message.workflow.phase=record.status==='failed'?'failed':'stopped';input.value=question;draft(question);save(run);render();$('mmAIStatus').textContent=error.name==='AbortError'?'已停止，已完成的节点已保留':error.message;}}
     finally{run.usage.finish(record.status,{nodeCount:message.nodeCount||0});window.Mindmap.endAIBatch(run.batch);if(pending===controller){pending=null;active=null;busy(false);if(!sidebar.classList.contains('hidden'))input.focus();}}
   });

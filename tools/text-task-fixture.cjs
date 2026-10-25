@@ -1,0 +1,9 @@
+'use strict';
+exports.answer=payload=>{const content=payload.messages.at(-1).content,text=Array.isArray(content)?content[0].text:content,input=JSON.parse(text),system=payload.messages[0].content;
+ if(system.includes('你是整图结构复核员'))return{stage:'structure',input,output:require('./structure-review-fixture.cjs').makePlan(input)};
+ if(system.includes('只可插入')||system.includes('分节复核')||input.nodes?.[0]?.blocks?.[0]?.id)return{stage:'sections',input,output:{checked:input.nodes.map(n=>n.id),patches:input.nodes.filter(n=>n.blocks.length>1).map(n=>({nodeId:n.id,headings:[{beforeBlock:n.blocks[0].id,title:'题目与条件'},{beforeBlock:n.blocks.at(-1).id,title:'结论与方法'}]}))}};
+ if(input.stage==='recognize')return{stage:'recognize',input,images:Array.isArray(content)?content.filter(c=>c.type==='image_url').length:0,output:{sources:input.sourceIds.map((id,i)=>({id,text:(input.sourceKind==='topic'?'AI编写学习稿。':'图片 '+(i+1)+' 完整题目。')+'\n\nA：条件一。B：条件二。C：条件三。D：条件四。\n\n定义与公式 $x^2$，保留全部选项与条件。\n\n原图末尾：这是结论与解析。',uncertainties:[]}))}};
+ if(input.stage==='plan'){const ids=input.paragraphs.map(p=>p.id),mid=Math.ceil(ids.length/2),units=[{id:'u1',title:'定义与题目',topic:'完整主题',goal:'保留完整题目、全部选项、条件及定义',sourceIds:ids.slice(0,mid),dependsOn:[]}];if(mid<ids.length)units.push({id:'u2',title:'推导与结论',topic:'完整主题',goal:'承接前文完整定义、推导和结论',sourceIds:ids.slice(mid),dependsOn:['u1']});return{stage:'plan',input,output:{units}};}
+ if(input.stage==='extract'){const body=input.paragraphs.map(p=>p.text).join('')+'\n\n'+('完整保留必要条件并说明推理依据。'.repeat(15))+'\n\n本单元完整末尾。';return{stage:'extract',input,images:Array.isArray(content)?content.filter(c=>c.type==='image_url').length:0,output:{edges:[],nodes:[{id:'n1',title:input.unit.title,topic:input.unit.topic,brief:'保留完整题目与条件，按前后依赖组织学习步骤。',origin:'source',text:body}]}};}
+ throw Error('Unexpected text fixture stage: '+JSON.stringify(input).slice(0,100));
+};

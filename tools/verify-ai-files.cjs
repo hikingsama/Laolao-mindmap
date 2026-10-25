@@ -17,7 +17,7 @@ async function done(handler,id){for(let i=0;i<100;i++){const r=await api(handler
  check('Stream parser validates citations before exposing complete nodes',()=>{assert.equal(partialGraph(JSON.stringify(graph),validation).nodes.length,2);assert.equal(partialGraph(JSON.stringify({nodes:[{id:'wrong',title:'错引',text:'内容',citations:[{documentId:'doc-a',page:1}]}],edges:[]}),validation).nodes.length,0);});
  const fragment=P.compact(S.normalizeSummary(graph,validation));
  check('Fusion can only cite pages already carried by chapter results',()=>{const normal=P.task({stage:'merge',documents:docs,fragments:[fragment]}).normalization;assert(normal.citationPages.has('doc-a:12'));assert.throws(()=>P.citations([{documentId:'doc-b',page:1}],normal));});
- check('Fusion inputs explicitly mark excerpted summaries and preserve their citations',()=>{const f=P.compact({nodes:[{title:'长说明',text:'x'.repeat(500),citations:[{documentId:'doc-a',page:10}]}]});assert.equal(f.nodes[0].text.length,180);assert.equal(f.nodes[0].excerpted,true);assert.equal(f.nodes[0].citations[0].page,10);});
+ check('Legacy fusion retains the complete body and its citations',()=>{const f=P.compact({nodes:[{title:'长说明',text:'x'.repeat(500),citations:[{documentId:'doc-a',page:10}]}]});assert.equal(f.nodes[0].text.length,500);assert.equal(f.nodes[0].excerpted,false);assert.equal(f.nodes[0].citations[0].page,10);});
  const calls=[],key='fake-private-key',chat=require('../js/ai-chat.cjs').createService({getConfig:()=>({baseURL:'https://example.invalid',model:'shared-file-model',apiKey:key}),fetchImpl:async(url,init)=>{calls.push(JSON.parse(init.body));return new Response(JSON.stringify({choices:[{message:{content:JSON.stringify(graph)},finish_reason:'stop'}]}));}});
  try{
    await api(chat,'/api/ai/chat','POST',{requestId:'file-ok',mode:'lecture',messages:[{role:'user',content:'本批资料'}],fileTask:task});const result=await done(chat,'file-ok');
@@ -29,6 +29,7 @@ async function done(handler,id){for(let i=0;i<100;i++){const r=await api(handler
      fs.mkdirSync(path.join(isolated,'js'));fs.mkdirSync(path.join(isolated,'prompts'));
      fs.copyFileSync(path.join(__dirname,'../js/ai-prompts.cjs'),path.join(isolated,'js/ai-prompts.cjs'));
      for(const entry of prompts.catalog())fs.copyFileSync(path.join(__dirname,'..',entry.file),path.join(isolated,entry.file));
+     fs.copyFileSync(path.join(__dirname,'../prompts/content-sections.md'),path.join(isolated,'prompts/content-sections.md'));
      const local=require(path.join(isolated,'js/ai-prompts.cjs')),file=path.join(isolated,'prompts/lecture-extract.md');
      const previous=local.snapshot('lecture-extract',[{role:'system',content:local.render('lecture-extract')}],'fake');
      fs.appendFileSync(file,'\n测试版本标记');assert(local.render('lecture-extract').includes('测试版本标记'));assert(!previous.system.includes('测试版本标记'));assert.equal(result.inspection.system,frozen);
@@ -40,7 +41,7 @@ async function done(handler,id){for(let i=0;i<100;i++){const r=await api(handler
  const snap=prompts.snapshot('lecture-extract',[{role:'system',content:'规则'},{role:'user',content:[{type:'text',text:key},{type:'image_url',image_url:{url:'data:image/png;base64,secret-image'}}]}],'fake',key);
  check('Investigation snapshots omit credentials, encoded images and reasoning',()=>{assert(!JSON.stringify(snap).includes(key));assert(!JSON.stringify(snap).includes('secret-image'));assert(snap.input[0].content[1].note);});
  const handler=require('../js/ai-server.cjs').createHandler({settings:{handle:async()=>false},chat:{handle:async()=>false}}),catalog=await api(handler,'/api/ai/prompts');
- check('Prompt catalog is read-only and available without an AI key',()=>{assert.equal(catalog.readOnly,true);assert.equal(catalog.prompts.length,9);assert(catalog.prompts.every(p=>p.file.startsWith('prompts/') && p.version && p.template));});
+ check('Prompt catalog is read-only and available without an AI key',()=>{assert.equal(catalog.readOnly,true);assert.equal(catalog.prompts.length,16);assert(catalog.prompts.every(p=>p.file.startsWith('prompts/') && p.version && p.template));});
  const b=bootAll(),M=b.Mindmap;b.sandbox.window.MMPDF={element:()=>'<div>PDF</div>',sync(){},close(){}};for(const file of ['js/ai-note-format.js','js/ai-lecture-plan.js','js/ai-summary.js'])loadInto(b.sandbox,file,b.sandbox.window);
  const fixture={id:'file-canvas',title:'临时',v:3,flat:true,nodes:[{id:'old',text:'原节点',children:[]}],pos:{old:{x:0,y:0}},edges:[]};await M.openDocument(fixture);
  const before=JSON.stringify(M.state().cur),batch={kind:'outline',lecture:true,recordId:'file-record',documents:docs,pdfAssets:[{documentId:'doc-a',media:{id:'pdf-file',name:'讲义.pdf',mime:'application/pdf',sourceMap:'file-canvas'}}]};
